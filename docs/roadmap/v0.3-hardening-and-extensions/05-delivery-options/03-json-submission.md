@@ -1,6 +1,6 @@
 # Job: JSON submission with base64 or URL document
 
-Version: v0.3 · Epic: 05 Delivery options · Status: planned · Depends on: v0.2 04-01
+Version: v0.3 · Epic: 05 Delivery options · Status: in progress · Depends on: v0.2 04-01
 
 ## Goal
 

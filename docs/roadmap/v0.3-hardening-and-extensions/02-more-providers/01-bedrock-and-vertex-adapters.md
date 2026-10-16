@@ -1,6 +1,6 @@
 # Job: AWS Bedrock and Vertex AI adapters
 
-Version: v0.3 · Epic: 02 More providers · Status: planned · Depends on: v0.1 02-01, 02-05
+Version: v0.3 · Epic: 02 More providers · Status: in progress · Depends on: v0.1 02-01, 02-05
 
 ## Goal
 

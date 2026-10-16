@@ -1,6 +1,6 @@
 # Job: `vde eval` command and report
 
-Version: v0.3 · Epic: 06 Evaluation harness · Status: planned · Depends on: 01
+Version: v0.3 · Epic: 06 Evaluation harness · Status: in progress · Depends on: 01
 
 ## Goal
 

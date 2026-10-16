@@ -1,6 +1,6 @@
 # Job: S3-compatible blob store
 
-Version: v0.3 · Epic: 01 Storage backends · Status: planned · Depends on: v0.2 03-02
+Version: v0.3 · Epic: 01 Storage backends · Status: in progress · Depends on: v0.2 03-02
 
 ## Goal
 

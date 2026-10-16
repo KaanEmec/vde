@@ -1,6 +1,6 @@
 # Job: Judge-only re-verification option
 
-Version: v0.3 · Epic: 03 Escalation and model tiers · Status: planned · Depends on: 01
+Version: v0.3 · Epic: 03 Escalation and model tiers · Status: in progress · Depends on: 01
 
 ## Goal
 

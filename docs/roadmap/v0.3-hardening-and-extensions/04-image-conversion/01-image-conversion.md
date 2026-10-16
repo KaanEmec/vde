@@ -1,6 +1,6 @@
 # Job: Image conversion
 
-Version: v0.3 · Epic: 04 Image conversion · Status: planned · Depends on: v0.1 04-01
+Version: v0.3 · Epic: 04 Image conversion · Status: in progress · Depends on: v0.1 04-01
 
 ## Goal
 
