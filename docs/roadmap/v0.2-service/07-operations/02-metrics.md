@@ -1,6 +1,6 @@
 # Job: Prometheus metrics
 
-Version: v0.2 · Epic: 07 Operations · Status: planned · Depends on: 01-01, 03-04
+Version: v0.2 · Epic: 07 Operations · Status: in progress (`internal/metrics` done; wiring open) · Depends on: 01-01, 03-04
 
 ## Goal
 
@@ -15,21 +15,51 @@ quota remaining per application.
 
 ## Tasks
 
-- [ ] `github.com/prometheus/client_golang` with a custom registry (no Go runtime
+- [x] `github.com/prometheus/client_golang` with a custom registry (no Go runtime
       metrics by default; enable with a flag).
-- [ ] Series: `vde_jobs_total{app,status}`, `vde_job_attempts` histogram,
+- [x] Series: `vde_jobs_total{app,status}`, `vde_job_attempts` histogram,
       `vde_job_duration_seconds{status}` histogram, `vde_provider_calls_total{role,
       endpoint,model,outcome}`, `vde_provider_latency_seconds{role,endpoint}` histogram,
       `vde_failovers_total{role,from,to}`, `vde_quota_remaining{app}` gauge,
       `vde_jobs_in_progress{app}` gauge, `vde_http_requests_total{route,status}`,
       `vde_swept_jobs_total`.
-- [ ] Labels only from configuration ids (app, endpoint, model, route pattern), never
+- [x] Labels only from configuration ids (app, endpoint, model, route pattern), never
       from request data.
 - [ ] Protection: `metrics.token_env` (a separate bearer token) or `metrics.listen` (a
       second loopback or internal listener); when neither is set, `/metrics` is served on
-      the main listener only to loopback.
-- [ ] Test: scrape after a scenario run and assert the expected series exist with the
-      expected label values.
+      the main listener only to loopback. Building blocks are done in `internal/metrics`
+      (`RequireToken(h, token)`, `LoopbackOnly(h)`); reading the config keys and mounting
+      the route is open: wired by epic 05/07 agent. Contract below.
+- [x] Test: scrape after a scenario run and assert the expected series exist with the
+      expected label values (`internal/metrics/metrics_test.go` scrapes the handler after
+      recording observations; a scrape after a full scenario run is part of the wiring).
+
+## Wiring contract (for the epic 05/07 agent)
+
+API, package `internal/metrics`: `New(opts ...Option) *Metrics` (`WithGoRuntime()` adds
+the Go runtime and process collectors, off by default), `(*Metrics).Handler()`, and
+`ObserveHTTP(route, status)`, `ObserveProviderCall(role, endpoint, model, outcome, dur)`,
+`ObserveFailover(role, from, to)`, `SetQuotaRemaining(app, n)`, `SetJobsInProgress(app, n)`
+and `AddSwept(n)`. `*Metrics` implements `worker.Observer`: pass it as
+`worker.Options.Observer`. `JobStarted` records nothing; set `vde_jobs_in_progress` from
+the job store's queued plus running count per application (on submit, on finish and on
+startup), because abandoned jobs never reach `JobFinished`.
+
+Label vocabularies: `status` is a job status; `outcome` is `ok`, `retryable` or
+`permanent`; `role` is `extractor` or `judge`; `route` is the matched mux pattern
+(`r.Pattern`, an empty one is exported as `none`); `endpoint`, `model`, `app`, `from` and
+`to` are configuration ids. Never pass request data as a label.
+
+Protection, config keys to add by the config owner:
+
+| Key | Behaviour |
+| --- | --- |
+| `metrics.token_env` | Name of an environment variable holding a bearer token. When set, `/metrics` on the main listener is wrapped in `metrics.RequireToken`. |
+| `metrics.listen` | A second listener (`host:port`) serving only `/metrics`; it should be loopback or an internal interface. Config check warns when it is not loopback and no token is set. |
+| neither set | `/metrics` is mounted on the main listener wrapped in `metrics.LoopbackOnly`, which checks the peer address and never a forwarded header. |
+
+With both set, the second listener also requires the token. The metrics route is not
+listed in the OpenAPI document and its requests are counted under the route `GET /metrics`.
 
 ## Acceptance criteria
 
