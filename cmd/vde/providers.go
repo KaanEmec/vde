@@ -11,8 +11,10 @@ import (
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/anthropic"
+	"github.com/kaanemec/vde/internal/provider/bedrock"
 	"github.com/kaanemec/vde/internal/provider/gemini"
 	"github.com/kaanemec/vde/internal/provider/openai"
+	"github.com/kaanemec/vde/internal/provider/vertex"
 )
 
 // newProvider returns the adapter for an endpoint's provider type. Fake endpoints have
@@ -25,6 +27,18 @@ func newProvider(e *config.Endpoint) (provider.Provider, error) {
 		return openai.New(e), nil
 	case "gemini":
 		return gemini.New(e), nil
+	case "bedrock":
+		c, err := bedrock.New(e)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	case "vertex":
+		c, err := vertex.New(e)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
 	case "fake":
 		return nil, errors.New("provider fake needs --provider-script")
 	}

@@ -23,9 +23,11 @@ var semverRe = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // v0.1.0 gives 0.1.0, anything that is not a semver gives 0.0.0-dev). The hash covers
 // what changes results: per role, the group's ordered endpoint-model pairs (provider
 // type, base URL host, model, accepted media types) and failover bounds; the attempt
-// limit, job timeout, judge re-ask count and feedback message cap; the HTML policy; the
-// framing texts and separators; the answer parser's leniency and the schema library's
-// version. It excludes secrets, listen addresses, data paths and application settings.
+// limit, job timeout, judge re-ask count and feedback message cap; the HTML and image
+// policies; the framing texts and separators; the answer parser's leniency and the schema
+// library's version. Configured extras are hashed too and leave the hash unchanged when
+// unset: per-attempt escalation steps, the second judge's group, a classifier judge's
+// feedback fallback (llm, with its group) and a classifier model's questions. It excludes secrets, listen addresses, data paths and application settings.
 //
 // For an application (v0.2) use ApplicationServiceVersion, so each application's jobs
 // carry the hash of the configuration that runs them.
@@ -59,9 +61,28 @@ type versionedConfig struct {
 	JudgeReparseTries    int            `json:"judge_reparse_tries"`
 	FeedbackMessageChars int            `json:"feedback_message_chars"`
 	HTMLPolicy           string         `json:"html_policy"`
+	ImagePolicy          string         `json:"image_policy"`
 	Framings             []string       `json:"framings"`
 	Parser               string         `json:"parser"`
 	Validator            string         `json:"validator"`
+	// Optional extras, absent from the JSON when unset so existing configurations keep
+	// their hash.
+	ExtractorEscalation []versionedStep `json:"extractor_escalation,omitempty"`
+	JudgeEscalation     []versionedStep `json:"judge_escalation,omitempty"`
+	SecondJudge         *versionedGroup `json:"second_judge,omitempty"`
+	FeedbackFallback    string          `json:"feedback_fallback,omitempty"` // only llm; whole_result is the default
+	FeedbackJudge       *versionedGroup `json:"feedback_judge,omitempty"`
+}
+
+type versionedStep struct {
+	FromAttempt int            `json:"from_attempt"`
+	Group       versionedGroup `json:"group"`
+}
+
+type versionedQuestion struct {
+	ID        string  `json:"id"`
+	Text      string  `json:"text"`
+	Threshold float64 `json:"threshold"`
 }
 
 type versionedGroup struct {
@@ -76,6 +97,8 @@ type versionedPair struct {
 	Host     string   `json:"host"`
 	Model    string   `json:"model"`
 	Accepts  []string `json:"accepts"`
+	// Questions of a classifier model, in order.
+	Questions []versionedQuestion `json:"questions,omitempty"`
 }
 
 // canonicalConfig is the JSON hashed by ServiceVersion. Struct fields marshal in a fixed
@@ -95,6 +118,7 @@ func canonicalConfig(cfg *config.Config) []byte {
 		JudgeReparseTries:    cfg.Limits.JudgeReparseTries,
 		FeedbackMessageChars: maxChars,
 		HTMLPolicy:           document.HTMLPolicy(cfg.Documents.HTML).String(),
+		ImagePolicy:          document.NewImagePolicy(cfg.Documents.Images).String(),
 		Framings: []string{
 			extractorSchema, judgeSchema, extractorSchemaless, judgeSchemaless,
 			sepInstructions, sepSchema, sepDocument, sepPrevious, sepFeedback, sepCandidate,
@@ -103,11 +127,29 @@ func canonicalConfig(cfg *config.Config) []byte {
 		Parser:    parserLeniency,
 		Validator: validatorModule + "@" + moduleVersion(validatorModule),
 	}
+	v.ExtractorEscalation = versionSteps(cfg, cfg.Roles.Extractor.Escalation)
+	v.JudgeEscalation = versionSteps(cfg, cfg.Roles.Judge.Escalation)
+	if name := cfg.Roles.SecondJudge.Group; name != "" {
+		g := versionGroup(cfg, name)
+		v.SecondJudge = &g
+	}
+	if cfg.Roles.Judge.FeedbackFallback == config.FeedbackLLM {
+		g := versionGroup(cfg, cfg.Roles.Judge.FeedbackGroup)
+		v.FeedbackFallback, v.FeedbackJudge = config.FeedbackLLM, &g
+	}
 	data, err := json.Marshal(v)
 	if err != nil {
 		panic("extract: service version: " + err.Error()) // strings, ints and bools always marshal
 	}
 	return data
+}
+
+func versionSteps(cfg *config.Config, steps []config.Escalation) []versionedStep {
+	var out []versionedStep
+	for _, s := range steps {
+		out = append(out, versionedStep{FromAttempt: s.FromAttempt, Group: versionGroup(cfg, s.Group)})
+	}
+	return out
 }
 
 func versionGroup(cfg *config.Config, name string) versionedGroup {
@@ -131,7 +173,11 @@ func versionGroup(cfg *config.Config, name string) versionedGroup {
 			if u, err := url.Parse(e.BaseURL); err == nil {
 				p.Host = u.Host
 			}
-			p.Accepts = slices.Sorted(slices.Values(e.Models[entry.Model].Accepts))
+			m := e.Models[entry.Model]
+			p.Accepts = slices.Sorted(slices.Values(m.Accepts))
+			for _, q := range m.Questions {
+				p.Questions = append(p.Questions, versionedQuestion{ID: q.ID, Text: q.Text, Threshold: q.Threshold})
+			}
 		}
 		out.Pairs = append(out.Pairs, p)
 	}

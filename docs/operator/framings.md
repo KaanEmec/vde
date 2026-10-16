@@ -68,6 +68,13 @@ An unparseable verdict, or a judge refusal, is asked for once more in the same a
 (`limits.judge_reparse_tries`) with the reminder; if that fails too, the job is `failed`
 with `judge_failed`. A judge failure never counts as acceptance.
 
+The same judge request, framing included, goes to the second judge
+(`roles.second_judge`) and, after a classifier rejection with
+`roles.judge.feedback_fallback: llm`, to the feedback group. A
+[classifier judge](../providers/classifier.md) gets the request's text parts but not the
+framing: its configured questions replace it, and the adapter renders its decisions as
+this verdict object, with one entry at pointer `""` on a reject.
+
 ## Answer parsing
 
 The service strips surrounding whitespace and prose and takes the first fenced code block
