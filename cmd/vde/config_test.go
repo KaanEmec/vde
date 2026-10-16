@@ -41,6 +41,27 @@ roles:
   judge: {group: main}
 `
 
+// tieredConfig escalates the extractor, adds a second judge and an LLM feedback group.
+const tieredConfig = `
+endpoints:
+  anthropic:
+    provider: anthropic
+    api_key_env: VDE_TEST_ANTHROPIC_KEY
+    models:
+      claude: {accepts: [application/pdf, image/png, image/jpeg, text/plain]}
+      opus: {accepts: [application/pdf, image/png, image/jpeg, text/plain]}
+groups:
+  main:
+    endpoints: [{endpoint: anthropic, model: claude}]
+  strong:
+    endpoints: [{endpoint: anthropic, model: opus}]
+roles:
+  extractor: {group: main, escalation: [{from_attempt: 2, group: strong}]}
+  judge: {group: main, feedback_fallback: llm, feedback_group: strong}
+  second_judge: {group: strong}
+rate: {shared: true}
+`
+
 const brokenConfig = `
 endpoints:
   anthropic:
@@ -95,6 +116,17 @@ func TestRunConfigCheck(t *testing.T) {
 				"application/pdf  native  anthropic/claude",
 				"image/webp       -       cannot read",
 				"service_version",
+			},
+		},
+		{
+			name:     "escalation, second judge and feedback fallback",
+			args:     []string{"config", "check", "--config", writeConfig(t, tieredConfig)},
+			wantCode: exitOK,
+			wantStdout: []string{
+				"escalation: from attempt 2, group strong",
+				"second judge: group strong",
+				"classifier feedback fallback: llm, group strong",
+				"worker size 4, poll_interval 500ms, lease 2m0s; rate limits shared (job store)",
 			},
 		},
 		{

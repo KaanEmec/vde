@@ -27,13 +27,15 @@ var allowed = []string{
 	"job_id", "app_id", "application_id", "request_id", "worker_id",
 	// Job state.
 	"status", "attempts", "error_code", "outcome", "kind", "role", "count",
+	// Provider token usage: counts only.
+	"input_tokens", "output_tokens",
 	// Provider routing: ids from configuration only.
-	"endpoint", "model",
+	"endpoint", "model", "group",
 	// Request and document metadata, never content.
 	"method", "route", "media_type", "bytes", "pages", "duration_ms",
 	// Process.
 	"service_version", "version", "component", "listen", "tls", "trusted_proxy",
-	"drain_timeout",
+	"drain_timeout", "instance", "process_role",
 	// Storage drivers and the bucket's name and region, never a DSN.
 	"storage", "blobs", "bucket", "region",
 	// Diagnostics. "error" and "reason" carry messages the code controls (provider

@@ -103,8 +103,11 @@ func TestServeEndToEnd(t *testing.T) {
 	metricsText := call(t, http.MethodGet, base+"/metrics", "", nil, "").body
 	for _, want := range []string{
 		`vde_jobs_total{app="app-a",status="accepted"} 1`,
-		`vde_provider_calls_total{endpoint="scripted",model="m",outcome="ok",role="extractor"} 1`,
-		`vde_provider_calls_total{endpoint="scripted",model="m",outcome="ok",role="judge"} 1`,
+		`vde_provider_calls_total{endpoint="scripted",group="main",model="m",outcome="ok",role="extractor"} 1`,
+		`vde_provider_calls_total{endpoint="scripted",group="main",model="m",outcome="ok",role="judge"} 1`,
+		`vde_provider_tokens_total{endpoint="scripted",group="main",kind="input",model="m",role="extractor"} 100`,
+		`vde_provider_tokens_total{endpoint="scripted",group="main",kind="output",model="m",role="judge"} 20`,
+		`vde_endpoint_up{endpoint="scripted",group="main",instance="`,
 		`vde_http_requests_total{route="GET /v1/jobs/{id}",status="404"}`,
 		`vde_quota_remaining{app="app-a"} 999`,
 	} {

@@ -27,7 +27,18 @@ const (
 	DefaultAuditRetention     = 365 * 24 * time.Hour
 
 	orphanInterval = 24 * time.Hour
+	// rateWindowsKept: shared rate windows are one minute long; the current and the
+	// previous one are kept.
+	rateWindowsKept = 2 * time.Minute
 )
+
+// Locker serializes sweeps across processes sharing a database: *job.Postgres takes a
+// PostgreSQL advisory lock, *job.SQLite grants it at once (one process).
+type Locker interface {
+	// TryLock returns release and ok true when this process holds key, ok false at once
+	// when another one does.
+	TryLock(ctx context.Context, key int64) (release func(), ok bool, err error)
+}
 
 // Observer receives the sweeper's metric (epic 07).
 type Observer interface {
@@ -56,6 +67,10 @@ type Options struct {
 	Logger             *slog.Logger
 	Observer           Observer
 	Audit              *audit.Recorder // nil writes no audit events
+	// Lock, when set, is taken (without waiting) around each sweep of Run, so that of
+	// several worker processes one sweeps at a time; a sweep whose lock another process
+	// holds is skipped until the next tick. Once is never locked.
+	Lock Locker
 	// DeleteInputsAtTerminal lists the applications whose retention: default jobs lose
 	// their document, pages, instructions and schema at the terminal state: those with
 	// retention.delete_blobs_at_terminal or retention.force_none. The sweeper applies it to
@@ -70,6 +85,7 @@ type Result struct {
 	Removed     int // job rows removed, past both expires_at and the idempotency window
 	Stale       int // running jobs finished as failed/timeout
 	QuotaRows   int
+	RateRows    int // shared rate windows (rate.shared) older than two minutes
 	Tokens      int
 	AuditEvents int
 	Orphans     int // blob directories without a job row
@@ -133,14 +149,34 @@ func (s *Sweeper) Run(ctx context.Context) {
 	ticker := time.NewTicker(s.opts.Interval)
 	defer ticker.Stop()
 	for {
-		if _, err := s.Once(ctx, s.opts.Clock()); err != nil && ctx.Err() == nil {
-			s.log.Error("sweep failed", "error", err)
-		}
+		s.lockedOnce(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
+	}
+}
+
+// lockedOnce runs Once under Options.Lock, or skips the sweep when another process
+// holds the lock.
+func (s *Sweeper) lockedOnce(ctx context.Context) {
+	if s.opts.Lock != nil {
+		release, ok, err := s.opts.Lock.TryLock(ctx, job.SweepLock)
+		switch {
+		case err != nil:
+			if ctx.Err() == nil {
+				s.log.Error("sweep lock failed", "error", err)
+			}
+			return
+		case !ok:
+			s.log.Debug("sweep skipped: another process holds the sweep lock")
+			return
+		}
+		defer release()
+	}
+	if _, err := s.Once(ctx, s.opts.Clock()); err != nil && ctx.Err() == nil {
+		s.log.Error("sweep failed", "error", err)
 	}
 }
 
@@ -177,6 +213,10 @@ func (s *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	r.Expired += lateExpired
 	step("stale running jobs", &r.Stale, func() (int, error) { return s.stale(ctx, now) })
 	step("quota rows", &r.QuotaRows, func() (int, error) { return s.quota(ctx, now) })
+	step("rate windows", &r.RateRows, func() (int, error) {
+		n, err := s.store.DeleteRateBefore(ctx, now.Add(-rateWindowsKept))
+		return int(n), err
+	})
 	step("tokens", &r.Tokens, func() (int, error) {
 		n, err := s.store.DeleteTokensBefore(ctx, now.Add(-s.opts.TokenRetention))
 		return int(n), err

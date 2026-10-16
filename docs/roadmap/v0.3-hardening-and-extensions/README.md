@@ -29,7 +29,7 @@ corpus and the service's own samples.
 | 04 | [Image conversion](04-image-conversion/README.md) | v0.2 | done |
 | 05 | [Delivery options](05-delivery-options/README.md) | v0.2 | done |
 | 06 | [Evaluation harness](06-evaluation-harness/README.md) | v0.2 | done |
-| 07 | [Horizontal scaling](07-horizontal-scaling/README.md) | 01 | in progress |
+| 07 | [Horizontal scaling](07-horizontal-scaling/README.md) | 01 | done |
 
 Moved out of this version after the owner's decisions on 2026-10-16: Gemini (v0.1),
 email documents (v0.1), admin API (v0.2). Dropped: server-side PDF rendering (ADR 0006).

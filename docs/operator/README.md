@@ -36,7 +36,7 @@ service), [examples](../../examples/README.md) and the [changelog](../../CHANGEL
 
 | Command | Purpose |
 | --- | --- |
-| `vde serve [--config path]` | Run the service: API, worker pool, expiry sweeper, `/healthz`, `/metrics`. |
+| `vde serve [--config path] [--role all\|api\|worker]` | Run the service: API, worker pool, expiry sweeper, `/healthz`, `/metrics`; `--role` splits API and workers into separate processes on PostgreSQL and S3 ([operations](operations.md#process-roles)). |
 | `vde config check [--config path] [--strict] [--probe]` | Validate a configuration without network calls and print a summary. |
 | `vde token create\|list\|revoke` | Manage access tokens. See [applications and tokens](applications-and-tokens.md). |
 | `vde app list` | List the applications in the database. |

@@ -46,3 +46,6 @@ Deviations:
   inherited, so the `instructions` key does not exist.
 - Metrics: second judge calls carry the judge framing, so they are counted under the
   `judge` role label; a separate label would need a different framing and was skipped.
+  Resolved in 07-01: provider-call metrics gain a `group` label, which tells the second
+  judge's calls apart; `vde config check` prints the second judge, escalation steps and the
+  feedback fallback.

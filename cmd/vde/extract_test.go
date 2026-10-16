@@ -210,6 +210,8 @@ func runScenarioDirect(t *testing.T, path string, sc scenario) observedRun {
 		extractorCalls: map[string]int{},
 	}
 	calls := f.Calls()
+	// The command's usage counts every call, failed ones (no tokens) included.
+	run.out.Usage = extract.Usage{InputTokens: res.Usage.InputTokens, OutputTokens: res.Usage.OutputTokens, Calls: len(calls)}
 	for _, c := range calls {
 		if roleOf(c.Request.System) == roleJudge {
 			run.judgeCalls++
@@ -375,7 +377,7 @@ func compareRuns(t *testing.T, direct, cli jobOutput) {
 	if direct.Status != cli.Status || direct.Attempts != cli.Attempts ||
 		!reflect.DeepEqual(direct.Error, cli.Error) || !reflect.DeepEqual(direct.Feedback, cli.Feedback) ||
 		!equalConfidence(direct.JudgeConfidence, cli.JudgeConfidence) || direct.ServiceVersion != cli.ServiceVersion ||
-		!equalJSON(t, direct.Result, cli.Result) {
+		!equalJSON(t, direct.Result, cli.Result) || direct.Usage != cli.Usage {
 		t.Errorf("extract.Run and vde extract differ:\n%+v\n%+v", direct, cli)
 	}
 }
@@ -461,10 +463,15 @@ func TestRunExtract(t *testing.T) {
 		wantStderr []string
 	}{
 		{
-			name:       "accepted",
-			args:       common(txt, "--provider-script", script),
-			wantCode:   exitOK,
-			wantStdout: []string{`"status": "accepted"`, `"attempts": 1`, `"service_version": "vde-0.0.0-dev+`, `"finished_at": "`, `"judge_confidence": null`, `"error": null`},
+			name:     "accepted",
+			args:     common(txt, "--provider-script", script),
+			wantCode: exitOK,
+			wantStdout: []string{`"status": "accepted"`, `"attempts": 1`, `"service_version": "vde-0.0.0-dev+`, `"finished_at": "`, `"judge_confidence": null`, `"error": null`,
+				`"usage": {
+    "input_tokens": 200,
+    "output_tokens": 40,
+    "calls": 2
+  }`},
 			wantStderr: []string{`service_version=vde-0.0.0-dev+`},
 		},
 		{

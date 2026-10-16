@@ -108,7 +108,14 @@ type rig struct {
 
 func newRig(t *testing.T, ext, judge fake.Script, opts worker.Options) *rig {
 	t.Helper()
-	cfg, err := config.Parse([]byte(testConfig), func(string) string { return "" })
+	return newRigConfig(t, testConfig, ext, judge, opts)
+}
+
+// newRigConfig is newRig on another configuration with the endpoints ext and rev; every
+// other endpoint answers with the ext fake.
+func newRigConfig(t *testing.T, yaml string, ext, judge fake.Script, opts worker.Options) *rig {
+	t.Helper()
+	cfg, err := config.Parse([]byte(yaml), func(string) string { return "" })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +145,13 @@ func newRig(t *testing.T, ext, judge fake.Script, opts worker.Options) *rig {
 	}
 	r := &rig{store: store, blobs: blobs, cfg: cfg, ext: fake.New(ext), judge: fake.New(judge),
 		obs: &recorder{started: make(chan string, 16)}, logs: &syncBuffer{}}
-	providers := map[*config.Endpoint]provider.Provider{cfg.Endpoints["ext"]: r.ext, cfg.Endpoints["rev"]: r.judge}
-	roles, err := extract.NewRoles(cfg, func(e *config.Endpoint) (provider.Provider, error) { return providers[e], nil })
+	providers := map[*config.Endpoint]provider.Provider{cfg.Endpoints["rev"]: r.judge}
+	roles, err := extract.NewRoles(cfg, func(e *config.Endpoint) (provider.Provider, error) {
+		if p, ok := providers[e]; ok {
+			return p, nil
+		}
+		return r.ext, nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +349,9 @@ func TestJobFinishedIsAudited(t *testing.T) {
 	}
 	e := events[0]
 	d, err := audit.Decode(e)
-	want := audit.JobFinished{Status: "accepted", Attempts: 1, ServiceVersion: "vde-test"}
+	// The fake reports 100 input and 20 output tokens per answer: one extractor and one
+	// judge call.
+	want := audit.JobFinished{Status: "accepted", Attempts: 1, ServiceVersion: "vde-test", InputTokens: 200, OutputTokens: 40}
 	if e.Kind != "job.finished" || e.Actor != audit.ActorWorker || e.ApplicationID != "app" || err != nil || d != want {
 		t.Errorf("event = %+v, details %+v (%v), want %+v", e, d, err, want)
 	}
@@ -371,6 +385,37 @@ func TestPagesRepresentation(t *testing.T) {
 		t.Errorf("extractor saw %d page images, want 2: %+v", images, calls[0].Parts)
 	}
 	r.assertBlobs(t, j.ID, false)
+}
+
+// TestEscalationGroupCapabilities: the worker selects the representation as submit does,
+// from what every group of a role reads (extract.RoleCapabilities). The extractor's own
+// group reads PDFs natively but its escalation group only page images, so the job is
+// submitted as pages and the worker must agree.
+func TestEscalationGroupCapabilities(t *testing.T) {
+	ext, judge := accepting()
+	r := newRigConfig(t, `
+endpoints:
+  ext: {provider: fake, models: {ext-model: {accepts: [text/plain, application/pdf, image/png]}}}
+  big: {provider: fake, models: {big-model: {accepts: [text/plain, image/png]}}}
+  rev: {provider: fake, models: {judge-model: {accepts: [text/plain, application/pdf, image/png]}}}
+groups:
+  extraction: {endpoints: [{endpoint: ext, model: ext-model}], failover: {max_tries: 1, max_total_time: 1m}}
+  strong: {endpoints: [{endpoint: big, model: big-model}], failover: {max_tries: 1, max_total_time: 1m}}
+  review: {endpoints: [{endpoint: rev, model: judge-model}], failover: {max_tries: 1, max_total_time: 1m}}
+roles:
+  extractor: {group: extraction, escalation: [{from_attempt: 2, group: strong}]}
+  judge: {group: review}
+limits: {max_attempts: 3, job_timeout: 5m}
+applications:
+  - {id: app, name: App, retention: {default: 24h}}
+`, ext, judge, worker.Options{})
+	j := r.submit(t, "app", func(j *job.Job) {
+		j.MediaType, j.Representation, j.PageCount = "application/pdf", "pages", 2
+	})
+	r.start(t)
+	if got := r.waitTerminal(t, j.ID); got.Status != job.StatusAccepted {
+		t.Fatalf("status %s, error %s; want accepted on the pages representation", got.Status, got.Error)
+	}
 }
 
 func TestRepresentationChangedFails(t *testing.T) {
@@ -417,7 +462,8 @@ func (r *rig) crash(t *testing.T, j job.Job, p job.Progress) {
 func TestResumeAfterCrash(t *testing.T) {
 	r := newRig(t, fake.Script{{Answer: candidate, Repeat: true}}, fake.Script{{Answer: reject, Repeat: true}}, worker.Options{})
 	j := r.submit(t, "app", func(j *job.Job) { j.CreatedAt = time.Now().Add(-2 * time.Minute) })
-	r.crash(t, j, job.Progress{Attempts: 2, Result: json.RawMessage(`{"name":"earlier"}`), Feedback: json.RawMessage(`[]`)})
+	r.crash(t, j, job.Progress{Attempts: 2, Result: json.RawMessage(`{"name":"earlier"}`), Feedback: json.RawMessage(`[]`),
+		InputTokens: 1000, OutputTokens: 300})
 	r.start(t)
 
 	got := r.waitTerminal(t, j.ID)
@@ -426,6 +472,10 @@ func TestResumeAfterCrash(t *testing.T) {
 	}
 	if n := len(r.ext.Calls()); n != 1 {
 		t.Errorf("%d extractor calls after resuming at attempt 2 of 3, want 1", n)
+	}
+	// The usage persisted by the crashed run plus this run's two answered calls.
+	if got.InputTokens != 1000+2*fake.InputTokens || got.OutputTokens != 300+2*fake.OutputTokens {
+		t.Errorf("usage = %d/%d, want the crashed run's 1000/300 plus this run's", got.InputTokens, got.OutputTokens)
 	}
 }
 

@@ -38,8 +38,16 @@ func TestSeries(t *testing.T) {
 	m.JobFinished("billing", job.StatusFailed, 3, 90*time.Second)
 	m.ObserveHTTP("POST /v1/jobs", 202)
 	m.ObserveHTTP("", 404)
-	m.ObserveProviderCall("extractor", "primary", "model-a", "ok", 1200*time.Millisecond)
-	m.ObserveProviderCall("judge", "review", "model-b", "retryable", 300*time.Millisecond)
+	m.ObserveProviderCall(metrics.ProviderCall{Role: "extractor", Group: "main", Endpoint: "primary", Model: "model-a",
+		Outcome: "ok", Duration: 1200 * time.Millisecond, InputTokens: 1500, OutputTokens: 200})
+	m.ObserveProviderCall(metrics.ProviderCall{Role: "extractor", Group: "main", Endpoint: "primary", Model: "model-a",
+		Outcome: "ok", Duration: time.Second, InputTokens: 500, OutputTokens: 100})
+	m.ObserveProviderCall(metrics.ProviderCall{Role: "judge", Group: "second", Endpoint: "review", Model: "model-b",
+		Outcome: "retryable", Duration: 300 * time.Millisecond})
+	m.WatchEndpoints("host-1", func() []metrics.Endpoint {
+		return []metrics.Endpoint{{Group: "main", Endpoint: "primary", Model: "model-a", Up: true},
+			{Group: "second", Endpoint: "review", Model: "model-b"}}
+	})
 	m.ObserveFailover("extractor", "primary", "fallback")
 	m.SetQuotaRemaining("billing", 41)
 	m.SetJobsInProgress("billing", 3)
@@ -55,9 +63,13 @@ func TestSeries(t *testing.T) {
 		`vde_job_attempts_bucket{le="2"} 2`,
 		`vde_job_duration_seconds_count{status="accepted"} 2`,
 		`vde_job_duration_seconds_count{status="failed"} 1`,
-		`vde_provider_calls_total{endpoint="primary",model="model-a",outcome="ok",role="extractor"} 1`,
-		`vde_provider_calls_total{endpoint="review",model="model-b",outcome="retryable",role="judge"} 1`,
-		`vde_provider_latency_seconds_count{endpoint="primary",role="extractor"} 1`,
+		`vde_provider_calls_total{endpoint="primary",group="main",model="model-a",outcome="ok",role="extractor"} 2`,
+		`vde_provider_calls_total{endpoint="review",group="second",model="model-b",outcome="retryable",role="judge"} 1`,
+		`vde_provider_latency_seconds_count{endpoint="primary",group="main",role="extractor"} 2`,
+		`vde_provider_tokens_total{endpoint="primary",group="main",kind="input",model="model-a",role="extractor"} 2000`,
+		`vde_provider_tokens_total{endpoint="primary",group="main",kind="output",model="model-a",role="extractor"} 300`,
+		`vde_endpoint_up{endpoint="primary",group="main",instance="host-1",model="model-a"} 1`,
+		`vde_endpoint_up{endpoint="review",group="second",instance="host-1",model="model-b"} 0`,
 		`vde_failovers_total{from="primary",role="extractor",to="fallback"} 1`,
 		`vde_quota_remaining{app="billing"} 41`,
 		`vde_jobs_in_progress{app="billing"} 3`,

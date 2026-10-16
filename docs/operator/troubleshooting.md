@@ -103,8 +103,10 @@ Jobs stay `queued`:
 4. The application is at `rate.max_in_progress`: the worker skips an application while that
    many of its jobs are running. The cap is read at start.
 5. Look for `worker: lease failed` errors in the logs (database problem).
-6. After a crash a running job is picked up again once its one-minute lease expires; the
-   sweeper fails jobs past their time limit with `timeout`.
+6. After a crash a running job is picked up again once its lease expires (`worker.lease`,
+   2 minutes); the sweeper fails jobs past their time limit with `timeout`.
+7. With `vde serve --role api`, jobs run only in `--role worker` processes: `/healthz` of the
+   API shows `queue_age_seconds` growing when none is running or none reaches the database.
 
 `vde_jobs_in_progress` and `vde_jobs_total` show whether anything moves.
 

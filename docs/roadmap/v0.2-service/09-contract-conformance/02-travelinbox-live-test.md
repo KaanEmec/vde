@@ -49,6 +49,16 @@ whatever the number"). Decision 11 (corpus and stub are co-owned and imported).
   "token usage and cost" could not be recorded. Suggested fix (not done here): a counter
   `vde_provider_tokens_total{endpoint,model,role,direction}`.
 
+  **Resolved (v0.3, 2026-10-16).** `/metrics` has
+  `vde_provider_tokens_total{role,group,endpoint,model,kind}` (`kind` is `input` or
+  `output`), fed from the router's per-call hook with the counts of the provider response;
+  the `jobs` table has `input_tokens` and `output_tokens` (migration `0006_usage`, both
+  dialects), accumulated across re-leases through `RecordAttempt` and `Finish` from the
+  loop's usage (`extract.Outcome.Usage`, `extract.Progress.Usage`); the admin API's job
+  metadata, the `job.finished` audit details and the worker's `job finished` log line carry
+  them; `vde extract` prints `usage: {input_tokens, output_tokens, calls}`. Cost stays an
+  operator calculation from the token counts.
+
 ## Out of scope
 
 Improving the number (TravelInbox's prompts; and v0.3 evaluation harness for the

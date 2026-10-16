@@ -455,8 +455,10 @@ func selectRepresentation(cfg *config.Config, app job.Application, doc *document
 	if err != nil {
 		return document.Representation{}, err
 	}
-	return document.SelectWith(doc, cfg.Capabilities(cfg.Roles.Extractor.Group),
-		cfg.Capabilities(cfg.Roles.Judge.Group), policy, document.NewImagePolicy(cfg.Documents.Images))
+	// Every group that may serve a role (escalation, second judge, feedback group) must
+	// read the representation.
+	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
+	return document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images))
 }
 
 // refuseDocument answers a refused document (*document.Error) with its contract code
@@ -511,7 +513,7 @@ func (s *server) replay(w http.ResponseWriter, r *http.Request, app job.Applicat
 func (s *server) admit(w http.ResponseWriter, r *http.Request, app job.Application) bool {
 	ctx := r.Context()
 	now := s.now()
-	if wait, ok := s.limits.take(app.ID, bucketSubmits, app.SubmitsPerMinute, now); !ok {
+	if wait, ok := s.takeRate(ctx, app.ID, bucketSubmits, app.SubmitsPerMinute, now); !ok {
 		writeError(w, r, newError(codeRateLimited, msgSubmitRateLimited).withRetryAfter(wait))
 		return false
 	}

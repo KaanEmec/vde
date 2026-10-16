@@ -25,6 +25,7 @@ type Metrics struct {
 	jobDuration  *prometheus.HistogramVec
 	providerCall *prometheus.CounterVec
 	providerLat  *prometheus.HistogramVec
+	tokens       *prometheus.CounterVec
 	failovers    *prometheus.CounterVec
 	quota        *prometheus.GaugeVec
 	inProgress   *prometheus.GaugeVec
@@ -59,12 +60,15 @@ func New(opts ...Option) *Metrics {
 		Buckets: []float64{0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600},
 	}, []string{"status"})
 	m.providerCall = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "vde_provider_calls_total", Help: "Provider calls by role, endpoint, model and outcome.",
-	}, []string{"role", "endpoint", "model", "outcome"})
+		Name: "vde_provider_calls_total", Help: "Provider calls by role, group, endpoint, model and outcome.",
+	}, []string{"role", "group", "endpoint", "model", "outcome"})
 	m.providerLat = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "vde_provider_latency_seconds", Help: "Seconds per provider call, by role and endpoint.",
+		Name: "vde_provider_latency_seconds", Help: "Seconds per provider call, by role, group and endpoint.",
 		Buckets: []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 40, 80, 160},
-	}, []string{"role", "endpoint"})
+	}, []string{"role", "group", "endpoint"})
+	m.tokens = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "vde_provider_tokens_total", Help: "Tokens the providers reported, by role, group, endpoint, model and kind (input or output).",
+	}, []string{"role", "group", "endpoint", "model", "kind"})
 	m.failovers = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vde_failovers_total", Help: "Moves from one endpoint of a role's group to the next.",
 	}, []string{"role", "from", "to"})
@@ -80,7 +84,7 @@ func New(opts ...Option) *Metrics {
 	m.swept = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vde_swept_jobs_total", Help: "Jobs deleted by the expiry sweeper.",
 	})
-	m.reg.MustRegister(m.jobs, m.attempts, m.jobDuration, m.providerCall, m.providerLat,
+	m.reg.MustRegister(m.jobs, m.attempts, m.jobDuration, m.providerCall, m.providerLat, m.tokens,
 		m.failovers, m.quota, m.inProgress, m.httpReqs, m.swept)
 	for _, o := range opts {
 		o(m)
@@ -111,11 +115,63 @@ func (m *Metrics) ObserveHTTP(route string, status int) {
 	m.httpReqs.WithLabelValues(label(route), strconv.Itoa(status)).Inc()
 }
 
-// ObserveProviderCall records one provider call. outcome is a fixed word such as ok,
-// retryable or permanent; endpoint and model are configuration ids.
-func (m *Metrics) ObserveProviderCall(role, endpoint, model, outcome string, d time.Duration) {
-	m.providerCall.WithLabelValues(label(role), label(endpoint), label(model), label(outcome)).Inc()
-	m.providerLat.WithLabelValues(label(role), label(endpoint)).Observe(d.Seconds())
+// ProviderCall is one provider call for ObserveProviderCall. Role is extractor or judge,
+// Outcome a fixed word (ok, retryable or permanent); Group, Endpoint and Model are
+// configuration ids. The token counts are the provider's, 0 on a failure.
+type ProviderCall struct {
+	Role, Group, Endpoint, Model, Outcome string
+	Duration                              time.Duration
+	InputTokens, OutputTokens             int
+}
+
+// ObserveProviderCall records one provider call: its count, latency and tokens.
+func (m *Metrics) ObserveProviderCall(c ProviderCall) {
+	role, group, endpoint, model := label(c.Role), label(c.Group), label(c.Endpoint), label(c.Model)
+	m.providerCall.WithLabelValues(role, group, endpoint, model, label(c.Outcome)).Inc()
+	m.providerLat.WithLabelValues(role, group, endpoint).Observe(c.Duration.Seconds())
+	if c.InputTokens > 0 {
+		m.tokens.WithLabelValues(role, group, endpoint, model, "input").Add(float64(c.InputTokens))
+	}
+	if c.OutputTokens > 0 {
+		m.tokens.WithLabelValues(role, group, endpoint, model, "output").Add(float64(c.OutputTokens))
+	}
+}
+
+// Endpoint is one endpoint-model pair of a group as this process sees it, for
+// WatchEndpoints.
+type Endpoint struct {
+	Group, Endpoint, Model string
+	Up                     bool // not marked down after retryable failures
+}
+
+// WatchEndpoints exposes vde_endpoint_up{instance,group,endpoint,model}, read from
+// states at every scrape. Endpoint health is per process (each replica marks its own
+// pairs down and heals on its own), so instance names the process: several replicas
+// behind one scrape address stay distinguishable. Call it once.
+func (m *Metrics) WatchEndpoints(instance string, states func() []Endpoint) {
+	m.reg.MustRegister(endpointCollector{instance: instance, states: states})
+}
+
+var endpointUpDesc = prometheus.NewDesc("vde_endpoint_up",
+	"1 when this process has not marked the endpoint-model pair of a group down, else 0.",
+	[]string{"instance", "group", "endpoint", "model"}, nil)
+
+type endpointCollector struct {
+	instance string
+	states   func() []Endpoint
+}
+
+func (c endpointCollector) Describe(ch chan<- *prometheus.Desc) { ch <- endpointUpDesc }
+
+func (c endpointCollector) Collect(ch chan<- prometheus.Metric) {
+	for _, e := range c.states() {
+		up := 0.0
+		if e.Up {
+			up = 1
+		}
+		ch <- prometheus.MustNewConstMetric(endpointUpDesc, prometheus.GaugeValue, up,
+			label(c.instance), label(e.Group), label(e.Endpoint), label(e.Model))
+	}
 }
 
 // ObserveFailover counts a move from endpoint from to endpoint to in a role's group.

@@ -28,10 +28,11 @@ type Config struct {
 	Auth         Auth                 `yaml:"auth"`
 	Logging      Logging              `yaml:"logging"`
 	Debug        Debug                `yaml:"debug"`
-	// Metrics, Admin, Worker, Retention and Audit configure the serve process (service.go).
+	// Metrics, Admin, Worker, Rate, Retention and Audit configure the serve process (service.go).
 	Metrics   Metrics          `yaml:"metrics"`
 	Admin     Admin            `yaml:"admin"`
 	Worker    Worker           `yaml:"worker"`
+	Rate      ServiceRate      `yaml:"rate"`
 	Retention ServiceRetention `yaml:"retention"`
 	Audit     Audit            `yaml:"audit"`
 	// Storage and Blobs choose the job store and blob store drivers (storage.go).
@@ -342,7 +343,7 @@ func defaults() *Config {
 		Auth:      Auth{MaxTokenTTL: defaultMaxTokenTTL},
 		Logging:   Logging{Level: "info", Format: "json"},
 		Admin:     Admin{Listen: defaultAdminListen},
-		Worker:    Worker{Size: defaultWorkerSize, PollInterval: defaultPollInterval},
+		Worker:    Worker{Size: defaultWorkerSize, PollInterval: defaultPollInterval, Lease: defaultLease},
 		Retention: ServiceRetention{SweepInterval: defaultSweepInterval},
 		Audit:     Audit{Retention: defaultAuditRetention},
 		Storage:   defaultStorage(),

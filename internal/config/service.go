@@ -33,8 +33,25 @@ type Admin struct {
 
 // Worker sizes the job worker pool of serve.
 type Worker struct {
-	Size         int           `yaml:"size"`          // concurrent jobs
-	PollInterval time.Duration `yaml:"poll_interval"` // sleep between empty leases
+	Size int `yaml:"size"` // concurrent jobs
+	// PollInterval is the sleep between empty leases. Across processes (vde serve --role
+	// api and worker replicas) it is the wake-up: an API process cannot wake another
+	// process's workers, so a job waits at most this long before a worker looks.
+	PollInterval time.Duration `yaml:"poll_interval"`
+	// Lease is how long a worker's lease on a running job lasts without renewal. The
+	// worker renews it every Lease/3 and at each attempt; a job whose worker died is
+	// leased again by any process once it passed.
+	Lease time.Duration `yaml:"lease"`
+}
+
+// ServiceRate is the process-wide rate limiting choice; the limits themselves are
+// applications[].rate.
+type ServiceRate struct {
+	// Shared counts requests_per_minute and submits_per_minute in fixed one-minute
+	// windows in the job store, so that every replica counts against one limit (one
+	// UPSERT per request). False (the default) keeps per-process token buckets, which
+	// admit up to the limit per replica.
+	Shared bool `yaml:"shared"`
 }
 
 // ServiceRetention holds the process-wide retention settings; per-application
@@ -55,10 +72,15 @@ const (
 	minAuditRetention     = 24 * time.Hour
 	defaultWorkerSize     = 4
 	defaultPollInterval   = 500 * time.Millisecond
-	defaultSweepInterval  = time.Minute
-	maxWorkerSize         = 256
-	minPollInterval       = 10 * time.Millisecond
-	minSweepInterval      = time.Second
+	// defaultLease: renewed every 40 s, a lease survives two missed renewals (a database
+	// failover, a long pause) before another process may take the job, and a job whose
+	// worker died resumes within 2 minutes, well inside the 5-minute job_timeout.
+	defaultLease         = 2 * time.Minute
+	minLease             = 3 * time.Second
+	defaultSweepInterval = time.Minute
+	maxWorkerSize        = 256
+	minPollInterval      = 10 * time.Millisecond
+	minSweepInterval     = time.Second
 )
 
 // service checks the metrics, admin, worker, retention and audit keys. Only names are printed, never
@@ -101,6 +123,13 @@ func (v *validator) service(c *Config) {
 	}
 	if c.Worker.PollInterval < minPollInterval {
 		v.errorf("worker.poll_interval", "must be at least %s", minPollInterval)
+	}
+	if c.Worker.Lease < minLease {
+		v.errorf("worker.lease", "must be at least %s", minLease)
+	}
+	if c.Rate.Shared && c.Storage.Driver != StoragePostgres {
+		v.warnf("rate.shared", "with storage.driver %s only one process uses the database: the shared "+
+			"counters work but per-process limits are already exact", c.Storage.Driver)
 	}
 	if c.Retention.SweepInterval < minSweepInterval {
 		v.errorf("retention.sweep_interval", "must be at least %s", minSweepInterval)

@@ -24,7 +24,7 @@ import (
 const (
 	DefaultSize         = 4
 	DefaultPollInterval = 500 * time.Millisecond
-	DefaultLease        = time.Minute
+	DefaultLease        = 2 * time.Minute // config worker.lease; the reasoning is there
 	defaultJobTimeout   = 5 * time.Minute // contract §6
 	finishTimeout       = 10 * time.Second
 )
@@ -53,8 +53,11 @@ type Options struct {
 	PollInterval time.Duration // sleep between empty leases; DefaultPollInterval
 	// Lease is how long a lease lasts without renewal; a running job renews it every
 	// Lease/3, and a crashed worker's job is leased again once it passed.
-	Lease    time.Duration
-	WorkerID string // prefix of the worker ids written to leases; "vde-<pid>"
+	Lease time.Duration
+	// WorkerID is the prefix of the worker ids written to leases; "vde-<pid>". Processes
+	// sharing a database need distinct prefixes (vde serve uses its instance id: in a
+	// container every process may be pid 1).
+	WorkerID string
 	Observer Observer
 	Logger   *slog.Logger
 	// Audit receives job.finished events; nil records none.
@@ -109,12 +112,15 @@ func New(store job.Store, blobs blob.Store, cfg *config.Config, roles extract.Ro
 		opts.Logger = slog.Default()
 	}
 	opts.Audit = opts.Audit.WithActor(audit.ActorWorker)
+	// Every group that may serve a role (escalation, second judge, feedback group) must
+	// read the representation, as at submit.
+	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
 	p := &Pool{
 		store: store, blobs: blobs, cfg: cfg, roles: roles, opts: opts,
 		apps:          map[string]config.Application{},
 		maxInProgress: map[string]int{},
-		extractorCaps: cfg.Capabilities(cfg.Roles.Extractor.Group),
-		judgeCaps:     cfg.Capabilities(cfg.Roles.Judge.Group),
+		extractorCaps: extractorCaps,
+		judgeCaps:     judgeCaps,
 		jobTimeout:    cfg.Limits.JobTimeout,
 		wake:          make(chan struct{}, opts.Size),
 		stopping:      make(chan struct{}),
@@ -240,9 +246,11 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 		log.Error("worker: finish failed", "error", err)
 		return
 	}
-	log.Info("worker: job finished", "status", string(out.Status), "attempts", out.Attempts, "error_code", errorCode(out))
+	log.Info("worker: job finished", "status", string(out.Status), "attempts", out.Attempts, "error_code", errorCode(out),
+		"input_tokens", out.InputTokens, "output_tokens", out.OutputTokens)
 	p.opts.Observer.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
 	j.Status, j.Attempts, j.Error, j.FinishedAt = out.Status, out.Attempts, out.Error, finishedAt
+	j.InputTokens, j.OutputTokens = out.InputTokens, out.OutputTokens
 	p.opts.Audit.JobFinished(fctx, j)
 	p.applyRetention(fctx, log, app, j)
 	if p.opts.OnFinish != nil {
@@ -283,7 +291,7 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, a
 		}
 	}
 	in.OnAttempt = func(pr extract.Progress) {
-		loseLease(p.store.RecordAttempt(jobCtx, j.ID, workerID, progress(pr), time.Now().Add(p.opts.Lease)))
+		loseLease(p.store.RecordAttempt(jobCtx, j.ID, workerID, progress(j, pr), time.Now().Add(p.opts.Lease)))
 	}
 	var heartbeat sync.WaitGroup
 	heartbeat.Go(func() {
@@ -309,7 +317,7 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, a
 		log.Info("worker: stopped during the job, left for the next lease")
 		return job.Outcome{}, false
 	}
-	return merge(o), true
+	return merge(j, o), true
 }
 
 // input builds the loop input from the row and its blobs. reason names the failing
@@ -434,7 +442,8 @@ func feedbackJSON(f []extract.Feedback) json.RawMessage {
 // fromRow is a terminal state written without running the loop, keeping the persisted
 // candidate and feedback.
 func fromRow(j job.Job, status job.Status, code string) job.Outcome {
-	o := job.Outcome{Status: status, Attempts: j.Attempts, Result: j.Result, Feedback: j.Feedback}
+	o := job.Outcome{Status: status, Attempts: j.Attempts, Result: j.Result, Feedback: j.Feedback,
+		InputTokens: j.InputTokens, OutputTokens: j.OutputTokens}
 	if o.Feedback == nil {
 		o.Feedback = feedbackJSON(nil)
 	}
@@ -454,20 +463,27 @@ func exhausted(j job.Job) job.Outcome {
 }
 
 // progress is the state to persist after an attempt; the loop's counts and candidate
-// already include those of the run before a re-lease.
-func progress(pr extract.Progress) job.Progress {
-	return job.Progress{Attempts: pr.Attempts, Result: pr.Result, Feedback: feedbackJSON(pr.Feedback)}
+// already include those of the run before a re-lease, its usage does not: the row's
+// usage (of earlier runs, as leased) is added. Tokens spent after the last persisted
+// attempt of a run that died are not counted.
+func progress(j job.Job, pr extract.Progress) job.Progress {
+	return job.Progress{Attempts: pr.Attempts, Result: pr.Result, Feedback: feedbackJSON(pr.Feedback),
+		InputTokens:  j.InputTokens + int64(pr.Usage.InputTokens),
+		OutputTokens: j.OutputTokens + int64(pr.Usage.OutputTokens)}
 }
 
 // merge turns the loop's outcome, which already counts the attempts and holds the
-// candidate of a run before a re-lease, into the row's terminal state.
-func merge(o extract.Outcome) job.Outcome {
+// candidate of a run before a re-lease, into the row's terminal state, with the usage
+// of the leased row added as in progress.
+func merge(j job.Job, o extract.Outcome) job.Outcome {
 	out := job.Outcome{
 		Status:          job.Status(o.Status),
 		Attempts:        o.Attempts,
 		Result:          o.Result,
 		Feedback:        feedbackJSON(o.Feedback),
 		JudgeConfidence: o.JudgeConfidence,
+		InputTokens:     j.InputTokens + int64(o.Usage.InputTokens),
+		OutputTokens:    j.OutputTokens + int64(o.Usage.OutputTokens),
 	}
 	if o.Error != nil {
 		out.Error, _ = json.Marshal(o.Error)

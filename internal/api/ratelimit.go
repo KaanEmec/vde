@@ -1,8 +1,13 @@
 package api
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/kaanemec/vde/internal/job"
 )
 
 // inProgressRetryAfter is the Retry-After of a submission refused for the in-progress
@@ -31,7 +36,8 @@ type bucket struct {
 }
 
 // rateLimiter holds the in-memory limits of one server (server.limits): token buckets per application
-// (ADR 0003: one process; several replicas each apply their own limits), and the locks
+// (ADR 0003: one process; several replicas each apply their own limits unless rate.shared
+// moves the request and submit limits into the store, takeRate), and the locks
 // that serialize submissions sharing an idempotency key.
 type rateLimiter struct {
 	mu      sync.Mutex
@@ -72,6 +78,29 @@ func (l *rateLimiter) take(app string, kind bucketKind, perMinute int, now time.
 	}
 	wait := time.Duration((1 - b.tokens) / perSecond * float64(time.Second))
 	return wholeSeconds(wait), false
+}
+
+// takeRate applies the application's limit of kind: the in-memory bucket of this process
+// (take), or with rate.shared: true the job store's fixed-window counter of the current
+// UTC minute, which every replica shares (one UPSERT per request). A refused request
+// waits for the next minute. A store failure admits the request (the quota, charged in
+// the store, still holds) and is logged. perMinute <= 0 means no limit.
+func (s *server) takeRate(ctx context.Context, app string, kind bucketKind, perMinute int, now time.Time) (time.Duration, bool) {
+	storeKind, shareable := map[bucketKind]string{bucketRequests: job.RateRequests, bucketSubmits: job.RateSubmits}[kind]
+	if perMinute <= 0 || !shareable || s.deps.Config == nil || !s.deps.Config.Rate.Shared || s.deps.Store == nil {
+		return s.limits.take(app, kind, perMinute, now)
+	}
+	start := now.UTC().Truncate(time.Minute)
+	_, err := s.deps.Store.IncrementRate(ctx, app, storeKind, start, perMinute)
+	switch {
+	case err == nil:
+		return 0, true
+	case errors.Is(err, job.ErrRateLimited):
+		return wholeSeconds(start.Add(time.Minute).Sub(now)), false
+	}
+	s.log.LogAttrs(ctx, slog.LevelWarn, "shared rate counter not written; request admitted",
+		slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
+	return 0, true
 }
 
 // keyLock serializes the submissions of one application sharing an idempotency key, so

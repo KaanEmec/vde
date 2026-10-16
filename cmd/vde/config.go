@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -131,12 +132,34 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 			name, strings.Join(pairs, " -> "), g.Failover.MaxTries, g.Failover.MaxTotalTime)
 	}
 	fmt.Fprintln(tw, "\nroles")
-	for _, role := range []struct{ name, group string }{
-		{"extractor", cfg.Roles.Extractor.Group},
-		{"judge", cfg.Roles.Judge.Group},
+	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
+	for _, role := range []struct {
+		name, group string
+		escalation  []config.Escalation
+		caps        []config.Capability
+	}{
+		{"extractor", cfg.Roles.Extractor.Group, cfg.Roles.Extractor.Escalation, extractorCaps},
+		{"judge", cfg.Roles.Judge.Group, cfg.Roles.Judge.Escalation, judgeCaps},
 	} {
 		fmt.Fprintf(tw, "  %s: group %s\n", role.name, role.group)
-		for _, c := range cfg.Capabilities(role.group) {
+		for _, e := range role.escalation {
+			fmt.Fprintf(tw, "    escalation: from attempt %d, group %s\n", e.FromAttempt, e.Group)
+		}
+		if role.name == "judge" {
+			if g := cfg.Roles.SecondJudge.Group; g != "" {
+				fmt.Fprintf(tw, "    second judge: group %s\n", g)
+			}
+			if cfg.Roles.Judge.FeedbackFallback != "" || judgeHasClassifier(cfg) {
+				fallback := cmp.Or(cfg.Roles.Judge.FeedbackFallback, config.FeedbackWholeResult)
+				if fallback == config.FeedbackLLM {
+					fallback += ", group " + cfg.Roles.Judge.FeedbackGroup
+				}
+				fmt.Fprintf(tw, "    classifier feedback fallback: %s\n", fallback)
+			}
+		}
+		// What every group of the role reads (escalation, second judge and feedback
+		// groups included): the representation chosen at submit.
+		for _, c := range role.caps {
 			via, pairs := c.Via, strings.Join(c.Pairs, ", ")
 			if via == "" {
 				via, pairs = "-", "cannot read"
@@ -150,8 +173,30 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 	fmt.Fprintf(tw, "  document_bytes %d, page_bytes %d, pages %d\n", l.DocumentBytes, l.PageBytes, l.Pages)
 	fmt.Fprintf(tw, "\napplications %d, documents.html %s\n", len(cfg.Applications), cfg.Documents.HTML)
 	fmt.Fprintf(tw, "%s\n", storageSummary(cfg))
+	rate := "per process"
+	if cfg.Rate.Shared {
+		rate = "shared (job store)"
+	}
+	fmt.Fprintf(tw, "worker size %d, poll_interval %s, lease %s; rate limits %s\n",
+		cfg.Worker.Size, cfg.Worker.PollInterval, cfg.Worker.Lease, rate)
 	fmt.Fprintf(tw, "service_version: %s\n", extract.ServiceVersion(cfg, version.Version))
 	tw.Flush()
+}
+
+// judgeHasClassifier reports whether a group serving the judge role has a classifier
+// endpoint, whose rejections roles.judge.feedback_fallback concerns.
+func judgeHasClassifier(cfg *config.Config) bool {
+	_, groups := extract.RoleGroups(cfg)
+	for _, name := range groups {
+		if g := cfg.Groups[name]; g != nil {
+			for _, entry := range g.Endpoints {
+				if e := cfg.Endpoints[entry.Endpoint]; e != nil && e.Provider == config.ProviderClassifier {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // probeEndpoints reports the reachability of every endpoint as warnings; it never fails

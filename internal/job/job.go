@@ -49,6 +49,7 @@ var (
 	ErrDuplicate      = errors.New("job: duplicate")       // unique key taken (idempotency key, token id)
 	ErrConflict       = errors.New("job: conflict")        // a transition the state machine refuses, or a lost lease
 	ErrQuotaExhausted = errors.New("job: quota exhausted") // the window's count reached the limit
+	ErrRateLimited    = errors.New("job: rate limited")    // the minute's shared rate counter reached the limit
 )
 
 // NewID returns a new job id, j_<ULID>.
@@ -89,6 +90,11 @@ type Job struct {
 	LeaseUntil time.Time
 	WorkerID   string
 
+	// InputTokens and OutputTokens are the provider token usage of every run of the job,
+	// as recorded by RecordAttempt and Finish (metadata, kept with the row).
+	InputTokens  int64
+	OutputTokens int64
+
 	InputsDeletedAt  time.Time // document, pages, instructions and schema deleted
 	ContentDeletedAt time.Time // result, feedback and error deleted too
 }
@@ -105,6 +111,10 @@ type Progress struct {
 	Attempts int
 	Result   json.RawMessage
 	Feedback json.RawMessage
+	// InputTokens and OutputTokens are the job's usage so far, earlier runs included;
+	// the stored counts never decrease.
+	InputTokens  int64
+	OutputTokens int64
 }
 
 // Outcome is a terminal state written by Finish.
@@ -115,7 +125,16 @@ type Outcome struct {
 	Feedback        json.RawMessage
 	Error           json.RawMessage
 	JudgeConfidence *float64
+	// InputTokens and OutputTokens are the job's total usage, as in Progress.
+	InputTokens  int64
+	OutputTokens int64
 }
+
+// Rate limiter kinds of IncrementRate (rate.shared: true).
+const (
+	RateRequests = "requests" // every /v1 request
+	RateSubmits  = "submits"  // job submissions
+)
 
 // Content selects what MarkContentDeleted clears.
 type Content int
@@ -242,6 +261,15 @@ type Store interface {
 	// before and returns how many rows it removed.
 	DeleteQuotaBefore(ctx context.Context, applicationID string, before time.Time) (int64, error)
 
+	// IncrementRate counts one request of kind (RateRequests or RateSubmits) in the
+	// application's fixed window starting at windowStart and returns the new count, or
+	// ErrRateLimited when the count already reached limit. One UPSERT, shared by every
+	// process on the database (rate.shared: true).
+	IncrementRate(ctx context.Context, applicationID, kind string, windowStart time.Time, limit int) (int, error)
+	// DeleteRateBefore removes the rate windows of every application that started before
+	// before and returns how many.
+	DeleteRateBefore(ctx context.Context, before time.Time) (int64, error)
+
 	// AppendAudit appends e and returns its id.
 	AppendAudit(ctx context.Context, e AuditEvent) (int64, error)
 	// ListAudit returns up to limit events matching f, oldest first; limit <= 0 means no limit.
@@ -298,6 +326,9 @@ type Store interface {
 	CountRunning(ctx context.Context, applicationID string) (int, error)
 	// CountInProgress returns the number of the application's queued and running jobs.
 	CountInProgress(ctx context.Context, applicationID string) (int, error)
+	// OldestQueuedAt returns the created_at of the oldest queued job of any application,
+	// the zero time when none is queued (the queue age of /healthz on an API-only process).
+	OldestQueuedAt(ctx context.Context) (time.Time, error)
 	// ListJobs returns up to limit jobs matching f, newest first; limit <= 0 means no
 	// limit.
 	ListJobs(ctx context.Context, f JobFilter, limit int) ([]Job, error)
