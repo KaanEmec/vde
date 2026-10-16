@@ -14,24 +14,35 @@ control." Contract §12 (minimal development configuration documented).
 
 ## Tasks
 
-- [ ] `install.md`: binary, container, compose; data directory; TLS or reverse proxy.
-- [ ] `configuration.md`: every key with type, default and meaning (finishes the
+- [x] `install.md`: binary, container, compose; data directory; TLS or reverse proxy.
+- [x] `configuration.md`: every key with type, default and meaning (finishes the
       placeholder from v0.1), with the three example files explained.
-- [ ] `providers.md` index (from v0.1) plus guidance on choosing models per role and
+- [x] `providers.md` index (from v0.1) plus guidance on choosing models per role and
       declaring `accepts`.
-- [ ] `applications-and-tokens.md`: lifecycle, rotation procedure, revocation, scopes,
-      CLI and admin API side by side.
-- [ ] `retention.md`, `privacy.md` (from epic 06), `operations.md` (healthz, metrics,
+- [x] `applications-and-tokens.md`: lifecycle, rotation procedure, revocation, scopes,
+      CLI and admin API side by side (the admin API is marked planned, epic 11).
+- [x] `retention.md`, `privacy.md` (from epic 06), `operations.md` (healthz, metrics,
       audit, logs, backups of the SQLite file and blob directory, upgrade and migration
       notes).
-- [ ] `troubleshooting.md`: the error codes an operator sees and what to check, common
+- [x] `troubleshooting.md`: the error codes an operator sees and what to check, common
       provider failures, `config check` messages.
+
+## Notes
+
+Written against the code on 2026-10-16: `docs/operator/` now has `README.md` (index),
+`install.md`, `configuration.md`, `providers.md`, `applications-and-tokens.md`,
+`operations.md` and `troubleshooting.md` beside the existing `retention.md`, `privacy.md`
+and `framings.md`. Planned and marked as such: the admin API (epic 11), `vde audit list`
+(epic 07 job 03) and `config check --probe` (no provider has a probe yet).
 
 ## Acceptance criteria
 
-- Someone unfamiliar with the project deploys with compose, creates a token and processes
+- [ ] Someone unfamiliar with the project deploys with compose, creates a token and processes
   a document following only the docs (a reviewer tries it).
 
 ## Out of scope
 
 A documentation website (v1.0 release engineering may add one).
+
+Status stays `in progress`: the acceptance criterion needs a reviewer who follows the docs
+from a clean machine, which cannot be done by the author.

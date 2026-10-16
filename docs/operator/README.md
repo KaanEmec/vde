@@ -1,0 +1,62 @@
+# Operator guide
+
+How to install, configure, run, upgrade and troubleshoot the `vde` service without reading
+the code. Callers of the HTTP API read the [API guide](../api/guide.md) instead.
+
+## Start here
+
+New deployment: [install](install.md) (binary, container or compose), then
+[providers](providers.md) (pick models), then [applications and tokens](applications-and-tokens.md)
+(let a caller in). The fastest path is the [compose example](../../examples/compose/README.md):
+about ten minutes from clone to a first job.
+
+## Pages
+
+| Page | Read it to |
+| --- | --- |
+| [install.md](install.md) | Run `vde` from a release binary, the container image or compose; set up the data directory and TLS. |
+| [configuration.md](configuration.md) | Look up a configuration key: type, default, meaning. Explains the example files. |
+| [providers.md](providers.md) | Choose models per role, declare `accepts`, set up failover groups. |
+| [applications-and-tokens.md](applications-and-tokens.md) | Declare applications and their limits; create, rotate and revoke tokens. |
+| [operations.md](operations.md) | Health checks, metrics, audit log, logs, backups, upgrades. |
+| [troubleshooting.md](troubleshooting.md) | Look up an error code, a `config check` message or a provider failure. |
+| [retention.md](retention.md) | What is deleted, when, and what remains. |
+| [privacy.md](privacy.md) | What is logged, what never is, and the `debug.log_content` switch. |
+| [framings.md](framings.md) | The fixed prompts of the extractor and judge roles. |
+
+Related pages outside this folder: [provider adapters](../providers/README.md),
+[security and privacy](../security.md) (threat model and the checklist before exposing the
+service), [examples](../../examples/README.md) and the [changelog](../../CHANGELOG.md).
+
+## The commands
+
+`vde` is one binary. Run `vde <command> -h` for the flags of a command.
+
+| Command | Purpose |
+| --- | --- |
+| `vde serve [--config path]` | Run the service: API, worker pool, expiry sweeper, `/healthz`, `/metrics`. |
+| `vde config check [--config path] [--strict] [--probe]` | Validate a configuration without network calls and print a summary. |
+| `vde token create\|list\|revoke` | Manage access tokens. See [applications and tokens](applications-and-tokens.md). |
+| `vde app list` | List the applications in the database. |
+| `vde healthcheck [--config path]` | Request `/healthz` on the configured listener; exit 0 on `200`. Used by the container `HEALTHCHECK`. |
+| `vde extract` | Run one document through the extractor and judge from the command line; for trying a configuration. See [examples](../../examples/README.md#extract-a-document). |
+| `vde version` | Print version, commit and build date. |
+
+`--config` defaults to `vde.yaml`. The commands `app`, `token` and `healthcheck` fall back
+to `/etc/vde/vde.yaml` (the container path) when `--config` is not given and `vde.yaml` does
+not exist, so `docker compose exec vde vde token ...` needs no flags. `vde serve` and
+`vde config check` do not fall back.
+
+Exit codes: 0 success, 1 usage error, configuration error or any other failure. `vde extract`
+also uses 2 (rejected) and 3 (failed).
+
+## What is planned
+
+These are not implemented yet and the guide marks them wherever they come up:
+
+- The admin HTTP API for applications and tokens (v0.2 epic 11). Today the `vde token` and
+  `vde app` commands are the only way.
+- `vde audit list`. Today audit events are read from the `audit_events` table with `sqlite3`
+  or from the log lines of `audit.log: true`.
+- Provider reachability probes: `vde config check --probe` reports "probe not available"
+  for every provider.
