@@ -34,14 +34,14 @@ published image with the documented minimal configuration:
 | 01 | [HTTP API foundation](01-http-api-foundation/README.md) | v0.1 | done |
 | 02 | [Applications and tokens](02-applications-and-tokens/README.md) | 01, 03-01 | done |
 | 03 | [Job store and worker](03-job-store-and-worker/README.md) | v0.1 | done |
-| 04 | [Job submission and retrieval](04-job-submission/README.md) | 01, 02, 03 | in progress |
-| 05 | [Quota and rate limits](05-quota-and-rate-limits/README.md) | 02, 04 | in progress |
+| 04 | [Job submission and retrieval](04-job-submission/README.md) | 01, 02, 03 | done |
+| 05 | [Quota and rate limits](05-quota-and-rate-limits/README.md) | 02, 04 | done |
 | 06 | [Retention and privacy](06-retention-and-privacy/README.md) | 03, 04 | in progress |
 | 07 | [Operations](07-operations/README.md) | 01, 03 | in progress |
 | 08 | [Packaging and deployment](08-packaging-and-deployment/README.md) | 01 | done |
-| 09 | [Contract conformance](09-contract-conformance/README.md) | all above | planned |
+| 09 | [Contract conformance](09-contract-conformance/README.md) | all above | in progress |
 | 10 | [Documentation](10-documentation/README.md) | all above | in progress |
-| 11 | [Admin API](11-admin-api/README.md) | 02, 03 | planned |
+| 11 | [Admin API](11-admin-api/README.md) | 02, 03 | in progress |
 
 Epics 01, 03 and 08 can start together. Epic 11 follows 02. Epic 09 is the release gate.
 
