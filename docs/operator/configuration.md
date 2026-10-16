@@ -53,6 +53,7 @@ Run `vde config check` to validate a file without starting the service.
 | `limits.max_attempts` | int | `3` | Default attempt limit per application; a request can only lower it. At least 1. |
 | `limits.job_timeout` | duration | `5m` | Deadline per job; at most `8m`. |
 | `limits.judge_reparse_tries` | int | `1` | Extra judge calls when its verdict cannot be parsed. |
+| `limits.feedback_message_chars` | int | `4000` (when `0` or omitted) | Characters kept per feedback message, the last replaced by an ellipsis; the contract asks for at least 2,000. |
 | `limits.document_bytes` | int | `26214400` (25 MiB) | Largest document; below the contract minimum is a warning. |
 | `limits.page_bytes` | int | `10485760` (10 MiB) | Largest page image; below the contract minimum is a warning. |
 | `limits.pages` | int | `20` | Most page images per job; below the contract minimum is a warning. |

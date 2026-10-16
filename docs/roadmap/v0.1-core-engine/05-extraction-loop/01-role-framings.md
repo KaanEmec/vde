@@ -1,6 +1,6 @@
 # Job: Role framings
 
-Version: v0.1 · Epic: 05 Extraction loop · Status: planned · Depends on: 02-01
+Version: v0.1 · Epic: 05 Extraction loop · Status: done · Depends on: 02-01
 
 ## Goal
 
@@ -19,25 +19,25 @@ shorten, rewrite or translate the caller's instructions, and MUST NOT add domain
 
 ## Tasks
 
-- [ ] `internal/extract/framing.go`: two string constants (or embedded `.md` files) for
+- [x] `internal/extract/framing.go`: two string constants (or embedded `.md` files) for
       the extractor and judge system framings; an `assembleExtractor(...)` and
       `assembleJudge(...)` that return `[]provider.Part` in the contract's order, with
       clear text separators ("Caller instructions:", "Schema:", "Document:", "Previous
       candidate:", "Feedback:").
-- [ ] Extractor framing content: output exactly one JSON object; conform to the schema
+- [x] Extractor framing content: output exactly one JSON object; conform to the schema
       when given; unknown values null or omitted as the schema allows, never guessed; no
       prose, no code fences; on retry, correct the listed issues and keep everything else
       that was right.
-- [ ] Judge framing content: compare the candidate to the source only; check accuracy,
+- [x] Judge framing content: compare the candidate to the source only; check accuracy,
       completeness and invented values; answer exactly
       `{"verdict": "accept"|"reject", "feedback": {pointer: message}, "confidence": 0.0-1.0}`;
       `confidence` is optional and expresses how sure the judge is of its verdict
       (decision 14); `reject` needs at least one entry; messages are for humans and may
       quote the source.
-- [ ] Framings are in English and contain no domain words. A test greps them for a small
+- [x] Framings are in English and contain no domain words. A test greps them for a small
       deny-list (travel, flight, hotel, invoice, patient) to keep them domain-neutral.
-- [ ] Framing text and separators are hashed into `service_version` (job 07).
-- [ ] Document the framings in `docs/operator/framings.md` so callers can write
+- [x] Framing text and separators are hashed into `service_version` (job 07).
+- [x] Document the framings in `docs/operator/framings.md` so callers can write
       instructions that agree with them (contract §7: "the service's framing MUST agree
       with" the caller's judge instructions when they restate the format).
 
@@ -49,3 +49,16 @@ shorten, rewrite or translate the caller's instructions, and MUST NOT add domain
 ## Out of scope
 
 Prompt tuning on real corpora (v0.3 evaluation harness).
+
+## Implementation notes
+
+Done in `internal/extract/framing.go` with `framings/extractor.md` and `framings/judge.md`
+(embedded), documented in `docs/operator/framings.md`. Deviations:
+
+- Each framing file has one placeholder line filled per mode (schema or schema-less, job
+  06), so four framing variants exist; all four are hashed.
+- A separator and its content share one text part (`"Schema:\n\n" + schema`), so no part
+  is ever empty; `Document:` is a part of its own followed by the representation's parts
+  unchanged. The judge's candidate uses a sixth separator, `Candidate:`.
+- The extractor framing never says "judge" and the judge framing never says "extractor", so
+  fake provider steps can match roles by `role:` (tested).

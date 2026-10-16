@@ -1,6 +1,6 @@
 # Job: Schema-less mode
 
-Version: v0.1 · Epic: 05 Extraction loop · Status: planned · Depends on: 05
+Version: v0.1 · Epic: 05 Extraction loop · Status: done · Depends on: 05
 
 ## Goal
 
@@ -16,15 +16,15 @@ a schema; the service is a superset (ADR 0005, decision 6).
 
 ## Tasks
 
-- [ ] `Input.Schema == nil` path in the loop: skip schema validation; the answer parser
+- [x] `Input.Schema == nil` path in the loop: skip schema validation; the answer parser
       accepts a JSON object or array at top level; the extractor framing says "shape the
       JSON as the instructions describe" instead of "conform to the schema".
-- [ ] Judge framing in this mode asks to check against the instructions as well as the
+- [x] Judge framing in this mode asks to check against the instructions as well as the
       document (fields the instructions asked for but the candidate lacks are
       completeness issues).
 - [ ] The HTTP API (v0.2) accepts a missing `schema` part; the TravelInbox OpenAPI
       superset marks it optional with a note.
-- [ ] Scenario tests with the fake provider; CLI example in epic 06.
+- [x] Scenario tests with the fake provider; CLI example in epic 06.
 
 ## Acceptance criteria
 
@@ -34,3 +34,9 @@ a schema; the service is a superset (ADR 0005, decision 6).
 ## Out of scope
 
 Inferring a schema from a result, returning a generated schema.
+
+## Implementation notes
+
+Done in the loop (`Input.Schema == nil`) and the framings' mode lines. The HTTP task
+belongs to v0.2 (job submission) and the CLI example to epic 06; both are left
+open here. Regression: every schema scenario test runs with a schema unchanged.
