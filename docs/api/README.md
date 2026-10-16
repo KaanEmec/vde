@@ -7,6 +7,17 @@ TravelInbox's [`extraction-service-api.yaml`](../../FromTravelApp/extraction-ser
 canonical for `/v1`. Tests in `internal/api` keep the document, the route table and the
 error codes in step, and check the superset relation.
 
+## Guides and examples
+
+- [guide.md](guide.md): authentication, submit, poll, statuses and feedback, idempotency,
+  quota, retention, errors and schema-less mode.
+- [writing-instructions.md](writing-instructions.md): how framings and your instructions
+  compose, and how to design schemas.
+- [examples/](examples/): [`submit.sh`](examples/submit.sh) (curl),
+  [`node/client.mjs`](examples/node/client.mjs) (Node 20+),
+  [`swift/VDEClient.swift`](examples/swift/VDEClient.swift) (URLSession; server-side only,
+  never with the service token in a shipped app).
+
 ## Routes
 
 | Route | Auth | Purpose |
