@@ -1,0 +1,1242 @@
+{
+  "service_version": "vde-0.0.0-dev+2b75349f",
+  "extractor": [
+    "nous/google/gemini-3.8-flash"
+  ],
+  "judge": [
+    "nous/anthropic/claude-sonnet-5.5"
+  ],
+  "target": "local",
+  "corpus": "testdata/eval",
+  "cases": "travelinbox-*",
+  "concurrency": 3,
+  "started_at": "2026-10-16T14:15:11.547139Z",
+  "finished_at": "2026-10-16T14:23:32.204622Z",
+  "summary": {
+    "cases": 50,
+    "accepted": 45,
+    "rejected": 4,
+    "failed": 1,
+    "errors": 0,
+    "correct": 5,
+    "acceptance_rate": 0.9,
+    "false_accepts": 40,
+    "false_accept_rate": 0.8888888888888888,
+    "false_rejects": 0,
+    "false_reject_rate": 0,
+    "field_accuracy": 0.8798761609907121,
+    "accepted_field_accuracy": 0.9282639885222381,
+    "mean_attempts": 1.18,
+    "duration_median_ms": 19464,
+    "duration_p95_ms": 98682,
+    "usage_cases": 50,
+    "calls": 117,
+    "input_tokens": 1196651,
+    "output_tokens": 144073,
+    "cost_usd": null
+  },
+  "results": [
+    {
+      "id": "travelinbox-001-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 35325,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20725,
+        "output_tokens": 1862
+      },
+      "fields": {
+        "total": 34,
+        "matched": 31,
+        "mismatches": [
+          "/reservations/0/end_place/name",
+          "/reservations/0/start_place/name",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9117647058823529,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-002-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 33806,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23657,
+        "output_tokens": 2313
+      },
+      "fields": {
+        "total": 51,
+        "matched": 50,
+        "mismatches": [
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9803921568627451,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-003-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 16281,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22718,
+        "output_tokens": 1705
+      },
+      "fields": {
+        "total": 34,
+        "matched": 33,
+        "mismatches": [
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9705882352941176,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-004-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 23245,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23106,
+        "output_tokens": 3428
+      },
+      "fields": {
+        "total": 61,
+        "matched": 56,
+        "mismatches": [
+          "/reservations/0/details/number",
+          "/reservations/0/details/terminal",
+          "/reservations/0/end_place/name",
+          "/reservations/1/details/number",
+          "/reservations/1/start_place/name"
+        ]
+      },
+      "field_accuracy": 0.9180327868852459,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-005-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 14238,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20803,
+        "output_tokens": 1774
+      },
+      "fields": {
+        "total": 34,
+        "matched": 33,
+        "mismatches": [
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9705882352941176,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-006-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 19321,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22769,
+        "output_tokens": 2692
+      },
+      "fields": {
+        "total": 34,
+        "matched": 31,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/travellers",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9117647058823529,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-007-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 15579,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22102,
+        "output_tokens": 2168
+      },
+      "fields": {
+        "total": 34,
+        "matched": 31,
+        "mismatches": [
+          "/reservations/0/end_place/city",
+          "/trip_hint/destination",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9117647058823529,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-008-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 35007,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23039,
+        "output_tokens": 2647
+      },
+      "fields": {
+        "total": 51,
+        "matched": 47,
+        "mismatches": [
+          "/reservations/0/details/seat",
+          "/reservations/0/end_place/name",
+          "/reservations/0/start_place/name",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9215686274509803,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-009-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 36958,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23524,
+        "output_tokens": 3410
+      },
+      "fields": {
+        "total": 61,
+        "matched": 57,
+        "mismatches": [
+          "/reservations/0/details/number",
+          "/reservations/0/end_place/name",
+          "/reservations/1/details/number",
+          "/reservations/1/start_place/name"
+        ]
+      },
+      "field_accuracy": 0.9344262295081968,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-010-flight",
+      "status": "rejected",
+      "attempts": 3,
+      "duration_ms": 137019,
+      "usage": {
+        "calls": 6,
+        "input_tokens": 50651,
+        "output_tokens": 14439
+      },
+      "fields": {
+        "total": 51,
+        "matched": 47,
+        "mismatches": [
+          "/reservations/0/cancellation",
+          "/reservations/0/details/legs/0/number",
+          "/reservations/0/details/number",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9215686274509803,
+      "correct": false,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-011-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 19724,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23157,
+        "output_tokens": 2264
+      },
+      "fields": {
+        "total": 34,
+        "matched": 32,
+        "mismatches": [
+          "/reservations/0/start_place/name",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9411764705882353,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-012-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 12654,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21766,
+        "output_tokens": 1705
+      },
+      "fields": {
+        "total": 34,
+        "matched": 33,
+        "mismatches": [
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9705882352941176,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-013-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 16929,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22386,
+        "output_tokens": 2080
+      },
+      "fields": {
+        "total": 34,
+        "matched": 31,
+        "mismatches": [
+          "/reservations/0/details/terminal",
+          "/reservations/0/end_place/name",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9117647058823529,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-014-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 13368,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22040,
+        "output_tokens": 1703
+      },
+      "fields": {
+        "total": 34,
+        "matched": 27,
+        "mismatches": [
+          "/reservations/0/details/from_iata",
+          "/reservations/0/details/number",
+          "/reservations/0/details/terminal",
+          "/reservations/0/details/to_iata",
+          "/reservations/0/end_place/iata",
+          "/reservations/0/start_place/iata",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.7941176470588235,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-015-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 22403,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21871,
+        "output_tokens": 2106
+      },
+      "fields": {
+        "total": 34,
+        "matched": 31,
+        "mismatches": [
+          "/reservations/0/details/terminal",
+          "/reservations/0/provider",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9117647058823529,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-016-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 22858,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 24083,
+        "output_tokens": 1915
+      },
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-017-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 19183,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23099,
+        "output_tokens": 2437
+      },
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-018-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 17226,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22426,
+        "output_tokens": 2030
+      },
+      "fields": {
+        "total": 27,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9259259259259259,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-019-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 13459,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22519,
+        "output_tokens": 1793
+      },
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-020-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 24381,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21104,
+        "output_tokens": 2196
+      },
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/cancellation"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-021-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 15663,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23041,
+        "output_tokens": 2147
+      },
+      "fields": {
+        "total": 27,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9259259259259259,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-022-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 15334,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22104,
+        "output_tokens": 1609
+      },
+      "fields": {
+        "total": 27,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9259259259259259,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-023-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 13989,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21136,
+        "output_tokens": 2047
+      },
+      "fields": {
+        "total": 27,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9259259259259259,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-024-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 14102,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23634,
+        "output_tokens": 1709
+      },
+      "fields": {
+        "total": 27,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9259259259259259,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-025-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 25639,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23645,
+        "output_tokens": 3439
+      },
+      "fields": {
+        "total": 27,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9259259259259259,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-026-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 24830,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 23131,
+        "output_tokens": 2101
+      },
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-027-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 24584,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22438,
+        "output_tokens": 2618
+      },
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-028-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 20075,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22353,
+        "output_tokens": 2499
+      },
+      "fields": {
+        "total": 27,
+        "matched": 27
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-029-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 19076,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20195,
+        "output_tokens": 2501
+      },
+      "fields": {
+        "total": 27,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/details/room",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9259259259259259,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-030-hotel",
+      "status": "rejected",
+      "attempts": 3,
+      "duration_ms": 57605,
+      "usage": {
+        "calls": 6,
+        "input_tokens": 47793,
+        "output_tokens": 6809
+      },
+      "fields": {
+        "total": 27,
+        "matched": 24,
+        "mismatches": [
+          "/reservations/0/details/address",
+          "/reservations/0/details/room",
+          "/reservations/0/start_place/address"
+        ]
+      },
+      "field_accuracy": 0.8888888888888888,
+      "correct": false,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-031-dining",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 19608,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20821,
+        "output_tokens": 2053
+      },
+      "fields": {
+        "total": 22,
+        "matched": 22
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-032-dining",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 22858,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20807,
+        "output_tokens": 1428
+      },
+      "fields": {
+        "total": 22,
+        "matched": 21,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9545454545454546,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-033-dining",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 18694,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 19891,
+        "output_tokens": 2227
+      },
+      "fields": {
+        "total": 22,
+        "matched": 22
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-034-dining",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 20694,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20593,
+        "output_tokens": 2094
+      },
+      "fields": {
+        "total": 22,
+        "matched": 22
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-035-dining",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 20388,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21438,
+        "output_tokens": 2822
+      },
+      "fields": {
+        "total": 23,
+        "matched": 23
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-036-car",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 15477,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22498,
+        "output_tokens": 2117
+      },
+      "fields": {
+        "total": 28,
+        "matched": 22,
+        "mismatches": [
+          "/reservations/0/end_place/address",
+          "/reservations/0/end_place/city",
+          "/reservations/0/end_place/country",
+          "/reservations/0/end_place/iata",
+          "/reservations/0/end_place/name",
+          "/reservations/0/start_place/name"
+        ]
+      },
+      "field_accuracy": 0.7857142857142857,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-037-car",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 13516,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21568,
+        "output_tokens": 1907
+      },
+      "fields": {
+        "total": 28,
+        "matched": 22,
+        "mismatches": [
+          "/reservations/0/end_place/address",
+          "/reservations/0/end_place/city",
+          "/reservations/0/end_place/country",
+          "/reservations/0/end_place/iata",
+          "/reservations/0/end_place/name",
+          "/reservations/0/start_place/name"
+        ]
+      },
+      "field_accuracy": 0.7857142857142857,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-038-car",
+      "status": "rejected",
+      "attempts": 3,
+      "duration_ms": 80944,
+      "usage": {
+        "calls": 6,
+        "input_tokens": 48476,
+        "output_tokens": 8886
+      },
+      "fields": {
+        "total": 28,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/start_place/name"
+        ]
+      },
+      "field_accuracy": 0.9285714285714286,
+      "correct": false,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-039-transfer",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 17699,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20870,
+        "output_tokens": 2238
+      },
+      "fields": {
+        "total": 27,
+        "matched": 24,
+        "mismatches": [
+          "/reservations/0/details/driver_contact",
+          "/reservations/0/travellers",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.8888888888888888,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-040-transfer",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 27294,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20260,
+        "output_tokens": 3432
+      },
+      "fields": {
+        "total": 27,
+        "matched": 24,
+        "mismatches": [
+          "/reservations/0/details/driver_contact",
+          "/reservations/0/end_place/address",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.8888888888888888,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-041-rail",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 14224,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 22127,
+        "output_tokens": 1852
+      },
+      "fields": {
+        "total": 29,
+        "matched": 27,
+        "mismatches": [
+          "/reservations/0/travellers",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9310344827586207,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-042-rail",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 19116,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21503,
+        "output_tokens": 2476
+      },
+      "fields": {
+        "total": 29,
+        "matched": 27,
+        "mismatches": [
+          "/reservations/0/details/train",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9310344827586207,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-043-rail",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 18046,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21660,
+        "output_tokens": 2178
+      },
+      "fields": {
+        "total": 29,
+        "matched": 28,
+        "mismatches": [
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9655172413793104,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-044-rail",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 11698,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21658,
+        "output_tokens": 1376
+      },
+      "fields": {
+        "total": 29,
+        "matched": 28,
+        "mismatches": [
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9655172413793104,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-045-rail",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 14280,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 20354,
+        "output_tokens": 1643
+      },
+      "fields": {
+        "total": 29,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/details/coach",
+          "/reservations/0/end_place/name",
+          "/reservations/0/start_place/name",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.8620689655172413,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-046-cancellation",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 37513,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 21186,
+        "output_tokens": 4953
+      },
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-047-cancellation",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 12500,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 19858,
+        "output_tokens": 1670
+      },
+      "fields": {
+        "total": 33,
+        "matched": 28,
+        "mismatches": [
+          "/reservations/0/details/number",
+          "/reservations/0/details/terminal",
+          "/reservations/0/end_place/name",
+          "/reservations/0/start_place/name",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.8484848484848485,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-048-multi-booking",
+      "status": "failed",
+      "error_code": "provider_unavailable",
+      "attempts": 1,
+      "duration_ms": 120006,
+      "usage": {
+        "calls": 1,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "fields": {
+        "total": 82,
+        "matched": 0,
+        "no_result": true
+      },
+      "field_accuracy": 0,
+      "correct": false,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-049-ticket-photo",
+      "status": "accepted",
+      "attempts": 2,
+      "duration_ms": 39059,
+      "usage": {
+        "calls": 4,
+        "input_tokens": 36491,
+        "output_tokens": 4468
+      },
+      "fields": {
+        "total": 26,
+        "matched": 22,
+        "mismatches": [
+          "/reservations/0/end_place/name",
+          "/reservations/0/provider",
+          "/reservations/0/start_place/name",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.8461538461538461,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    },
+    {
+      "id": "travelinbox-050-boarding-pass",
+      "status": "rejected",
+      "attempts": 3,
+      "duration_ms": 98682,
+      "usage": {
+        "calls": 6,
+        "input_tokens": 47577,
+        "output_tokens": 10107
+      },
+      "fields": {
+        "total": 33,
+        "matched": 30,
+        "mismatches": [
+          "/reservations/0/details/carrier",
+          "/reservations/0/provider",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.9090909090909091,
+      "correct": false,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+2b75349f"
+    }
+  ]
+}

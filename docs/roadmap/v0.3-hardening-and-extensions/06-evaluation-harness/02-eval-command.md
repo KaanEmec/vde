@@ -24,6 +24,10 @@ with ground truth and print a report keyed by `service_version`.
 - A report for the TravelInbox corpus with a real provider is recorded before v0.3 is
   tagged, for the LLM judge and, when available, the classifier judge.
 
+## Follow-ups
+
+- Record the job `error.code` per case in the report so provider failures (rate limits) are distinguishable from extraction failures.
+
 ## Out of scope
 
 Automatic prompt optimization.

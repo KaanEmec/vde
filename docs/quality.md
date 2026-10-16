@@ -46,3 +46,47 @@ accepts them.
 The comparison rules are not loosened to hide this. The next steps are the TravelInbox
 instructions (state the conventions explicitly to both roles) and a run with the
 classifier judge once it is available (epic 02).
+
+## Model comparison on the TravelInbox corpus (2026-10-16)
+
+Same 50 cases, same instructions and schema, OpenAI-compatible adapter via Nous Research,
+concurrency 3. Reports in `docs/quality/`.
+
+| Run | Extractor | Judge | Accepted | Rejected | Failed | False accepts (of accepted) | Field accuracy (accepted) | Correct cases | Median / p95 | Tokens in / out |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 (`+56cf97c8`) | gemini-3.8-flash | gemini-3.8-flash | 50 | 0 | 0 | 43 (86.0 %) | 92.4 % | 7 | 21.1 s / 43.5 s | 942k / 143k |
+| 2 (`+2b75349f`) | gemini-3.8-flash | claude-sonnet-5.5 | 45 | 4 | 1 | 40 (88.9 %) | 92.8 % | 5 | 19.5 s / 98.7 s | 1197k / 144k |
+| 3 (`+1a2f4dfb`) | claude-sonnet-5.5 | claude-sonnet-5.5 | 41 | 0 | 9 | 33 (80.5 %) | 87.2 % | 9 | 8.9 s / 51.1 s | 1063k / 46k |
+
+Mismatched fields, counted once per case (runs 1 → 3): `/trip_hint/ends_on` 23 → 20,
+`/reservations/N/travellers` 16 → 6, `/reservations/N/provider` 12 → 16,
+`/reservations/N/end_place/name` 13 → 13, `/reservations/N/start_place/name` 9 → 11.
+
+### Reading
+
+- **The judge mechanism works; the judge's leniency is a model-and-instructions matter.**
+  The Sonnet judge rejected 4 candidates the Gemini judge had accepted, but the false-accept
+  share barely moved because most mismatches are not document errors.
+- **Most "false accepts" are convention disagreements between the ground truth and the
+  instructions.** Checked on one rail case: the ground truth leaves `trip_hint/ends_on`
+  null while the instructions define it as "the latest start or end date of any
+  reservation", which the extractor returned; the ground truth leaves `travellers/N/type`
+  null while the extractor wrote `adult`. A document-grounded judge is right not to reject
+  either. Ignoring `ends_on` and `travellers` alone removes roughly 40 % of the mismatches.
+- **A stronger extractor follows the instructions more literally** (travellers 16 → 6) and
+  answers four times faster, but the remaining mismatches (provider and place names) grew,
+  which again points at naming conventions (operator vs platform, printed vs canonical
+  station names) that the instructions leave open.
+- **Run 3's nine failures** finished in one to two seconds with zero tokens, consistent with
+  provider-side rate limiting at concurrency 3; they are not extraction failures. The
+  harness report does not yet record the job `error.code` per case (follow-up).
+
+### Recommendation
+
+1. Align the TravelInbox instructions and `compare.yaml` on `trip_hint/ends_on`,
+   `travellers/N/type`, provider naming and place-name canonicalization; re-run.
+2. Keep measuring model choices with this harness rather than assuming; with aligned
+   conventions, compare `claude-haiku-5.5` and `claude-sonnet-5.5` as extractor against
+   `gemini-3.8-flash` on cost per correct case.
+3. Lower eval concurrency to 2 for Anthropic models through this endpoint, or add
+   `Retry-After` handling on the eval client side, to avoid the failed cases.
