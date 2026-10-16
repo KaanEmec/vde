@@ -11,7 +11,7 @@ LDFLAGS := -s -w \
 	-X $(MODULE)/internal/version.Date=$(DATE)
 GOBUILD := CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: build test lint check cross clean
+.PHONY: build test lint check scenarios live cross clean
 
 build:
 	$(GOBUILD) -o bin/vde ./cmd/vde
@@ -24,6 +24,14 @@ lint:
 	golangci-lint run ./...
 
 check: lint test build
+
+# The end-to-end scenarios of testdata/scenarios with the fake provider, verbosely.
+scenarios:
+	go test ./cmd/vde -run TestScenarios -count=1 -v
+
+# The opt-in smoke test against every real provider whose key is set (see CONTRIBUTING.md).
+live:
+	VDE_LIVE=1 go test ./cmd/vde -run TestLiveProviders -count=1 -v -timeout 60m
 
 cross:
 	GOOS=linux GOARCH=amd64 $(GOBUILD) -o bin/vde-linux-amd64 ./cmd/vde

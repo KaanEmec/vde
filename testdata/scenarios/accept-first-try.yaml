@@ -1,5 +1,18 @@
-# Script format: see the doc comment of package internal/provider/fake.
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
 description: the extractor answers once and the judge accepts
 steps:
   - answer: '{"name": "Ada Lovelace", "born": 1815}'
   - answer: '{"verdict": "accept", "feedback": {}}'
+---
+input:
+  document: examples/samples/booking.txt
+expect:
+  status: accepted
+  attempts: 1
+  judge_calls: 1
+  extractor_calls: {primary: 1}
+  judge_confidence: null # absent from the verdict
+  feedback: []
+  result: '{"name": "Ada Lovelace", "born": 1815}'
+  document_parts: [text/plain]

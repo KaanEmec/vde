@@ -13,6 +13,11 @@ change:
 - A job that changes an architectural decision adds or amends an ADR in
   `docs/architecture/decisions/` in the same change.
 - `make check` must pass before a commit.
+- Before tagging a release, run `make live` with at least one provider key set
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` or `GEMINI_API_KEY`; the
+  model per provider can be changed with `VDE_LIVE_<PROVIDER>_MODEL`). It runs the sample
+  documents, and your own in `testdata/user-docs/` when present, through `vde extract`
+  against the real provider and prints the token usage of each run to stderr.
 
 ## Code
 

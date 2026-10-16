@@ -1,0 +1,25 @@
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
+description: schema-less extraction of the HTML document as a list, accepted on the first try
+steps:
+  - role: extractor
+    answer: |
+      Here are the line items:
+      ```json
+      [{"item": "Room", "amount": 360.00}, {"item": "Breakfast", "amount": 45.00}, {"item": "City tax", "amount": 7.50}]
+      ```
+  - role: judge
+    answer: '{"verdict": "accept", "feedback": {}}'
+---
+input:
+  document: examples/samples/booking.html
+  html: visible_text
+expect:
+  status: accepted
+  attempts: 1
+  judge_calls: 1
+  extractor_calls: {primary: 1}
+  judge_confidence: null
+  feedback: []
+  result: '[{"item": "Room", "amount": 360.00}, {"item": "Breakfast", "amount": 45.00}, {"item": "City tax", "amount": 7.50}]'
+  document_parts: [text/plain]

@@ -1,0 +1,19 @@
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
+description: a JPEG photo read natively, schema-less
+steps:
+  - role: extractor
+    answer: '{"merchant": "a café", "total": {"amount": 9.4, "currency": "EUR"}}'
+  - role: judge
+    answer: '{"verdict": "accept", "feedback": {}}'
+---
+input:
+  document: examples/samples/receipt.jpg
+expect:
+  status: accepted
+  attempts: 1
+  judge_calls: 1
+  extractor_calls: {primary: 1}
+  judge_confidence: null
+  feedback: []
+  document_parts: [image/jpeg]

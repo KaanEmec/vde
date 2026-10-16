@@ -1,0 +1,20 @@
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
+description: the judge answers garbage, and garbage again after the format reminder
+steps:
+  - role: extractor
+    answer: '{"name": "Ada Lovelace", "born": 1815}'
+  - role: judge
+    answer: 'Looks fine to me!'
+  - role: judge
+    answer: '{"verdict": "maybe"}'
+---
+input:
+  document: examples/samples/booking.txt
+expect:
+  status: failed
+  attempts: 1
+  error: judge_failed
+  judge_calls: 2 # one re-ask (limits.judge_reparse_tries 1)
+  extractor_calls: {primary: 1}
+  judge_confidence: null

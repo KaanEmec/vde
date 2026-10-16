@@ -1,4 +1,5 @@
-# Script format: see the doc comment of package internal/provider/fake.
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
 description: the primary extractor model is down; the fallback serves, then the judge accepts
 steps:
   - model: primary-model
@@ -8,3 +9,12 @@ steps:
   - model: fallback-model
     answer: '{"name": "Ada Lovelace", "born": 1815}'
   - answer: '{"verdict": "accept", "feedback": {}}'
+---
+input:
+  document: examples/samples/booking.txt
+expect:
+  status: accepted
+  attempts: 1
+  judge_calls: 1
+  extractor_calls: {primary: 1, fallback: 1}
+  judge_confidence: null

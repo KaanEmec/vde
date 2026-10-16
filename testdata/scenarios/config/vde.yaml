@@ -1,0 +1,31 @@
+# Configuration of every scenario in testdata/scenarios: three fake endpoints, so a script
+# can target the extractor's primary, its fallback and the judge by model name. Run with
+# --provider-script, which serves every endpoint from one fake replaying the script.
+endpoints:
+  primary:
+    provider: fake
+    models:
+      primary-model: {accepts: [application/pdf, image/png, image/jpeg, text/plain, text/html]}
+  fallback:
+    provider: fake
+    models:
+      fallback-model: {accepts: [application/pdf, image/png, image/jpeg, text/plain, text/html]}
+  judge:
+    provider: fake
+    models:
+      judge-model: {accepts: [application/pdf, image/png, image/jpeg, text/plain, text/html]}
+
+groups:
+  extraction:
+    endpoints:
+      - {endpoint: primary, model: primary-model}
+      - {endpoint: fallback, model: fallback-model}
+  review:
+    endpoints:
+      - {endpoint: judge, model: judge-model}
+
+roles:
+  extractor: {group: extraction}
+  judge: {group: review}
+
+logging: {level: info, format: text}
