@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "rail",
+      "title": "Berlin to Munich",
+      "provider": "Deutsche Bahn",
+      "booking_ref": "150163649771",
+      "status": "confirmed",
+      "starts_at_local": "2027-03-18T10:29:00",
+      "ends_at_local": "2027-03-18T14:27:00",
+      "start_place": {
+        "name": "Berlin Hbf",
+        "address": null,
+        "iata": null,
+        "city": "Berlin",
+        "country": "DE"
+      },
+      "end_place": {
+        "name": "München Hbf",
+        "address": null,
+        "iata": null,
+        "city": "Munich",
+        "country": "DE"
+      },
+      "travellers": [
+        { "name": "Elif Yilmaz", "type": null }
+      ],
+      "price": { "amount": "110.98", "currency": "EUR" },
+      "cancellation": "Bis einschließlich 1 Tag vor dem 1. Geltungstag ist der Umtausch oder die Erstattung gegen ein Entgelt von 10 Euro möglich. Ab dem 1. Geltungstag ist kein Umtausch und keine Erstattung möglich.",
+      "details": {
+        "train": "ICE 1007",
+        "coach": "7",
+        "seat": "61, 63",
+        "platform": "1"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Munich",
+    "country": "DE",
+    "starts_on": "2027-03-18",
+    "ends_on": null
+  },
+  "notes": "The ticket is for 2 adults but names only the ticket holder."
+}

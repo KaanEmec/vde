@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "London to Geneva",
+      "provider": "easyJet",
+      "booking_ref": "AIX0T2W",
+      "status": "confirmed",
+      "starts_at_local": "2027-01-23T07:05:00",
+      "ends_at_local": "2027-01-23T09:45:00",
+      "start_place": {
+        "name": "London Gatwick",
+        "address": null,
+        "iata": "LGW",
+        "city": "London",
+        "country": "GB"
+      },
+      "end_place": {
+        "name": null,
+        "address": null,
+        "iata": "GVA",
+        "city": "Geneva",
+        "country": "CH"
+      },
+      "travellers": [
+        { "name": "Jonas Halvorsen", "type": "adult" },
+        { "name": "Saskia Halvorsen", "type": "adult" },
+        { "name": "Mira Halvorsen", "type": "infant" }
+      ],
+      "price": null,
+      "cancellation": "Changes: You can change your flights online up to 2 hours before departure. A change fee applies per passenger, per flight, plus any difference in fare. Cancellations: If you cancel within 24 hours of booking, we'll refund you minus a cancellation fee. After that, flights are non-refundable.",
+      "details": {
+        "number": "EZY 8401",
+        "carrier": "easyJet",
+        "from_iata": "LGW",
+        "to_iata": "GVA",
+        "seat": "7A, 7B",
+        "cabin": null,
+        "terminal": "North",
+        "gate": null,
+        "legs": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    },
+    {
+      "kind": "flight",
+      "title": "Geneva to London",
+      "provider": "easyJet",
+      "booking_ref": "AIX0T2W",
+      "status": "confirmed",
+      "starts_at_local": "2027-01-30T10:30:00",
+      "ends_at_local": "2027-01-30T11:15:00",
+      "start_place": {
+        "name": null,
+        "address": null,
+        "iata": "GVA",
+        "city": "Geneva",
+        "country": "CH"
+      },
+      "end_place": {
+        "name": "London Gatwick",
+        "address": null,
+        "iata": "LGW",
+        "city": "London",
+        "country": "GB"
+      },
+      "travellers": [
+        { "name": "Jonas Halvorsen", "type": "adult" },
+        { "name": "Saskia Halvorsen", "type": "adult" },
+        { "name": "Mira Halvorsen", "type": "infant" }
+      ],
+      "price": null,
+      "cancellation": "Changes: You can change your flights online up to 2 hours before departure. A change fee applies per passenger, per flight, plus any difference in fare. Cancellations: If you cancel within 24 hours of booking, we'll refund you minus a cancellation fee. After that, flights are non-refundable.",
+      "details": {
+        "number": "EZY 8402",
+        "carrier": "easyJet",
+        "from_iata": "GVA",
+        "to_iata": "LGW",
+        "seat": "12C, 12D",
+        "cabin": null,
+        "terminal": null,
+        "gate": null,
+        "legs": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Geneva",
+    "country": "CH",
+    "starts_on": "2027-01-23",
+    "ends_on": "2027-01-30"
+  },
+  "notes": "The total of £573.90 covers both flights. The infant travels on Saskia Halvorsen's lap without a seat."
+}

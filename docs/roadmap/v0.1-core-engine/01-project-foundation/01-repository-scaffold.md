@@ -1,6 +1,6 @@
 # Job: Repository scaffold
 
-Version: v0.1 · Epic: 01 Project foundation · Status: planned · Depends on: none
+Version: v0.1 · Epic: 01 Project foundation · Status: done · Depends on: none
 
 ## Goal
 
@@ -16,20 +16,20 @@ subcommands are added by later jobs, this job creates the command skeleton.
 
 ## Tasks
 
-- [ ] Initialize the Go module (Go 1.23+), `cmd/vde/main.go` with a subcommand dispatcher
+- [x] Initialize the Go module (Go 1.23+), `cmd/vde/main.go` with a subcommand dispatcher
       using the standard `flag` package (no CLI framework); `vde version` prints version,
       commit and build date injected with `-ldflags`.
-- [ ] Create the `internal/` package directories with a `doc.go` each stating the package's
+- [x] Create the `internal/` package directories with a `doc.go` each stating the package's
       responsibility in two or three sentences.
-- [ ] Add `Makefile` targets: `build` (cgo disabled), `test` (`go test -race ./...`),
+- [x] Add `Makefile` targets: `build` (cgo disabled), `test` (`go test -race ./...`),
       `lint` (`go vet`, `staticcheck`, `golangci-lint` with a short config), `check`
       (all of the above), `cross` (linux/amd64 and linux/arm64 builds).
-- [ ] Add `LICENSE` (Apache-2.0 assumed), `README.md` (what it is, status, link to docs),
+- [x] Add `LICENSE` (Apache-2.0 assumed), `README.md` (what it is, status, link to docs),
       `CONTRIBUTING.md` (job-per-PR working agreement from the roadmap README),
       `.gitignore`, `.editorconfig`.
-- [ ] Add `docs/` links to architecture and roadmap from the README.
-- [ ] Add an `examples/` folder placeholder for the dev configuration (filled by epic 06).
-- [ ] Import the co-owned TravelInbox assets into `testdata/travelinbox/`: the extraction
+- [x] Add `docs/` links to architecture and roadmap from the README.
+- [x] Add an `examples/` folder placeholder for the dev configuration (filled by epic 06).
+- [x] Import the co-owned TravelInbox assets into `testdata/travelinbox/`: the extraction
       schema, the extractor and judge prompts, the reference stub for study, and the
       evaluation corpus with ground truth (from the TravelInbox repository,
       `backend/testdata/corpus/` and `backend/internal/extract/`), with a README noting

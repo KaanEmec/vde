@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "dining",
+      "title": "Dinner at Brasserie am Lausitzer Platz",
+      "provider": "Quandoo",
+      "booking_ref": "28447373",
+      "status": "confirmed",
+      "starts_at_local": "2027-09-09T19:00:00",
+      "ends_at_local": null,
+      "start_place": {
+        "name": "Brasserie am Lausitzer Platz",
+        "address": "Lausitzer Platz 11, 10997 Berlin",
+        "iata": null,
+        "city": "Berlin",
+        "country": "DE"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Lena Hoffmann", "type": null }
+      ],
+      "price": null,
+      "cancellation": "Du kannst deine Reservierung bis 24 Stunden vor dem Termin kostenlos ändern oder stornieren. Bei späterer Absage oder Nichterscheinen berechnet das Restaurant für Gruppen ab 6 Personen 15 € pro Person.",
+      "details": {
+        "party_size": 6,
+        "phone": "030 23125 618"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Berlin",
+    "country": "DE",
+    "starts_on": "2027-09-09",
+    "ends_on": "2027-09-09"
+  },
+  "notes": null
+}

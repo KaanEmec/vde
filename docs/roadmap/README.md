@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: planning, 2026-10-16. Nothing is implemented yet; this folder is the plan.
+Status: in implementation since 2026-10-16. Each job file carries its own `Status`.
 
 The roadmap is organized as **versions → epics → jobs**. A version is a releasable
 milestone with an exit criterion. An epic is a coherent body of work inside a version with

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "London to Milan",
+      "provider": "Ryanair",
+      "booking_ref": "M2O2PC",
+      "status": "confirmed",
+      "starts_at_local": "2027-05-20T06:30:00",
+      "ends_at_local": "2027-05-20T09:35:00",
+      "start_place": {
+        "name": "London Stansted",
+        "address": null,
+        "iata": "STN",
+        "city": "London",
+        "country": "GB"
+      },
+      "end_place": {
+        "name": "Milan Bergamo",
+        "address": null,
+        "iata": "BGY",
+        "city": "Milan",
+        "country": "IT"
+      },
+      "travellers": [
+        { "name": "Callum Gallagher", "type": "adult" }
+      ],
+      "price": { "amount": "75.98", "currency": "GBP" },
+      "cancellation": "Ryanair fares are non-refundable. Flight changes can be made online up to 2.5 hours before the scheduled departure time; a flight change fee and any fare difference apply.",
+      "details": {
+        "number": "FR 2286",
+        "carrier": "Ryanair",
+        "from_iata": "STN",
+        "to_iata": "BGY",
+        "seat": "16C",
+        "cabin": null,
+        "terminal": null,
+        "gate": null,
+        "legs": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Milan",
+    "country": "IT",
+    "starts_on": "2027-05-20",
+    "ends_on": null
+  },
+  "notes": null
+}

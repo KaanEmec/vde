@@ -1,0 +1,1154 @@
+package extract_test
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/riverqueue/river/rivertype"
+
+	"travelinbox.app/backend/internal/extract"
+	"travelinbox.app/backend/internal/jobs"
+)
+
+const (
+	stubToken = "stub-token"
+	// stubScopelessToken is a valid token outside the jobs scope.
+	stubScopelessToken = "stub-token-without-scope"
+	// stubQuota is the stub's quota per window.
+	stubQuota = 1000
+	// stubKeep is how long the stub keeps a job, the contract's 24 hours.
+	stubKeep = 24 * time.Hour
+)
+
+// stubVersion is the service_version of every stub job.
+var stubVersion = "stub+" + extract.FakeServiceVersion
+
+// reply is one scripted HTTP answer of the stub.
+type reply struct {
+	status int
+	header map[string]string
+	body   string
+}
+
+// stubPart is one multipart part the stub received.
+type stubPart struct {
+	contentType string
+	data        []byte
+}
+
+// stub is an httptest extraction service speaking
+// docs/EXTRACTION-SERVICE-CONTRACT.md and shared/extraction-service-api.yaml.
+// By default it answers from a Fake: a submit runs the Fake on the document
+// part and answers 202 with the queued job, the first poll of a job says
+// running and the next one gives the Fake's verdict, its feedback marked as
+// the judge's.
+//
+// Like the service it honours Idempotency-Key (a repeat returns the existing
+// job with Idempotency-Replayed: true and runs nothing; a different body is
+// 422), counts jobs against a quota it reports in X-Quota-Remaining and
+// X-Quota-Reset and at GET /v1/quota, and with retention none answers 404
+// once a terminal status has been read.
+//
+// submit and poll, when set, answer instead with scripted replies; n counts
+// their calls from 1.
+type stub struct {
+	srv    *httptest.Server
+	fake   extract.Fake
+	submit func(n int) reply
+	poll   func(n int) reply
+	// limit is the quota per window, stubQuota unless a test changes it.
+	limit int
+	// noQuota answers GET /v1/quota with 404, as a service without it.
+	noQuota bool
+	// lose drops the connection after submit n created its job, as a
+	// response lost on its way back.
+	lose func(n int) bool
+
+	mu      sync.Mutex
+	submits int
+	polls   int
+	runs    int                   // jobs created, one Fake run each
+	parts   map[string][]stubPart // of the last submit
+	keys    []string              // the Idempotency-Key of every submit
+	jobs    map[string]*stubJob
+	byKey   map[string]*stubJob
+	answers []stubAnswer // every answer that was not scripted
+}
+
+type stubJob struct {
+	id        string
+	digest    string // of the parts, to tell a repeat from a mismatch
+	res       extract.Result
+	retention string
+	status    string
+	created   time.Time
+	finished  *time.Time
+	polls     int
+	gone      bool // content deleted: a terminal status read with retention none
+}
+
+// stubAnswer is one answer of the stub's own, kept for TestStubContract.
+type stubAnswer struct {
+	path   string
+	status int
+	header http.Header
+	body   []byte
+}
+
+func newStub(t *testing.T) *stub {
+	t.Helper()
+	s := &stub{limit: stubQuota, jobs: map[string]*stubJob{}, byKey: map[string]*stubJob{}}
+	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
+	t.Cleanup(s.srv.Close)
+	return s
+}
+
+// service returns a client of the stub that polls quickly.
+func (s *stub) service() *extract.Service {
+	return &extract.Service{URL: s.srv.URL, Token: stubToken, PollInterval: 5 * time.Millisecond}
+}
+
+func (s *stub) counts() (submits, polls int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.submits, s.polls
+}
+
+// sentKeys is the Idempotency-Key of every submit so far, "" for none.
+func (s *stub) sentKeys() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.keys)
+}
+
+// created is the number of jobs the stub created, each one Fake run.
+func (s *stub) created() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.runs
+}
+
+func (s *stub) serve(w http.ResponseWriter, r *http.Request) {
+	switch r.Header.Get("Authorization") {
+	case "Bearer " + stubToken:
+	case "Bearer " + stubScopelessToken:
+		write(w, reply{status: http.StatusForbidden, body: `{"error":{"code":"forbidden","message":"token outside its scope"}}`})
+		return
+	default:
+		write(w, reply{status: http.StatusUnauthorized, body: `{"error":{"code":"unauthorized","message":"bad token"}}`})
+		return
+	}
+	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/jobs":
+		s.serveSubmit(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/jobs/"):
+		s.servePoll(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/quota" && !s.noQuota:
+		s.mu.Lock()
+		remaining, reset := s.quota()
+		s.mu.Unlock()
+		s.answer(w, r, http.StatusOK, nil, map[string]any{
+			"limit": s.limit, "remaining": remaining, "reset": reset, "window": "P1D",
+		})
+	default:
+		s.answer(w, r, http.StatusNotFound, nil, stubError("not_found", "no such resource"))
+	}
+}
+
+func (s *stub) serveSubmit(w http.ResponseWriter, r *http.Request) {
+	parts, err := readParts(r)
+	key := r.Header.Get("Idempotency-Key")
+	s.mu.Lock()
+	s.submits++
+	n := s.submits
+	s.parts = parts
+	s.keys = append(s.keys, key)
+	s.mu.Unlock()
+	if s.submit != nil {
+		write(w, s.submit(n))
+		return
+	}
+	retention := "default"
+	if p := parts["retention"]; len(p) == 1 {
+		retention = string(p[0].data)
+	}
+	if err != nil || retention != "none" && retention != "default" || len(parts["retention"]) > 1 ||
+		slices.ContainsFunc([]string{"document", "extractor_instructions", "judge_instructions", "schema"},
+			func(name string) bool { return len(parts[name]) != 1 }) {
+		s.answer(w, r, http.StatusBadRequest, nil, stubError("bad_request", "a part is missing, repeated or unreadable"))
+		return
+	}
+
+	digest := partsDigest(parts)
+	s.mu.Lock()
+	job := s.byKey[key]
+	switch {
+	case key != "" && job != nil && job.digest != digest:
+		s.mu.Unlock()
+		s.answer(w, r, http.StatusUnprocessableEntity, nil, stubError("idempotency_mismatch", "same key, different request"))
+		return
+	case key != "" && job != nil:
+		body := job.render()
+		s.mu.Unlock()
+		s.answer(w, r, http.StatusAccepted, map[string]string{"Location": "/v1/jobs/" + job.id, "Idempotency-Replayed": "true"}, body)
+		return
+	}
+	if remaining, reset := s.quota(); remaining == 0 {
+		s.mu.Unlock()
+		s.answer(w, r, http.StatusTooManyRequests, map[string]string{"Retry-After": strconv.Itoa(int(time.Until(reset).Seconds()) + 1)},
+			stubError("quota_exhausted", "the quota is spent"))
+		return
+	}
+	doc := parts["document"][0]
+	res, err := s.fake.Extract(r.Context(), extract.Request{Document: doc.data, MIME: doc.contentType})
+	if err != nil {
+		s.mu.Unlock()
+		s.answer(w, r, http.StatusInternalServerError, nil, stubError("internal", "the fake failed"))
+		return
+	}
+	job = &stubJob{id: rand.Text(), digest: digest, res: res, retention: retention, status: "queued",
+		created: time.Now().UTC().Truncate(time.Second)}
+	s.runs++
+	s.jobs[job.id] = job
+	if key != "" {
+		s.byKey[key] = job
+	}
+	body := job.render()
+	s.mu.Unlock()
+
+	if s.lose != nil && s.lose(n) {
+		if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
+			_ = conn.Close()
+		}
+		return
+	}
+	s.answer(w, r, http.StatusAccepted, map[string]string{"Location": "/v1/jobs/" + job.id}, body)
+}
+
+func (s *stub) servePoll(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	s.polls++
+	n := s.polls
+	job := s.jobs[strings.TrimPrefix(r.URL.Path, "/v1/jobs/")]
+	gone := job == nil || job.gone
+	var body map[string]any
+	if !gone {
+		job.advance()
+		body = job.render()
+		// With retention none the first read of a terminal status deletes
+		// the content.
+		job.gone = job.finished != nil && job.retention == "none"
+	}
+	s.mu.Unlock()
+	if s.poll != nil {
+		write(w, s.poll(n))
+		return
+	}
+	if gone {
+		s.answer(w, r, http.StatusNotFound, nil, stubError("not_found", "no such job"))
+		return
+	}
+	s.answer(w, r, http.StatusOK, nil, body)
+}
+
+// advance moves the job one step per poll: running, then its verdict.
+func (j *stubJob) advance() {
+	j.polls++
+	switch {
+	case j.finished != nil:
+	case j.polls == 1:
+		j.status = "running"
+	default:
+		j.status = "rejected"
+		if j.res.Accepted {
+			j.status = "accepted"
+		}
+		now := time.Now().UTC().Truncate(time.Second)
+		j.finished = &now
+	}
+}
+
+// render is the job resource of the contract, section 5. A job whose
+// content is gone keeps only its status.
+func (j *stubJob) render() map[string]any {
+	m := map[string]any{
+		"id": j.id, "status": j.status, "result": nil, "feedback": []extract.FieldFeedback{}, "attempts": 0,
+		"service_version": stubVersion, "error": nil,
+		"created_at": j.created, "finished_at": j.finished, "expires_at": j.created.Add(stubKeep),
+	}
+	if j.finished == nil {
+		return m
+	}
+	m["attempts"] = j.res.Attempts
+	if j.gone {
+		return m
+	}
+	m["result"] = j.res.JSON
+	feedback := []extract.FieldFeedback{}
+	for _, f := range j.res.Feedback {
+		f.Source = extract.SourceJudge
+		feedback = append(feedback, f)
+	}
+	m["feedback"] = feedback
+	return m
+}
+
+// quota is what is left of the window and when it resets. Call with s.mu
+// held.
+func (s *stub) quota() (int, time.Time) {
+	reset := time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
+	return max(s.limit-s.runs, 0), reset
+}
+
+// answer sends v as JSON with the headers the contract puts on every
+// authenticated response, and keeps it for TestStubContract.
+func (s *stub) answer(w http.ResponseWriter, r *http.Request, status int, header map[string]string, v any) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	s.mu.Lock()
+	remaining, reset := s.quota()
+	s.mu.Unlock()
+	h := w.Header()
+	h.Set("X-Quota-Remaining", strconv.Itoa(remaining))
+	h.Set("X-Quota-Reset", reset.Format(time.RFC3339))
+	if strings.HasPrefix(r.URL.Path, "/v1/jobs") {
+		h.Set("X-Service-Version", stubVersion)
+	}
+	for k, v := range header {
+		h.Set(k, v)
+	}
+	h.Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+	s.mu.Lock()
+	s.answers = append(s.answers, stubAnswer{path: r.URL.Path, status: status, header: h.Clone(), body: body})
+	s.mu.Unlock()
+}
+
+func stubError(code, message string) map[string]any {
+	return map[string]any{"error": map[string]string{"code": code, "message": message}}
+}
+
+// partsDigest hashes the parts by name, in request order within a name.
+func partsDigest(parts map[string][]stubPart) string {
+	names := make([]string, 0, len(parts))
+	for name := range parts {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	h := sha256.New()
+	for _, name := range names {
+		for _, p := range parts[name] {
+			_, _ = fmt.Fprintf(h, "%s\x00%s\x00%d\x00", name, p.contentType, len(p.data))
+			h.Write(p.data)
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func readParts(r *http.Request) (map[string][]stubPart, error) {
+	mr, err := r.MultipartReader()
+	if err != nil {
+		return nil, err
+	}
+	parts := map[string][]stubPart{}
+	for {
+		p, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			return parts, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		data, err := io.ReadAll(p)
+		if err != nil {
+			return nil, err
+		}
+		parts[p.FormName()] = append(parts[p.FormName()], stubPart{contentType: p.Header.Get("Content-Type"), data: data})
+	}
+}
+
+func write(w http.ResponseWriter, r reply) {
+	for k, v := range r.header {
+		w.Header().Set(k, v)
+	}
+	if r.body != "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	w.WriteHeader(r.status)
+	_, _ = io.WriteString(w, r.body)
+}
+
+// testRequest is a request for doc carrying the real prompts and schema.
+func testRequest(doc []byte, mime string, pages ...[]byte) extract.Request {
+	p, s := extract.Versions()
+	return extract.Request{
+		Document: doc, MIME: mime, PageImages: pages,
+		ExtractorPrompt: extract.ExtractorInstructions(), JudgePrompt: extract.JudgeInstructions(),
+		Schema: extract.Schema(), PromptVersion: p, SchemaVersion: s,
+	}
+}
+
+func accepted(n int) reply {
+	if n == 1 {
+		return reply{status: http.StatusOK, body: `{"id":"j1","status":"running"}`}
+	}
+	return reply{status: http.StatusOK, body: `{"id":"j1","status":"accepted","result":` + string(result(hotelItem)) +
+		`,"feedback":[],"attempts":1,"service_version":"svc-1","error":null}`}
+}
+
+func submitted(int) reply {
+	return reply{status: http.StatusAccepted, header: map[string]string{"X-Quota-Remaining": "41"}, body: `{"id":"j1","status":"queued"}`}
+}
+
+func TestService(t *testing.T) {
+	reset := time.Now().Add(3 * time.Hour).UTC().Truncate(time.Second)
+	tests := []struct {
+		name     string
+		submit   func(n int) reply
+		poll     func(n int) reply
+		deadline time.Duration
+		// wantErr is the error class; "" wants a Result.
+		wantErr      string
+		wantAccepted bool
+		wantFeedback string // substring of some feedback message
+		check        func(t *testing.T, s *stub, svc *extract.Service, res extract.Result, err error)
+	}{
+		{
+			name: "accepted", submit: submitted, poll: accepted, wantAccepted: true,
+			check: func(t *testing.T, s *stub, _ *extract.Service, res extract.Result, _ error) {
+				if !jsonEqual(res.JSON, result(hotelItem)) || res.Attempts != 1 || res.ServiceVersion != "svc-1" || len(res.Feedback) != 0 {
+					t.Errorf("result = %+v", res)
+				}
+				if res.QuotaRemaining == nil || *res.QuotaRemaining != 41 {
+					t.Errorf("quota remaining = %v, want 41", res.QuotaRemaining)
+				}
+				if submits, polls := s.counts(); submits != 1 || polls != 2 {
+					t.Errorf("%d submits, %d polls; want 1, 2", submits, polls)
+				}
+				checkParts(t, s)
+			},
+		},
+		{
+			name:   "rejected with feedback",
+			submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusOK, body: `{"id":"j1","status":"rejected","result":` + string(result(flightItem)) +
+					`,"feedback":[{"pointer":"/reservations/0/starts_at_local","message":"The departure time is unclear."}],` +
+					`"attempts":3,"service_version":"svc-1","error":null}`}
+			},
+			wantFeedback: "departure time is unclear",
+			check: func(t *testing.T, _ *stub, _ *extract.Service, res extract.Result, _ error) {
+				if !jsonEqual(res.JSON, result(flightItem)) || res.Attempts != 3 || len(res.Feedback) != 1 ||
+					res.Feedback[0].Pointer != "/reservations/0/starts_at_local" {
+					t.Errorf("result = %+v", res)
+				}
+			},
+		},
+		{
+			name:   "failed",
+			submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusOK, body: `{"id":"j1","status":"failed","result":null,"feedback":[],"attempts":2,` +
+					`"service_version":"svc-1","error":{"code":"provider_unavailable","message":"all endpoints failed"}}`}
+			},
+			wantFeedback: "provider_unavailable",
+			check: func(t *testing.T, _ *stub, _ *extract.Service, res extract.Result, _ error) {
+				if string(res.JSON) != "null" || res.Attempts != 2 {
+					t.Errorf("result = %+v", res)
+				}
+			},
+		},
+		{
+			name:   "accepted with a judge error",
+			submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusOK, body: `{"id":"j1","status":"accepted","result":` + string(result(hotelItem)) +
+					`,"feedback":[],"attempts":1,"service_version":"svc-1","error":{"code":"judge_error","message":"judge timed out"}}`}
+			},
+			wantFeedback: "judge_error",
+		},
+		{
+			name:   "accepted without a result",
+			submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusOK, body: `{"id":"j1","status":"accepted","result":null,"attempts":1,"service_version":"svc-1"}`}
+			},
+			wantFeedback: "accepted no result",
+		},
+		{
+			name:   "unknown status",
+			submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusOK, body: `{"id":"j1","status":"done","result":` + string(result(hotelItem)) + `,"attempts":1}`}
+			},
+			wantFeedback: `unknown status "done"`,
+		},
+		{
+			name: "429 then success",
+			submit: func(n int) reply {
+				if n == 1 {
+					return reply{status: http.StatusTooManyRequests, header: map[string]string{"Retry-After": "1", "X-Quota-Remaining": "5"}}
+				}
+				return submitted(n)
+			},
+			poll: accepted, wantAccepted: true,
+			check: func(t *testing.T, s *stub, _ *extract.Service, _ extract.Result, _ error) {
+				if submits, _ := s.counts(); submits != 2 {
+					t.Errorf("%d submits, want 2", submits)
+				}
+			},
+		},
+		{
+			name: "quota exhausted",
+			submit: func(int) reply {
+				return reply{status: http.StatusTooManyRequests, header: map[string]string{
+					"Retry-After": "10800", "X-Quota-Remaining": "0", "X-Quota-Reset": reset.Format(time.RFC3339),
+				}}
+			},
+			wantErr: extract.ClassQuota,
+			check: func(t *testing.T, s *stub, svc *extract.Service, _ extract.Result, err error) {
+				var qe *extract.QuotaError
+				if !errors.As(err, &qe) || !qe.Reset.Equal(reset) {
+					t.Errorf("err = %v, want a QuotaError resetting at %s", err, reset)
+				}
+				// The next document is refused without asking the service.
+				_, err = svc.Extract(t.Context(), testRequest([]byte("next"), "text/plain"))
+				if !errors.As(err, &qe) || !qe.Reset.Equal(reset) {
+					t.Errorf("second call: err = %v, want a QuotaError resetting at %s", err, reset)
+				}
+				if submits, _ := s.counts(); submits != 1 {
+					t.Errorf("%d submits, want 1", submits)
+				}
+			},
+		},
+		{
+			name: "rate limited past the deadline", deadline: time.Second,
+			submit: func(int) reply {
+				return reply{status: http.StatusTooManyRequests, header: map[string]string{"Retry-After": "60"}}
+			},
+			wantErr: extract.ClassQuota,
+			check: func(t *testing.T, _ *stub, _ *extract.Service, _ extract.Result, err error) {
+				var qe *extract.QuotaError
+				if !errors.As(err, &qe) || time.Until(qe.Reset) < 50*time.Second {
+					t.Errorf("err = %v, want a QuotaError about a minute ahead", err)
+				}
+			},
+		},
+		{
+			name: "timeout", deadline: 200 * time.Millisecond, submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusOK, body: `{"id":"j1","status":"running","result":null,"attempts":1}`}
+			},
+			wantErr: extract.ClassTimeout,
+			check: func(t *testing.T, _ *stub, _ *extract.Service, _ extract.Result, err error) {
+				if !errors.Is(err, extract.ErrTimeout) || !strings.Contains(err.Error(), "still running") {
+					t.Errorf("err = %v, want ErrTimeout while running", err)
+				}
+			},
+		},
+		{
+			name: "malformed JSON", submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusOK, body: `{"id":"j1","status":"accep`}
+			},
+			wantErr: extract.ClassService,
+		},
+		{
+			name: "malformed submit response",
+			submit: func(int) reply {
+				return reply{status: http.StatusAccepted, body: `<html>`}
+			},
+			wantErr: extract.ClassService,
+		},
+		{
+			name: "poll fails once then succeeds", submit: submitted,
+			poll: func(n int) reply {
+				if n == 1 {
+					return reply{status: http.StatusBadGateway}
+				}
+				return accepted(n)
+			},
+			wantAccepted: true,
+		},
+		{
+			name: "service version from header", submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusOK, header: map[string]string{"X-Service-Version": "svc-header"},
+					body: `{"id":"j1","status":"accepted","result":` + string(result(hotelItem)) + `,"attempts":1}`}
+			},
+			wantAccepted: true,
+			check: func(t *testing.T, _ *stub, _ *extract.Service, res extract.Result, _ error) {
+				if res.ServiceVersion != "svc-header" {
+					t.Errorf("service version = %q, want svc-header", res.ServiceVersion)
+				}
+			},
+		},
+		{
+			name: "invalid request",
+			submit: func(int) reply {
+				return reply{status: http.StatusUnprocessableEntity, body: `{"error":{"code":"unsupported_document","message":"cannot read"}}`}
+			},
+			wantErr: extract.ClassInvalid,
+			check: func(t *testing.T, _ *stub, _ *extract.Service, _ extract.Result, err error) {
+				if !strings.Contains(err.Error(), "unsupported_document") {
+					t.Errorf("err = %v, want the service's error code", err)
+				}
+			},
+		},
+		{
+			name: "outage",
+			submit: func(int) reply {
+				return reply{status: http.StatusServiceUnavailable}
+			},
+			wantErr: extract.ClassService,
+		},
+		{
+			name: "job lost", submit: submitted,
+			poll: func(int) reply {
+				return reply{status: http.StatusNotFound}
+			},
+			wantErr: extract.ClassService,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newStub(t)
+			s.submit, s.poll = tt.submit, tt.poll
+			svc := s.service()
+			svc.Deadline = tt.deadline
+			res, err := svc.Extract(t.Context(), testRequest([]byte("Hotel Avenida, 12 May 2027"), "text/plain; charset=utf-8",
+				[]byte("page one"), []byte("page two")))
+			if res.Accepted != tt.wantAccepted {
+				t.Errorf("accepted = %v, want %v", res.Accepted, tt.wantAccepted)
+			}
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Fatalf("err = %v, want a result", err)
+			case tt.wantErr != "" && err == nil:
+				t.Fatalf("no error, want class %s", tt.wantErr)
+			case tt.wantErr != "":
+				if got := extract.Classify(err); got != tt.wantErr {
+					t.Errorf("class of %v = %s, want %s", err, got, tt.wantErr)
+				}
+			}
+			if tt.wantFeedback != "" && !slices.ContainsFunc(res.Feedback, func(f extract.FieldFeedback) bool {
+				return strings.Contains(f.Message, tt.wantFeedback)
+			}) {
+				t.Errorf("feedback = %v, want a message containing %q", res.Feedback, tt.wantFeedback)
+			}
+			if tt.check != nil {
+				tt.check(t, s, svc, res, err)
+			}
+		})
+	}
+}
+
+// checkParts checks the multipart body of the last submit.
+func checkParts(t *testing.T, s *stub) {
+	t.Helper()
+	s.mu.Lock()
+	parts := s.parts
+	s.mu.Unlock()
+	one := func(name string) stubPart {
+		if len(parts[name]) != 1 {
+			t.Fatalf("%d %s parts, want 1", len(parts[name]), name)
+		}
+		return parts[name][0]
+	}
+	if d := one("document"); string(d.data) != "Hotel Avenida, 12 May 2027" || d.contentType != "text/plain; charset=utf-8" {
+		t.Errorf("document = %q as %q", d.data, d.contentType)
+	}
+	if pages := parts["page"]; len(pages) != 2 || string(pages[0].data) != "page one" || pages[1].contentType != "image/png" {
+		t.Errorf("pages = %v", pages)
+	}
+	if string(one("extractor_instructions").data) != extract.ExtractorInstructions() ||
+		string(one("judge_instructions").data) != extract.JudgeInstructions() {
+		t.Error("instructions not sent verbatim")
+	}
+	if sc := one("schema"); string(sc.data) != string(extract.Schema()) || sc.contentType != "application/schema+json" {
+		t.Errorf("schema sent as %q", sc.contentType)
+	}
+	if string(one("retention").data) != "none" {
+		t.Error("retention is not none")
+	}
+}
+
+func TestServiceUnauthorized(t *testing.T) {
+	s := newStub(t)
+	svc := s.service()
+	svc.Token = "wrong"
+	_, err := svc.Extract(t.Context(), testRequest([]byte("x"), "text/plain"))
+	if err == nil || extract.Classify(err) != extract.ClassService || !strings.Contains(err.Error(), "401") {
+		t.Errorf("err = %v, want a service error with status 401", err)
+	}
+}
+
+// TestServiceOutage runs the extract job against a service answering 503 to
+// everything: the document stays processing while River retries, and is
+// never done.
+func TestServiceOutage(t *testing.T) {
+	e := newJobEnv(t)
+	s := newStub(t)
+	s.submit = func(int) reply { return reply{status: http.StatusServiceUnavailable} }
+	s.poll = s.submit
+	j := e.job(s.service())
+
+	t.Run("attempts", func(t *testing.T) {
+		d := e.newDoc(t, pgtype.UUID{})
+		for n := 1; n < jobs.ExtractMaxAttempts; n++ {
+			err := e.attempt(t, j, d, n)
+			if err == nil || extract.Classify(err) != extract.ClassService {
+				t.Fatalf("attempt %d: err = %v, want a service error to retry", n, err)
+			}
+			if status, _ := e.state(t, d.ID); status != extract.StatusProcessing {
+				t.Fatalf("after attempt %d: status %s, want processing", n, status)
+			}
+		}
+		// The last attempt gives up with a reason; the document is never done.
+		_ = e.attempt(t, j, d, jobs.ExtractMaxAttempts)
+		status, r := e.state(t, d.ID)
+		if status != extract.StatusFailed || classOf(r) != extract.ClassService {
+			t.Errorf("after the last attempt: %s with class %q, want failed with service", status, classOf(r))
+		}
+	})
+
+	t.Run("river retries", func(t *testing.T) {
+		d := e.newDoc(t, pgtype.UUID{})
+		jc, err := jobs.New(e.pool, e.logger, e.blobs, jobs.WithExtraction(j.Work))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := jc.Start(context.WithoutCancel(t.Context())); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := jc.Stop(ctx); err != nil {
+				t.Error(err)
+			}
+		})
+		tx, err := e.pool.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := jc.EnqueueTx(t.Context(), tx, jobs.ExtractArgs{DocumentID: d.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+
+		deadline := time.Now().Add(30 * time.Second)
+		for {
+			var state string
+			var attempt, errs int
+			err := e.pool.QueryRow(t.Context(), `SELECT state, attempt, coalesce(array_length(errors, 1), 0)
+				FROM river_job WHERE kind = 'extract' AND args->>'document_id' = $1`, d.ID.String()).Scan(&state, &attempt, &errs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state == string(rivertype.JobStateRetryable) {
+				if attempt != 1 || errs != 1 {
+					t.Errorf("retryable after attempt %d with %d errors, want 1 and 1", attempt, errs)
+				}
+				break
+			}
+			if state != string(rivertype.JobStateAvailable) && state != string(rivertype.JobStateRunning) {
+				t.Fatalf("job state %s, want retryable", state)
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("job still %s after 30 s", state)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if status, _ := e.state(t, d.ID); status != extract.StatusProcessing {
+			t.Errorf("status %s while River retries, want processing", status)
+		}
+	})
+}
+
+// TestServiceLive runs against the real extraction service at EXTRACTION_URL
+// with EXTRACTION_TOKEN, and is skipped when EXTRACTION_URL is not set.
+func TestServiceLive(t *testing.T) {
+	url := os.Getenv("EXTRACTION_URL")
+	if url == "" {
+		t.Skip("EXTRACTION_URL is not set; live extraction service tests skipped")
+	}
+	svc := &extract.Service{URL: url, Token: os.Getenv("EXTRACTION_TOKEN")}
+
+	t.Run("one document", func(t *testing.T) {
+		res, err := svc.Extract(t.Context(), testRequest(
+			[]byte("Ferry Lisbon to Barreiro, 12 May 2027 09:15, booking ref LX42QZ, passenger Ana Silva."),
+			"text/plain; charset=utf-8"))
+		if errors.Is(err, extract.ErrQuota) {
+			t.Skipf("quota: %v", err)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.ServiceVersion == "" || res.Attempts < 1 {
+			t.Errorf("service version %q, attempts %d", res.ServiceVersion, res.Attempts)
+		}
+		if res.Accepted && !json.Valid(res.JSON) {
+			t.Error("accepted result is not JSON")
+		}
+		if !res.Accepted && len(res.Feedback) == 0 {
+			t.Error("not accepted without feedback")
+		}
+	})
+
+	t.Run("corpus end to end", func(t *testing.T) {
+		runCorpus(t, newJobEnv(t), svc, time.Hour, false)
+	})
+}
+
+func jsonEqual(a, b []byte) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	ja, _ := json.Marshal(x)
+	jb, _ := json.Marshal(y)
+	return string(ja) == string(jb)
+}
+
+// TestServiceIdempotency loses the response to the first submission: the
+// retry carries the same Idempotency-Key, gets the first job back and the
+// stub runs the Fake once. A replayed job whose content is already gone is
+// submitted afresh.
+func TestServiceIdempotency(t *testing.T) {
+	s := newStub(t)
+	s.lose = func(n int) bool { return n == 1 }
+	svc := s.service()
+	req := testRequest([]byte("Hotel Avenida, 12 May 2027"), "text/plain; charset=utf-8")
+
+	if _, err := svc.Extract(t.Context(), req); err == nil || extract.Classify(err) != extract.ClassService {
+		t.Fatalf("lost response: err = %v, want a service error to retry", err)
+	}
+	res, err := svc.Extract(t.Context(), req)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if res.Accepted || len(res.Feedback) != 1 || res.Feedback[0].Source != extract.SourceJudge {
+		t.Errorf("retry: result %+v, want rejected with judge feedback", res)
+	}
+	keys := s.sentKeys()
+	if created := s.created(); len(keys) != 2 || created != 1 {
+		t.Fatalf("%d submits created %d jobs, want 2 and 1", len(keys), created)
+	}
+	if keys[0] == "" || keys[1] != keys[0] {
+		t.Errorf("keys %q, want the same key twice", keys)
+	}
+	if res.QuotaRemaining == nil || *res.QuotaRemaining != stubQuota-1 {
+		t.Errorf("quota remaining %v, want %d", res.QuotaRemaining, stubQuota-1)
+	}
+
+	// The job was read with retention none: the key now names a 404.
+	if _, err := svc.Extract(t.Context(), req); err != nil {
+		t.Fatalf("after the job is gone: %v", err)
+	}
+	keys = s.sentKeys()
+	if created := s.created(); created != 2 || len(keys) != 4 || keys[2] != keys[0] || keys[3] != "" {
+		t.Errorf("%d jobs from keys %q, want 2 with the fresh submission keyless", created, keys)
+	}
+}
+
+func TestIdempotencyKey(t *testing.T) {
+	s := newStub(t)
+	svc := s.service()
+	// key is the key the first submission of req carries. Repeats may be
+	// refused as an idempotency_mismatch; only the key matters here.
+	key := func(req extract.Request) string {
+		t.Helper()
+		n := len(s.sentKeys())
+		_, _ = svc.Extract(t.Context(), req)
+		keys := s.sentKeys()
+		if len(keys) <= n {
+			t.Fatal("nothing submitted")
+		}
+		return keys[n]
+	}
+	original := sha256.Sum256([]byte("the original .eml"))
+	withHash := func(doc string, prompt int) extract.Request {
+		req := testRequest([]byte(doc), "text/plain; charset=utf-8")
+		req.ContentHash, req.PromptVersion = original[:], prompt
+		return req
+	}
+
+	base := withHash("the body", 7)
+	want := sha256.Sum256(fmt.Appendf(append([]byte{}, original[:]...), "\x00%d\x00%d", 7, base.SchemaVersion))
+	if got := key(base); got != fmt.Sprintf("%x", want) {
+		t.Errorf("key %s, want hex(sha256(content hash, prompt version, schema version)) %x", got, want)
+	}
+	if key(withHash("another rendition", 7)) != key(base) {
+		t.Error("the key depends on the rendition, not only on the original's content hash")
+	}
+	if key(withHash("the body", 8)) == key(base) {
+		t.Error("a new prompt version keeps the key")
+	}
+	noHash := testRequest([]byte("pasted text"), "text/plain; charset=utf-8")
+	wantDoc := sha256.Sum256(fmt.Appendf([]byte("pasted text"), "\x00%d\x00%d", noHash.PromptVersion, noHash.SchemaVersion))
+	if got := key(noHash); got != fmt.Sprintf("%x", wantDoc) {
+		t.Errorf("key without a content hash %s, want one over the document bytes %x", got, wantDoc)
+	}
+}
+
+func TestServiceCheck(t *testing.T) {
+	tests := []struct {
+		name    string
+		token   string
+		limit   int
+		noQuota bool
+		wantErr error
+	}{
+		{name: "quota", token: stubToken, limit: stubQuota},
+		{name: "spent quota", token: stubToken, limit: 0},
+		{name: "unauthorized", token: "wrong", limit: stubQuota, wantErr: extract.ErrInvalid},
+		{name: "forbidden", token: stubScopelessToken, limit: stubQuota, wantErr: extract.ErrInvalid},
+		{name: "no quota endpoint", token: stubToken, limit: stubQuota, noQuota: true, wantErr: extract.ErrNoQuotaEndpoint},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newStub(t)
+			s.limit, s.noQuota = tt.limit, tt.noQuota
+			svc := s.service()
+			svc.Token = tt.token
+			q, err := svc.Check(t.Context())
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+				if tt.noQuota && errors.Is(err, extract.ErrInvalid) {
+					t.Errorf("err = %v: a missing endpoint is not a bad credential", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if q.Limit != tt.limit || q.Remaining != tt.limit || q.Window != "P1D" || !q.Reset.After(time.Now()) {
+				t.Errorf("quota %+v, want %d of %d left, P1D, resetting ahead", q, tt.limit, tt.limit)
+			}
+			if tt.limit > 0 {
+				return
+			}
+			// The quota Check read is remembered: nothing is submitted.
+			_, err = svc.Extract(t.Context(), testRequest([]byte("x"), "text/plain"))
+			var qe *extract.QuotaError
+			if !errors.As(err, &qe) || !qe.Reset.Equal(q.Reset) {
+				t.Errorf("err = %v, want a QuotaError until %s", err, q.Reset)
+			}
+			if submits, _ := s.counts(); submits != 0 {
+				t.Errorf("%d submits after a spent quota, want 0", submits)
+			}
+		})
+	}
+}
+
+// serviceContract is the extraction service's OpenAPI file, relative to this
+// package.
+const serviceContract = "../../../shared/extraction-service-api.yaml"
+
+// contractRequired reads the required fields of the named component schemas
+// from serviceContract. Its layout is regular enough for a line scan: schema
+// names at four spaces, their required lists at six.
+func contractRequired(t *testing.T, names ...string) map[string][]string {
+	t.Helper()
+	data, err := os.ReadFile(serviceContract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]string{}
+	schema := ""
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimRight(line, "\r\n")
+		if name, ok := strings.CutPrefix(line, "    "); ok && name != "" && name[0] != ' ' && strings.HasSuffix(name, ":") {
+			schema = strings.TrimSuffix(name, ":")
+			continue
+		}
+		list, ok := strings.CutPrefix(line, "      required: [")
+		if !ok || !slices.Contains(names, schema) || out[schema] != nil {
+			continue
+		}
+		for f := range strings.SplitSeq(strings.TrimSuffix(list, "]"), ",") {
+			out[schema] = append(out[schema], strings.TrimSpace(f))
+		}
+	}
+	for _, name := range names {
+		if len(out[name]) == 0 {
+			t.Fatalf("%s: no required fields found for %s", serviceContract, name)
+		}
+	}
+	return out
+}
+
+// contractJob is the Job schema of serviceContract.
+type contractJob struct {
+	ID             string            `json:"id"`
+	Status         string            `json:"status"`
+	Result         json.RawMessage   `json:"result"`
+	Feedback       []json.RawMessage `json:"feedback"`
+	Attempts       int               `json:"attempts"`
+	ServiceVersion string            `json:"service_version"`
+	Error          *struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+	CreatedAt  time.Time  `json:"created_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+}
+
+// TestStubContract holds the stub to serviceContract: every job, quota and
+// error body it sends has each required field, no field the contract does not
+// name, and the contract's types; every response carries the quota headers.
+func TestStubContract(t *testing.T) {
+	required := contractRequired(t, "Job", "FeedbackEntry", "Quota")
+	s := newStub(t)
+	svc := s.service()
+	if _, err := svc.Check(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := (&extract.Fake{}).CorpusDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources, err := filepath.Glob(filepath.Join(dir, "*", "source.*"))
+	if err != nil || len(sources) == 0 {
+		t.Fatalf("corpus: %d sources, %v", len(sources), err)
+	}
+	data, err := os.ReadFile(sources[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := testRequest(data, corpusMIME[filepath.Ext(sources[0])])
+	sum := sha256.Sum256(data)
+	known.ContentHash = sum[:]
+	unknown := testRequest([]byte("not in the corpus"), "text/plain; charset=utf-8")
+	for _, req := range []extract.Request{known, unknown, unknown} {
+		if _, err := svc.Extract(t.Context(), req); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	strict := func(body []byte, v any) error {
+		dec := json.NewDecoder(strings.NewReader(string(body)))
+		dec.DisallowUnknownFields()
+		return dec.Decode(v)
+	}
+	missing := func(body []byte, fields []string) []string {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(body, &m); err != nil {
+			return []string{err.Error()}
+		}
+		var out []string
+		for _, f := range fields {
+			if _, ok := m[f]; !ok {
+				out = append(out, f)
+			}
+		}
+		return out
+	}
+	seen := map[string]bool{}
+	s.mu.Lock()
+	answers := slices.Clone(s.answers)
+	s.mu.Unlock()
+	for i, a := range answers {
+		where := fmt.Sprintf("answer %d (%d to %s)", i, a.status, a.path)
+		if a.header.Get("X-Quota-Remaining") == "" || a.header.Get("X-Quota-Reset") == "" {
+			t.Errorf("%s: no quota headers", where)
+		}
+		switch {
+		case a.path == "/v1/quota":
+			if m := missing(a.body, required["Quota"]); len(m) > 0 {
+				t.Errorf("%s: missing %v", where, m)
+			}
+			var q struct {
+				Limit     int       `json:"limit"`
+				Remaining int       `json:"remaining"`
+				Reset     time.Time `json:"reset"`
+				Window    string    `json:"window"`
+			}
+			if err := strict(a.body, &q); err != nil {
+				t.Errorf("%s: %v", where, err)
+			}
+			seen["quota"] = true
+		case a.status == http.StatusOK || a.status == http.StatusAccepted:
+			if m := missing(a.body, required["Job"]); len(m) > 0 {
+				t.Errorf("%s: missing %v", where, m)
+			}
+			var j contractJob
+			if err := strict(a.body, &j); err != nil {
+				t.Errorf("%s: %v", where, err)
+				continue
+			}
+			terminal := j.Status == "accepted" || j.Status == "rejected" || j.Status == "failed"
+			if !terminal && j.Status != "queued" && j.Status != "running" {
+				t.Errorf("%s: status %q", where, j.Status)
+			}
+			if j.ID == "" || j.ServiceVersion == "" || a.header.Get("X-Service-Version") != j.ServiceVersion {
+				t.Errorf("%s: id %q, service version %q, header %q", where, j.ID, j.ServiceVersion, a.header.Get("X-Service-Version"))
+			}
+			if terminal != (j.FinishedAt != nil) || j.CreatedAt.IsZero() || !j.ExpiresAt.After(j.CreatedAt) {
+				t.Errorf("%s: %s created %v, finished %v, expires %v", where, j.Status, j.CreatedAt, j.FinishedAt, j.ExpiresAt)
+			}
+			if r := strings.TrimSpace(string(j.Result)); r != "null" && !strings.HasPrefix(r, "{") ||
+				j.Status == "accepted" && r == "null" || j.Error != nil || j.Attempts < 0 {
+				t.Errorf("%s: result %.40s, error %v, attempts %d", where, r, j.Error, j.Attempts)
+			}
+			for _, f := range j.Feedback {
+				var e struct {
+					Pointer string `json:"pointer"`
+					Message string `json:"message"`
+					Source  string `json:"source"`
+				}
+				if m := missing(f, required["FeedbackEntry"]); len(m) > 0 {
+					t.Errorf("%s: feedback missing %v", where, m)
+				}
+				if err := strict(f, &e); err != nil || e.Source != "judge" && e.Source != "schema" {
+					t.Errorf("%s: feedback %s: %v", where, f, err)
+				}
+			}
+			seen[j.Status] = true
+			if a.header.Get("Idempotency-Replayed") == "true" {
+				seen["replayed"] = true
+			}
+		default:
+			var e struct {
+				Error struct {
+					Code    string `json:"code"`
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := strict(a.body, &e); err != nil || e.Error.Code == "" {
+				t.Errorf("%s: error body %s: %v", where, a.body, err)
+			}
+			seen[strconv.Itoa(a.status)] = true
+		}
+	}
+	for _, want := range []string{"quota", "queued", "running", "accepted", "rejected", "replayed", "404"} {
+		if !seen[want] {
+			t.Errorf("no %s answer among %d", want, len(answers))
+		}
+	}
+}

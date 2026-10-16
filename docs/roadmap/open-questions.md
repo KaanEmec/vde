@@ -52,8 +52,8 @@ it changed. New questions go at the bottom under "Open".
 
 ## Open
 
-- **Module path.** Decide when the repository is created (for example
-  `github.com/<org>/vde`).
-- **Location of TravelInbox assets.** The corpus, stub and prompts live in the TravelInbox
-  repository (`backend/testdata/corpus/`, `backend/internal/extract/`); the import into
-  `testdata/travelinbox/` needs that checkout available when v0.1 01-01 runs.
+- ~~**Module path.**~~ Decided 2026-10-16: `github.com/kaanemec/vde`. See architecture
+  overview, "Implementation decisions".
+- ~~**Location of TravelInbox assets.**~~ Resolved 2026-10-16: the checkout at
+  `~/Developer/TravelInbox` was available; assets are imported into `testdata/travelinbox/`
+  by v0.1 01-01.

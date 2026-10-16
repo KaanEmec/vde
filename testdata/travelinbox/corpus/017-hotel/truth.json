@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "Trastevere Luce Apartment",
+      "provider": "Booking.com",
+      "booking_ref": "2992.422.035",
+      "status": "confirmed",
+      "starts_at_local": "2027-09-16T14:00:00",
+      "ends_at_local": "2027-09-19T10:00:00",
+      "start_place": {
+        "name": "Trastevere Luce Apartment",
+        "address": "Via della Lungaretta 92, Trastevere, 00153 Roma, Italia",
+        "iata": null,
+        "city": "Rome",
+        "country": "IT"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Valentina Rinaldi", "type": null }
+      ],
+      "price": { "amount": "534.00", "currency": "EUR" },
+      "cancellation": "Tariffa non rimborsabile. Se cancelli, modifichi la prenotazione o non ti presenti, ti verrà addebitato il costo totale della prenotazione.",
+      "details": {
+        "room": "Appartamento con 2 Camere da Letto",
+        "guests": 3,
+        "address": "Via della Lungaretta 92, Trastevere, 00153 Roma, Italia",
+        "phone": "+39 06 5830 4417",
+        "checkin_time": "14:00",
+        "checkout_time": "10:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Rome",
+    "country": "IT",
+    "starts_on": "2027-09-16",
+    "ends_on": "2027-09-19"
+  },
+  "notes": "City tax of €6 per person per night (€54 for this stay) is not included in the price and is paid in cash at the property. Check-in runs 14:00 to 20:00; late check-in until 23:00 costs €20. Booking.com PIN code 4683."
+}
