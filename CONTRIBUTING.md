@@ -23,3 +23,17 @@ change:
   fake provider is the backbone of tests; real provider calls run only in an opt-in suite.
 - Document content, instructions, schemas, candidates, feedback and secrets never appear
   in logs, errors or test output.
+
+## Continuous integration and branch protection
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: `go mod
+tidy` check, build, `go test -race` (with a coverage artifact), `go vet`, golangci-lint
+(which includes staticcheck), `govulncheck` and a static linux/amd64 and linux/arm64
+cross-build. Dependabot opens grouped weekly updates for Go modules and Actions.
+
+Protect `main` with these settings once a remote exists:
+
+- require a pull request with one approving review before merging;
+- require the status checks `test (go 1.26)`, `test (go stable)`, `lint`, `vulncheck` and
+  `cross-compile` to pass, with the branch up to date;
+- no force pushes to `main`.
