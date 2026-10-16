@@ -1,0 +1,399 @@
+openapi: 3.1.0
+info:
+  title: Verified Document Extraction API, as TravelInbox consumes it
+  version: 1.0.0
+  description: |
+    The HTTP surface of the document extraction service (ADR 0005) that TravelInbox's
+    client, `backend/internal/extract/service.go`, is written against. The prose contract
+    in `docs/EXTRACTION-SERVICE-CONTRACT.md` is canonical; this file is its machine-readable
+    form for the service's developers (server stubs, request validation) and for
+    TravelInbox's own tests. The service's own API document should be a superset of this one.
+
+    Conventions:
+    - Base path `/v1`; timestamps are RFC 3339 in UTC.
+    - Every error response uses the `Error` schema; messages never quote document contents.
+    - Clients ignore fields they do not know. Changes within `/v1` are additive only.
+    - Every authenticated response carries `X-Quota-Remaining` and `X-Quota-Reset`.
+  contact:
+    name: TravelInbox
+    url: https://travelinbox.app
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: http://localhost:8090/v1
+    description: Local development (docker compose, once the service image exists)
+  - url: https://extract.example.com/v1
+    description: A deployment of the service; TravelInbox reads the base URL from EXTRACTION_URL
+
+security:
+  - bearer: []
+
+tags:
+  - name: jobs
+    description: Extraction jobs, the asynchronous submit-then-poll form.
+  - name: quota
+    description: The calling application's quota.
+  - name: health
+    description: Liveness, unauthenticated.
+
+paths:
+  /jobs:
+    post:
+      tags: [jobs]
+      operationId: submitJob
+      summary: Submit a document for extraction
+      description: |
+        Creates a job that runs the extractor-then-judge loop on one document. Parts are
+        described in the contract, section 4. Refused before any model call when the
+        credential, the request or the quota is not in order.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SubmitJob"
+            encoding:
+              document:
+                contentType: application/pdf, image/jpeg, image/png, image/webp, image/heic, text/html, text/plain, text/markdown
+              page:
+                contentType: image/png, image/jpeg
+              extractor_instructions:
+                contentType: text/markdown, text/plain
+              judge_instructions:
+                contentType: text/markdown, text/plain
+              schema:
+                contentType: application/schema+json
+              retention:
+                contentType: text/plain
+              max_attempts:
+                contentType: text/plain
+      responses:
+        "202":
+          description: Job created, or replayed for a repeated `Idempotency-Key`.
+          headers:
+            Location:
+              description: The job's URL, `/v1/jobs/{id}`.
+              schema: { type: string }
+            Idempotency-Replayed:
+              description: Present and `true` when an earlier job with the same key was returned.
+              schema: { type: boolean }
+            X-Quota-Remaining: { $ref: "#/components/headers/X-Quota-Remaining" }
+            X-Quota-Reset: { $ref: "#/components/headers/X-Quota-Reset" }
+            X-Service-Version: { $ref: "#/components/headers/X-Service-Version" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /jobs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Poll a job
+      description: |
+        Returns the job in its current state. Polling does not count against the quota.
+        With `retention: none`, the first read of a terminal status deletes the job's content;
+        later reads are `404`.
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: The job.
+          headers:
+            X-Quota-Remaining: { $ref: "#/components/headers/X-Quota-Remaining" }
+            X-Quota-Reset: { $ref: "#/components/headers/X-Quota-Reset" }
+            X-Service-Version: { $ref: "#/components/headers/X-Service-Version" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+    delete:
+      tags: [jobs]
+      operationId: deleteJob
+      summary: Delete a job early (optional for the service)
+      description: Deletes the document, pages, result and feedback at once. TravelInbox does not call it.
+      responses:
+        "204":
+          description: Deleted.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /quota:
+    get:
+      tags: [quota]
+      operationId: getQuota
+      summary: Read the application's quota
+      description: The same numbers as the quota headers, as a body. Does not change them.
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: The quota.
+          headers:
+            X-Quota-Remaining: { $ref: "#/components/headers/X-Quota-Remaining" }
+            X-Quota-Reset: { $ref: "#/components/headers/X-Quota-Reset" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Quota" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /healthz:
+    get:
+      tags: [health]
+      operationId: healthz
+      summary: Liveness
+      description: 200 when the service can accept jobs, else 503. Served at the root, not under `/v1`.
+      security: []
+      servers:
+        - url: http://localhost:8090
+          description: Local development
+        - url: https://extract.example.com
+          description: A deployment of the service
+      responses:
+        "200":
+          description: Ready to accept jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ok }
+        "503":
+          description: Not ready.
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: An application access token issued by the service's operator. TravelInbox holds it in EXTRACTION_TOKEN.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Up to 128 characters. A repeat with the same key from the same application within
+        24 hours returns the existing job with `Idempotency-Replayed: true` and runs nothing;
+        the same key with a different body is 422 `idempotency_mismatch`.
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Echoed in the response; a fresh id is generated when absent.
+      schema: { type: string, maxLength: 128 }
+
+  headers:
+    X-Quota-Remaining:
+      description: Jobs the application may still submit in the current quota window.
+      schema: { type: integer, minimum: 0 }
+    X-Quota-Reset:
+      description: When the quota window resets, RFC 3339 UTC.
+      schema: { type: string, format: date-time }
+    X-Service-Version:
+      description: Same value as `service_version` in the job body.
+      schema: { type: string }
+    Retry-After:
+      description: Seconds, or an HTTP date, after which to try again.
+      schema: { type: string }
+
+  schemas:
+    SubmitJob:
+      type: object
+      required: [document, extractor_instructions, judge_instructions, schema]
+      properties:
+        document:
+          description: The document to read, with its media type on the part. Up to 25 MiB.
+          type: string
+          contentEncoding: binary
+        page:
+          description: Rendered pages, page 1 first, up to 20, each up to 10 MiB.
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            contentEncoding: binary
+        extractor_instructions:
+          description: Instructions for the extractor role, up to 64 KiB, sent to the model verbatim.
+          type: string
+        judge_instructions:
+          description: Instructions for the judge role, up to 64 KiB, sent to the model verbatim.
+          type: string
+        schema:
+          description: JSON Schema 2020-12 the result must conform to, up to 256 KiB.
+          type: string
+        retention:
+          description: "`none`: delete content at the terminal state and on first read. Absent means `default`."
+          type: string
+          enum: [none, default]
+        max_attempts:
+          description: Lowers the attempt limit for this job; higher values are clamped to the application's limit.
+          type: string
+          pattern: "^[1-9][0-9]*$"
+
+    JobStatus:
+      type: string
+      enum: [queued, running, accepted, rejected, failed]
+
+    FeedbackEntry:
+      type: object
+      required: [pointer, message]
+      properties:
+        pointer:
+          description: RFC 6901 JSON pointer into `result`; `""` for the whole result.
+          type: string
+        message:
+          description: For a human. May quote the source document.
+          type: string
+        source:
+          description: Who produced the entry.
+          type: string
+          enum: [judge, schema]
+
+    JobError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          description: provider_unavailable, extractor_failed, judge_failed, timeout, internal, or a code added later.
+          type: string
+        message:
+          type: string
+
+    Job:
+      type: object
+      required: [id, status, result, feedback, attempts, service_version, error, created_at, finished_at, expires_at]
+      properties:
+        id: { type: string }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        result:
+          description: |
+            The last candidate the extractor produced. Null while in progress or when no attempt
+            produced parseable JSON. Never null and schema-valid when `status` is `accepted`.
+          type: [object, "null"]
+        feedback:
+          description: Final feedback on `result`; empty on `accepted` and while in progress.
+          type: array
+          items: { $ref: "#/components/schemas/FeedbackEntry" }
+        attempts:
+          description: Extractor calls made.
+          type: integer
+          minimum: 0
+        service_version:
+          description: Identifies the service release and role configuration that produced the result.
+          type: string
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+        expires_at:
+          description: When the job becomes 404.
+          type: string
+          format: date-time
+
+    Quota:
+      type: object
+      required: [limit, remaining, reset, window]
+      properties:
+        limit: { type: integer, minimum: 0 }
+        remaining: { type: integer, minimum: 0 }
+        reset: { type: string, format: date-time }
+        window:
+          description: ISO 8601 duration of the quota window, such as P1D.
+          type: string
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              description: One of the codes in the contract, section 9, or a code added later.
+              type: string
+            message:
+              description: Never quotes document contents.
+              type: string
+            request_id: { type: string }
+
+  responses:
+    BadRequest:
+      description: Malformed multipart, missing or repeated part, bad `retention` or `max_attempts`. Not retried.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: No token, or an unknown, expired or revoked one.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Token outside its scope.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Unknown, expired or another application's job.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: Over a size or count limit. Not retried.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnsupportedMediaType:
+      description: "`unsupported_media_type` or `unsupported_document`. Not retried."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: "`invalid_schema` or `idempotency_mismatch`. Not retried."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: "`rate_limited` (quota left) or `quota_exhausted` (`X-Quota-Remaining: 0`)."
+      headers:
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+        X-Quota-Remaining: { $ref: "#/components/headers/X-Quota-Remaining" }
+        X-Quota-Reset: { $ref: "#/components/headers/X-Quota-Reset" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServerError:
+      description: Service or provider failure at request time. Retried later.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
