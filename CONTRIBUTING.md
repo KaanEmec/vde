@@ -42,3 +42,34 @@ Protect `main` with these settings once a remote exists:
 - require the status checks `test (go 1.26)`, `test (go stable)`, `lint`, `vulncheck` and
   `cross-compile` to pass, with the branch up to date;
 - no force pushes to `main`.
+
+## Releasing
+
+A release is a `vX.Y.Z` tag (or a pre-release such as `v0.2.0-rc.1`) on `main`.
+`.github/workflows/release.yml` does the rest: it runs `make check`, builds and pushes the
+multi-arch image (`linux/amd64`, `linux/arm64`) to `ghcr.io/kaanemec/vde`, smoke-tests both
+platforms with `vde version`, then lets GoReleaser (`.goreleaser.yaml`) build the static
+binaries, archives and `checksums.txt` and create the GitHub release.
+
+Image tags: `X.Y.Z` always; `X.Y` and `latest` only for stable versions, so a pre-release
+never moves them. A tag with a suffix (`-rc.1`) becomes a GitHub pre-release.
+
+Procedure:
+
+1. `main` is green in CI and `make check` passes locally.
+2. Run `make live` with at least one provider key set (see above) and read the output: the
+   sample documents must extract through the real provider, and token usage must look sane.
+   Do not tag if it fails.
+3. In `CHANGELOG.md`, rename `Unreleased` to the version and date, start a fresh
+   `Unreleased` section above it, and commit.
+4. Optional dry run: `make image` and `docker run --rm vde version`, and
+   `goreleaser release --snapshot --clean --skip=publish` (GoReleaser v2) to check the
+   archives locally.
+5. Tag and push: `git tag -a v0.2.0 -m v0.2.0 && git push origin v0.2.0`. Watch the
+   `release` workflow.
+6. Verify: `docker run --rm ghcr.io/kaanemec/vde:0.2.0 version` on amd64 and arm64, and
+   that the GitHub release lists four archives and `checksums.txt`.
+
+First release only: GHCR creates the package private. After the first push, open the
+package settings on GitHub and make it public, and link it to the repository, so that
+consumers can pull without credentials. Signing and SBOMs are v1.0 work.

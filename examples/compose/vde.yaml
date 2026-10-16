@@ -1,0 +1,53 @@
+# Development configuration for the compose example: the examples/vde.dev.yaml setup
+# (one provider, one model for both roles, one secret) plus the service settings.
+# Reference for every key: docs/operator/configuration.md
+#
+# `accepts` is YOUR declaration of the media types the model reads natively; vde never
+# probes a model. Keep it conservative: a type listed that the model cannot read makes
+# jobs fail. The model name was current when this file was written; use one your account
+# can call.
+
+server:
+  # Inside the container the service must listen on every interface; compose publishes the
+  # port on the host's loopback only (see docker-compose.yaml). With a reverse proxy in
+  # front (the commented caddy service), set trusted_proxy: true and drop the published port.
+  listen: ":8090"
+  trusted_proxy: false
+  data_dir: /var/lib/vde   # the named volume `vde-data`: database and blobs
+
+endpoints:
+  anthropic:
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY   # the NAME of the variable, set from .env by compose
+    models:
+      claude-sonnet-4-5:
+        accepts: [application/pdf, image/png, image/jpeg, image/webp, text/plain, text/html]
+
+groups:
+  main:
+    endpoints:
+      - {endpoint: anthropic, model: claude-sonnet-4-5}
+
+roles:
+  extractor: {group: main}
+  judge: {group: main}   # the same model checks its own work here; use two models for real use
+
+applications:
+  - id: dev-app
+    name: Development application
+    max_attempts: 3
+    quota:
+      limit: 1000
+      window: P1D
+    rate:
+      requests_per_minute: 300
+      submits_per_minute: 30
+      max_in_progress: 20
+    retention:
+      default: 24h
+      force_none: false
+
+# Planned (v0.2 epic 07, job 02): protect /metrics with a bearer token so Prometheus can
+# scrape it from another container. Uncomment together with the `prometheus` profile.
+# metrics:
+#   token_env: VDE_METRICS_TOKEN

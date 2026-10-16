@@ -1,0 +1,72 @@
+# vde with one provider, one model and one application, for development.
+#
+#   cp .env.example .env     # then set ANTHROPIC_API_KEY
+#   docker compose up -d
+#   docker compose logs -f vde
+#
+# README.md walks through creating a token and submitting a document.
+
+name: vde
+
+services:
+  vde:
+    image: ghcr.io/kaanemec/vde:${VDE_IMAGE_TAG:-latest}
+    build:
+      context: ../..           # `docker compose up --build` builds this checkout instead
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["serve", "--config", "/etc/vde/vde.yaml"]
+    environment:
+      # The variable named by api_key_env in vde.yaml. Compose refuses to start without it.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      # VDE_METRICS_TOKEN: ${VDE_METRICS_TOKEN:-}   # with the prometheus profile, see README
+    volumes:
+      - ./vde.yaml:/etc/vde/vde.yaml:ro
+      - vde-data:/var/lib/vde       # SQLite database and document blobs
+    ports:
+      - "127.0.0.1:8090:8090"       # loopback only; the reverse proxy below replaces this in production
+    # The image's HEALTHCHECK (`vde healthcheck`, /healthz on the listener) applies.
+
+  # Production-like TLS termination. Uncomment this service and the volumes below, set
+  # `server.trusted_proxy: true` in vde.yaml, set VDE_PUBLIC_HOST in .env, and remove the
+  # `ports` mapping of vde above so that only Caddy is reachable.
+  #
+  # caddy:
+  #   image: caddy:2
+  #   restart: unless-stopped
+  #   depends_on: [vde]
+  #   environment:
+  #     VDE_PUBLIC_HOST: ${VDE_PUBLIC_HOST:-localhost}
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy-data:/data
+  #     - caddy-config:/config
+
+  # Optional: `docker compose --profile prometheus up -d`, then open http://localhost:9090.
+  # Needs `metrics.token_env: VDE_METRICS_TOKEN` in vde.yaml (planned, v0.2 epic 07) and
+  # the VDE_METRICS_TOKEN variable passed to vde (the commented line above).
+  prometheus:
+    profiles: [prometheus]
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    depends_on: [vde]
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    secrets:
+      - metrics_token
+
+secrets:
+  metrics_token:
+    environment: VDE_METRICS_TOKEN
+
+volumes:
+  vde-data:
+  prometheus-data:
+  # caddy-data:
+  # caddy-config:

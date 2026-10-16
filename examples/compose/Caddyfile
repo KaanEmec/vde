@@ -1,0 +1,16 @@
+# Used by the commented `caddy` service of docker-compose.yaml: TLS termination in front of
+# vde. Caddy obtains and renews a certificate for the host name in VDE_PUBLIC_HOST (the name
+# must resolve to this machine, and ports 80 and 443 must be reachable for the ACME check).
+# It sets X-Forwarded-Proto itself, which vde requires when `server.trusted_proxy: true`.
+#
+# For a local dry run, use `localhost` as the host name: Caddy issues a certificate from its
+# own local CA and `curl -k https://localhost/healthz` reaches the service.
+
+{$VDE_PUBLIC_HOST:localhost} {
+	encode zstd gzip
+	reverse_proxy vde:8090
+
+	# /metrics is for the internal network only.
+	@metrics path /metrics
+	respond @metrics 404
+}

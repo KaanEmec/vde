@@ -11,7 +11,7 @@ LDFLAGS := -s -w \
 	-X $(MODULE)/internal/version.Date=$(DATE)
 GOBUILD := CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: build test lint check scenarios live cross clean
+.PHONY: build test lint check scenarios live cross clean image image-multiarch
 
 build:
 	$(GOBUILD) -o bin/vde ./cmd/vde
@@ -39,3 +39,17 @@ cross:
 
 clean:
 	rm -rf bin
+
+# Container image. `image` builds for the local architecture and loads it into the local
+# Docker; `image-multiarch` builds linux/amd64 and linux/arm64 with buildx (set PUSH=1 to
+# push, which needs a registry login; without it the multi-arch result stays in the cache).
+IMAGE     ?= ghcr.io/kaanemec/vde
+IMAGE_TAG ?= $(VERSION)
+IMAGEARGS := --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE)
+
+image:
+	docker build $(IMAGEARGS) -t $(IMAGE):$(IMAGE_TAG) .
+
+image-multiarch:
+	docker buildx build --platform linux/amd64,linux/arm64 $(IMAGEARGS) \
+		-t $(IMAGE):$(IMAGE_TAG) $(if $(PUSH),--push,) .
