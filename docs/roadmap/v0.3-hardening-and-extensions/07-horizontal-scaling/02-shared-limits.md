@@ -1,6 +1,6 @@
 # Job: Shared rate limiting and health state
 
-Version: v0.3 · Epic: 07 Horizontal scaling · Status: planned · Depends on: 01
+Version: v0.3 · Epic: 07 Horizontal scaling · Status: in progress · Depends on: 01
 
 ## Goal
 

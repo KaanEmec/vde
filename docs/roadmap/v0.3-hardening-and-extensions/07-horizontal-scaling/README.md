@@ -1,6 +1,6 @@
 # Epic 07: Horizontal scaling
 
-Version: v0.3 · Status: planned · Depends on: 01 (Postgres, S3)
+Version: v0.3 · Status: in progress · Depends on: 01 (Postgres, S3)
 
 Run several `vde` processes against shared storage without changing the single-process
 code path: API-only and worker-only modes, shared leasing, and documented limits of
@@ -8,5 +8,5 @@ per-process state.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [Process roles and shared leasing](01-process-roles-and-leasing.md) | planned |
-| 02 | [Shared rate limiting and health state](02-shared-limits.md) | planned |
+| 01 | [Process roles and shared leasing](01-process-roles-and-leasing.md) | in progress |
+| 02 | [Shared rate limiting and health state](02-shared-limits.md) | in progress |

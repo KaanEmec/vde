@@ -1,6 +1,6 @@
 # Job: Process roles and shared leasing
 
-Version: v0.3 · Epic: 07 Horizontal scaling · Status: planned · Depends on: 01-01, 01-02
+Version: v0.3 · Epic: 07 Horizontal scaling · Status: in progress · Depends on: 01-01, 01-02
 
 ## Goal
 
