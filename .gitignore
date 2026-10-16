@@ -9,3 +9,7 @@ coverage.*
 
 # User-supplied documents for local smoke tests; may contain personal data, never committed
 testdata/user-docs/
+
+# local build output
+/vde
+/dist/
