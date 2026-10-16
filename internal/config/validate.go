@@ -53,6 +53,7 @@ func (c *Config) Validate() Issues {
 	v.limits(c)
 	v.other(c)
 	v.applications(c)
+	v.service(c)
 	return v.issues
 }
 
@@ -72,6 +73,7 @@ const (
 	contractDocumentSize = 25 << 20
 	contractPageSize     = 10 << 20
 	contractPages        = 20
+	contractRequestSize  = 128 << 20
 )
 
 var (
@@ -268,6 +270,7 @@ func (v *validator) limits(c *Config) {
 		{"limits.document_bytes", l.DocumentBytes, contractDocumentSize},
 		{"limits.page_bytes", l.PageBytes, contractPageSize},
 		{"limits.pages", int64(l.Pages), contractPages},
+		{"limits.request_bytes", l.RequestBytes, contractRequestSize},
 	} {
 		switch {
 		case s.value <= 0:
