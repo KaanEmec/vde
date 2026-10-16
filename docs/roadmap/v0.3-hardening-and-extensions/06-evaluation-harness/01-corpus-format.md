@@ -1,6 +1,6 @@
 # Job: Corpus format, TravelInbox corpus import and generic samples
 
-Version: v0.3 · Epic: 06 Evaluation harness · Status: planned · Depends on: v0.1 06-02
+Version: v0.3 · Epic: 06 Evaluation harness · Status: in progress · Depends on: v0.1 06-02
 
 ## Goal
 

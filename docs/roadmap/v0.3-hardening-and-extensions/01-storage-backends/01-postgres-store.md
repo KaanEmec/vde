@@ -1,6 +1,6 @@
 # Job: Postgres job store
 
-Version: v0.3 · Epic: 01 Storage backends · Status: planned · Depends on: v0.2 03-01
+Version: v0.3 · Epic: 01 Storage backends · Status: in progress · Depends on: v0.2 03-01
 
 ## Goal
 

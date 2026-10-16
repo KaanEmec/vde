@@ -1,6 +1,6 @@
 # v0.3 Hardening and extensions
 
-Status: planned · Depends on: v0.2
+Status: in progress · Depends on: v0.2
 
 ## Goal
 
@@ -23,12 +23,12 @@ corpus and the service's own samples.
 
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
-| 01 | [Storage backends](01-storage-backends/README.md) | v0.2 | planned |
-| 02 | [More providers and the classifier judge](02-more-providers/README.md) | v0.2 | planned |
-| 03 | [Escalation and model tiers](03-escalation-and-model-tiers/README.md) | v0.2 | planned |
-| 04 | [Image conversion](04-image-conversion/README.md) | v0.2 | planned |
-| 05 | [Delivery options](05-delivery-options/README.md) | v0.2 | planned |
-| 06 | [Evaluation harness](06-evaluation-harness/README.md) | v0.2 | planned |
+| 01 | [Storage backends](01-storage-backends/README.md) | v0.2 | in progress |
+| 02 | [More providers and the classifier judge](02-more-providers/README.md) | v0.2 | in progress |
+| 03 | [Escalation and model tiers](03-escalation-and-model-tiers/README.md) | v0.2 | in progress |
+| 04 | [Image conversion](04-image-conversion/README.md) | v0.2 | in progress |
+| 05 | [Delivery options](05-delivery-options/README.md) | v0.2 | in progress |
+| 06 | [Evaluation harness](06-evaluation-harness/README.md) | v0.2 | in progress |
 | 07 | [Horizontal scaling](07-horizontal-scaling/README.md) | 01 | planned |
 
 Moved out of this version after the owner's decisions on 2026-10-16: Gemini (v0.1),

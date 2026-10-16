@@ -1,6 +1,6 @@
 # Job: Completion webhooks
 
-Version: v0.3 · Epic: 05 Delivery options · Status: planned · Depends on: v0.2 03-04
+Version: v0.3 · Epic: 05 Delivery options · Status: in progress · Depends on: v0.2 03-04
 
 ## Goal
 

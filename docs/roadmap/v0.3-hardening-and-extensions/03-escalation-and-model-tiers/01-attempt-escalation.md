@@ -1,6 +1,6 @@
 # Job: Per-attempt group escalation
 
-Version: v0.3 · Epic: 03 Escalation and model tiers · Status: planned · Depends on: v0.1 05-05
+Version: v0.3 · Epic: 03 Escalation and model tiers · Status: in progress · Depends on: v0.1 05-05
 
 ## Goal
 
