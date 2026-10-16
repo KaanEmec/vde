@@ -22,6 +22,7 @@ const (
 const usage = `Usage: vde <command> [arguments]
 
 Commands:
+  serve      run the HTTP service (vde serve -h)
   extract    run one extraction on a document file (vde extract -h)
   config     check the configuration file (vde config check -h)
   version    print version, commit and build date
@@ -44,6 +45,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "version", "--version", "-version":
 		fmt.Fprintln(stdout, version.String())
 		return exitOK
+	case "serve":
+		return runServe(args[1:], stdout, stderr)
 	case "extract":
 		return runExtract(args[1:], stdout, stderr)
 	case "config":
