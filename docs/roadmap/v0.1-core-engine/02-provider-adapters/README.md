@@ -1,6 +1,6 @@
 # Epic 02: Provider adapters
 
-Version: v0.1 · Status: in progress · Depends on: 01
+Version: v0.1 · Status: done· Depends on: 01
 
 One small interface, three real adapters, one fake. Capabilities are declared in
 configuration, not probed. Each adapter sets the strictest data-handling options its
@@ -13,4 +13,4 @@ provider exposes and documents what it sends.
 | 03 | [Anthropic adapter](03-anthropic-adapter.md) | done |
 | 04 | [OpenAI-compatible adapter with OpenRouter preset](04-openai-compatible-adapter.md) | done |
 | 05 | [Google Gemini adapter](05-gemini-adapter.md) | done |
-| 06 | [Capability declarations and data-handling notes](06-capabilities-and-data-handling.md) | planned |
+| 06 | [Capability declarations and data-handling notes](06-capabilities-and-data-handling.md) | done |
