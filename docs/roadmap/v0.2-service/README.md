@@ -1,6 +1,6 @@
 # v0.2 Service
 
-Status: planned · Depends on: v0.1
+Status: in progress · Depends on: v0.1
 
 ## Goal
 
@@ -31,14 +31,14 @@ published image with the documented minimal configuration:
 
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
-| 01 | [HTTP API foundation](01-http-api-foundation/README.md) | v0.1 | planned |
+| 01 | [HTTP API foundation](01-http-api-foundation/README.md) | v0.1 | in progress |
 | 02 | [Applications and tokens](02-applications-and-tokens/README.md) | 01, 03-01 | planned |
-| 03 | [Job store and worker](03-job-store-and-worker/README.md) | v0.1 | planned |
+| 03 | [Job store and worker](03-job-store-and-worker/README.md) | v0.1 | done |
 | 04 | [Job submission and retrieval](04-job-submission/README.md) | 01, 02, 03 | planned |
 | 05 | [Quota and rate limits](05-quota-and-rate-limits/README.md) | 02, 04 | planned |
 | 06 | [Retention and privacy](06-retention-and-privacy/README.md) | 03, 04 | planned |
 | 07 | [Operations](07-operations/README.md) | 01, 03 | planned |
-| 08 | [Packaging and deployment](08-packaging-and-deployment/README.md) | 01 | planned |
+| 08 | [Packaging and deployment](08-packaging-and-deployment/README.md) | 01 | in progress |
 | 09 | [Contract conformance](09-contract-conformance/README.md) | all above | planned |
 | 10 | [Documentation](10-documentation/README.md) | all above | planned |
 | 11 | [Admin API](11-admin-api/README.md) | 02, 03 | planned |

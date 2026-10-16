@@ -1,6 +1,6 @@
 # Job: Worker pool and job deadline
 
-Version: v0.2 · Epic: 03 Job store and worker · Status: planned · Depends on: 03, v0.1 05-05
+Version: v0.2 · Epic: 03 Job store and worker · Status: done · Depends on: 03, v0.1 05-05
 
 ## Goal
 
@@ -15,20 +15,20 @@ at terminal state for `retention: none`).
 
 ## Tasks
 
-- [ ] `internal/worker.Pool{Size, PollInterval}`: each worker loops: lease (or sleep
+- [x] `internal/worker.Pool{Size, PollInterval}`: each worker loops: lease (or sleep
       `PollInterval`, default 500 ms, with a wake-up channel the submit handler pings so
       latency is not the poll interval), build `extract.Input` (representation from the
       job row and blobs, instructions and schema from the row, deadline `created_at +
       job_timeout`), run, `Finish`.
-- [ ] Per-application `max_in_progress` enforced at lease time (count running per app)
+- [x] Per-application `max_in_progress` enforced at lease time (count running per app)
       so one application cannot occupy every worker.
-- [ ] After `Finish`: if retention is `none` or the application forces it, `DeleteAll`
+- [x] After `Finish`: if retention is `none` or the application forces it, `DeleteAll`
       blobs and `MarkContentDeleted(document)`; instructions and schema columns cleared
       too (they are caller content).
-- [ ] Graceful stop: stop leasing, wait for running jobs up to the shutdown grace, then
+- [x] Graceful stop: stop leasing, wait for running jobs up to the shutdown grace, then
       return; jobs still running keep their lease and are resumed after restart.
-- [ ] Metrics hooks (epic 07): job duration, attempts, terminal status counts.
-- [ ] Integration test: submit through the store, run the pool with the fake provider,
+- [x] Metrics hooks (epic 07): job duration, attempts, terminal status counts.
+- [x] Integration test: submit through the store, run the pool with the fake provider,
       assert the terminal row and that blobs are gone for `retention: none`.
 
 ## Acceptance criteria
@@ -39,3 +39,18 @@ at terminal state for `retention: none`).
 ## Out of scope
 
 Multiple processes (v0.3 horizontal scaling), per-job priority.
+
+## Outcome
+
+Done in `internal/worker` (`New(store, blobs, cfg, roles, Options)`, `Start`, `Wake`,
+`Stop`, `Observer`, `NopObserver`). Deviations:
+
+- Options: `Size` (4), `PollInterval` (500 ms), `Lease` (1 min), `WorkerID`, `Observer`,
+  `Logger`; the `serve` command maps configuration onto them (no config keys added here).
+- The representation is selected again from the blobs with the current configuration;
+  when its kind differs from the one decided at submit the job fails `internal`.
+- Retention at the terminal state: blobs `DeleteAll`, then
+  `MarkContentDeleted(ContentInputs)` for `retention: none` or a configuration that forces
+  none; `Finish` and retention use a context detached from the shutdown grace (10 s cap).
+- Metrics are an `Observer` interface (`JobStarted`, `JobFinished(app, status, attempts,
+  duration since created_at)`); Prometheus comes with epic 07.
