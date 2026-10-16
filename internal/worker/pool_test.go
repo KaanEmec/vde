@@ -384,6 +384,33 @@ func TestResumeAfterCrash(t *testing.T) {
 	}
 }
 
+func TestResumeCarriesPriorCandidateAndFeedback(t *testing.T) {
+	r := newRig(t, fake.Script{{Answer: candidate, Repeat: true}}, fake.Script{{Answer: reject, Repeat: true}}, worker.Options{})
+	j := r.submit(t, "app", nil)
+	r.crash(t, j, job.Progress{Attempts: 1, Result: json.RawMessage(`{"name":"earlier"}`),
+		Feedback: json.RawMessage(`[{"pointer":"/name","message":"PRIOR-FEEDBACK","source":"judge"}]`)})
+	r.start(t)
+
+	got := r.waitTerminal(t, j.ID)
+	if got.Status != job.StatusRejected || got.Attempts != 3 {
+		t.Errorf("row = %+v, want rejected after 3 attempts (the limit)", got)
+	}
+	calls := r.ext.Calls()
+	if len(calls) != 2 {
+		t.Fatalf("%d extractor calls after 1 persisted attempt of 3, want 2", len(calls))
+	}
+	var text []string
+	for _, p := range calls[0].Request.Parts {
+		text = append(text, p.Text)
+	}
+	all := strings.Join(text, "\n")
+	for _, want := range []string{"Previous candidate:\n\n" + `{"name":"earlier"}`, "Feedback:", `- "/name" (judge): PRIOR-FEEDBACK`} {
+		if !strings.Contains(all, want) {
+			t.Errorf("first request after the resume lacks %q:\n%s", want, all)
+		}
+	}
+}
+
 func TestExhaustedAtLease(t *testing.T) {
 	ext, judge := accepting()
 	r := newRig(t, ext, judge, worker.Options{})

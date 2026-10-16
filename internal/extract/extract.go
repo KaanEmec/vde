@@ -70,6 +70,15 @@ type Input struct {
 	Schema                *Schema // nil in schema-less mode
 	// MaxAttempts bounds the extractor calls; 0 or less means DefaultMaxAttempts.
 	MaxAttempts int
+	// PriorAttempts, PriorCandidate and PriorFeedback resume a job whose earlier run
+	// stopped (a crashed worker): the attempts already made, the last parseable candidate
+	// (nil when none) and the feedback on it, or on an answer that was not JSON. The
+	// first extractor request carries them as a retry would; attempts count on from
+	// PriorAttempts, so at most MaxAttempts-PriorAttempts calls are made, and
+	// Outcome.Attempts is the total.
+	PriorAttempts  int
+	PriorCandidate json.RawMessage
+	PriorFeedback  []Feedback
 	// Deadline is when the job must be terminal (created_at plus limits.job_timeout);
 	// the zero time adds no deadline to ctx.
 	Deadline time.Time
@@ -95,7 +104,7 @@ type Outcome struct {
 	// Feedback is the final feedback on Result: the judge's on a rejection, the schema
 	// validator's when Result does not validate, advisory judge entries on acceptance.
 	Feedback []Feedback `json:"feedback"`
-	Attempts int        `json:"attempts"` // extractor calls made
+	Attempts int        `json:"attempts"` // extractor calls made, those of Input.PriorAttempts included
 	// JudgeConfidence is the confidence of the last parsed verdict, nil when absent.
 	JudgeConfidence *float64  `json:"judge_confidence"`
 	Error           *JobError `json:"error"` // set exactly when Status is StatusFailed
@@ -202,6 +211,11 @@ func (l *loop) run(ctx context.Context) Outcome {
 	if maxAttempts <= 0 {
 		maxAttempts = DefaultMaxAttempts
 	}
+	l.attempts = l.in.PriorAttempts
+	if l.in.PriorCandidate != nil {
+		l.usable, l.result, l.prev = true, l.in.PriorCandidate, l.in.PriorCandidate
+	}
+	l.feedback, l.next = l.in.PriorFeedback, l.in.PriorFeedback
 	schemaless := l.in.Schema == nil
 	extractorSystem, judgeSystem := framings(schemaless)
 	allowArray := schemaless || l.in.Schema.allowArray

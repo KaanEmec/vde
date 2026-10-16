@@ -247,7 +247,14 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, j
 		return fromRow(j, job.StatusFailed, extract.CodeInternal), true
 	}
 	in.Deadline = deadline
-	in.MaxAttempts = remaining
+	// A resumed job continues from its persisted state: the loop counts on from
+	// j.Attempts up to the limit and sends the last candidate and feedback in its
+	// first request, as a retry does.
+	in.MaxAttempts = j.Attempts + remaining
+	in.PriorAttempts, in.PriorCandidate = j.Attempts, j.Result
+	if len(j.Feedback) > 0 {
+		_ = json.Unmarshal(j.Feedback, &in.PriorFeedback) // a malformed column leaves the retry without feedback
+	}
 
 	jobCtx, cancelJob := context.WithCancel(ctx)
 	defer cancelJob()
@@ -261,7 +268,7 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, j
 		}
 	}
 	in.OnAttempt = func(pr extract.Progress) {
-		loseLease(p.store.RecordAttempt(jobCtx, j.ID, workerID, progress(j, pr), time.Now().Add(p.opts.Lease)))
+		loseLease(p.store.RecordAttempt(jobCtx, j.ID, workerID, progress(pr), time.Now().Add(p.opts.Lease)))
 	}
 	var heartbeat sync.WaitGroup
 	heartbeat.Go(func() {
@@ -287,7 +294,7 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, j
 		log.Info("worker: stopped during the job, left for the next lease")
 		return job.Outcome{}, false
 	}
-	return merge(j, o), true
+	return merge(o), true
 }
 
 // input builds the loop input from the row and its blobs. reason names the failing
@@ -414,37 +421,24 @@ func exhausted(j job.Job) job.Outcome {
 	return fromRow(j, job.StatusRejected, "")
 }
 
-// progress is the state to persist after an attempt of a run that resumed after
-// j.Attempts earlier attempts: their candidate stands until this run produces one.
-func progress(j job.Job, pr extract.Progress) job.Progress {
-	out := job.Progress{Attempts: j.Attempts + pr.Attempts, Result: pr.Result, Feedback: feedbackJSON(pr.Feedback)}
-	if pr.Result == nil && j.Result != nil {
-		out.Result, out.Feedback = j.Result, j.Feedback
-	}
-	return out
+// progress is the state to persist after an attempt; the loop's counts and candidate
+// already include those of the run before a re-lease.
+func progress(pr extract.Progress) job.Progress {
+	return job.Progress{Attempts: pr.Attempts, Result: pr.Result, Feedback: feedbackJSON(pr.Feedback)}
 }
 
-// merge turns the loop's outcome into the row's terminal state, adding the attempts and
-// keeping the candidate of a run before a re-lease.
-func merge(j job.Job, o extract.Outcome) job.Outcome {
+// merge turns the loop's outcome, which already counts the attempts and holds the
+// candidate of a run before a re-lease, into the row's terminal state.
+func merge(o extract.Outcome) job.Outcome {
 	out := job.Outcome{
 		Status:          job.Status(o.Status),
-		Attempts:        j.Attempts + o.Attempts,
+		Attempts:        o.Attempts,
 		Result:          o.Result,
 		Feedback:        feedbackJSON(o.Feedback),
 		JudgeConfidence: o.JudgeConfidence,
 	}
 	if o.Error != nil {
 		out.Error, _ = json.Marshal(o.Error)
-	}
-	if o.Result == nil && j.Result != nil {
-		out.Result, out.Feedback = j.Result, j.Feedback
-		if o.Error != nil && o.Error.Code == extract.CodeExtractorFailed {
-			out.Status, out.Error = job.StatusRejected, nil
-		}
-	}
-	if out.Feedback == nil {
-		out.Feedback = feedbackJSON(nil)
 	}
 	return out
 }

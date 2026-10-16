@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -754,4 +755,88 @@ func TestNewRoles_errors(t *testing.T) {
 	if roles.JudgeReparseTries != 1 || roles.FeedbackMessageChars != 0 || roles.Extractor.Name() != "extraction" || roles.Judge.Name() != "review" {
 		t.Errorf("roles = %+v", roles)
 	}
+}
+
+func TestRun_resume(t *testing.T) {
+	// A fresh run: attempt 1 is rejected, attempt 2 is the request a resumed run must match.
+	fresh := newRig(t, fake.Script{fake.Answer(valid), fake.Answer(valid2)}, nil, fake.Script{fake.Answer(reject), fake.Answer(accept)})
+	Run(t.Context(), input(t, personSchema), fresh.roles)
+	want := fresh.primary.Calls()[1].Request.Parts
+
+	prior := []Feedback{{Pointer: "/name", Message: "The document prints Ada King.", Source: SourceJudge}}
+	resume := func(r *rig, attempts int) (Input, Outcome) {
+		in := input(t, personSchema)
+		in.PriorAttempts, in.PriorCandidate, in.PriorFeedback = attempts, json.RawMessage(valid), prior
+		return in, Run(t.Context(), in, r.roles)
+	}
+
+	t.Run("first prompt is a retry's", func(t *testing.T) {
+		r := newRig(t, fake.Script{fake.Answer(valid2)}, nil, fake.Script{fake.Answer(accept)})
+		var progress []int
+		in := input(t, personSchema)
+		in.PriorAttempts, in.PriorCandidate, in.PriorFeedback = 1, json.RawMessage(valid), prior
+		in.OnAttempt = func(p Progress) { progress = append(progress, p.Attempts) }
+		out := Run(t.Context(), in, r.roles)
+		checkOutcome(t, in, out, StatusAccepted, 2, "")
+		if got := r.primary.Calls(); len(got) != 1 || !reflect.DeepEqual(got[0].Request.Parts, want) {
+			t.Errorf("first request %+v, want attempt 2 of a fresh run %+v", got, want)
+		}
+		sameJSON(t, out.Result, valid2)
+		if len(progress) != 0 {
+			t.Errorf("progress %v for an accepted attempt", progress)
+		}
+	})
+
+	t.Run("attempts never exceed the limit", func(t *testing.T) {
+		r := newRig(t, fake.Script{{Answer: valid2, Repeat: true}}, nil, fake.Script{{Answer: reject, Repeat: true}})
+		var progress []int
+		in := input(t, personSchema)
+		in.PriorAttempts, in.PriorCandidate, in.PriorFeedback = 1, json.RawMessage(valid), prior
+		in.OnAttempt = func(p Progress) { progress = append(progress, p.Attempts) }
+		out := Run(t.Context(), in, r.roles)
+		checkOutcome(t, in, out, StatusRejected, 3, "")
+		if n := len(r.primary.Calls()); n != 2 {
+			t.Errorf("%d extractor calls after 1 prior attempt of 3, want 2", n)
+		}
+		if !reflect.DeepEqual(progress, []int{2, 3}) {
+			t.Errorf("progress attempts %v, want [2 3]", progress)
+		}
+	})
+
+	t.Run("prior attempts at the limit end rejected without a call", func(t *testing.T) {
+		r := newRig(t, nil, nil, nil)
+		in, out := resume(r, 3)
+		checkOutcome(t, in, out, StatusRejected, 3, "")
+		sameJSON(t, out.Result, valid)
+		if !equalFeedback(out.Feedback, prior) {
+			t.Errorf("feedback = %+v, want %+v", out.Feedback, prior)
+		}
+		if n := len(r.extractorCalls()) + len(r.judge.Calls()); n != 0 {
+			t.Errorf("%d provider calls, want none", n)
+		}
+	})
+
+	t.Run("no candidate at the limit fails", func(t *testing.T) {
+		r := newRig(t, nil, nil, nil)
+		in := input(t, personSchema)
+		in.PriorAttempts = 3
+		in.PriorFeedback = []Feedback{schemaFeedback("", "The answer was not a single JSON object: x.")}
+		out := Run(t.Context(), in, r.roles)
+		checkOutcome(t, in, out, StatusFailed, 3, CodeExtractorFailed)
+		if out.Result != nil || len(out.Feedback) != 1 || len(r.extractorCalls()) != 0 {
+			t.Errorf("result %s, feedback %+v, calls %d", out.Result, out.Feedback, len(r.extractorCalls()))
+		}
+	})
+
+	t.Run("feedback without a candidate", func(t *testing.T) {
+		r := newRig(t, fake.Script{fake.Answer(valid)}, nil, fake.Script{fake.Answer(accept)})
+		in := input(t, personSchema)
+		in.PriorAttempts, in.PriorFeedback = 1, prior
+		out := Run(t.Context(), in, r.roles)
+		checkOutcome(t, in, out, StatusAccepted, 2, "")
+		c := r.primary.Calls()[0]
+		if hasText(c, sepPrevious) || !hasText(c, sepFeedback) {
+			t.Errorf("request %+v: want feedback and no previous candidate", c.Request.Parts)
+		}
+	})
 }
