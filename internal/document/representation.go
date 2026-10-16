@@ -1,6 +1,7 @@
 package document
 
 import (
+	"bytes"
 	"fmt"
 	"slices"
 
@@ -90,13 +91,32 @@ type Representation struct {
 //  3. the judge group must read the same choice, else the next option is tried.
 //
 // When nothing fits both roles it returns ErrUnsupportedDocument. The service never
-// renders pages (ADR 0006).
+// renders pages (ADR 0006). Select does not convert images; see SelectWith.
 func Select(doc *Document, extractor, judge []config.Capability, policy HTMLPolicy) (Representation, error) {
+	return SelectWith(doc, extractor, judge, policy, ImagePolicy{})
+}
+
+// SelectWith is Select with an image policy. Images are converted here, once, and the
+// converted bytes are the Parts both roles read:
+//
+//   - an image that needs downscaling or EXIF rotation is offered converted, then as
+//     given, so a group that only reads the original type still works;
+//   - a WebP is offered as given, then converted, so a group whose pairs lack
+//     image/webp (or whose roles disagree on it) reads the JPEG or PNG conversion;
+//   - page images follow the same rules, converted or as given as a whole.
+//
+// Representation.MediaTypes reports the types after conversion. A disabled policy
+// leaves every image as given.
+func SelectWith(doc *Document, extractor, judge []config.Capability, policy HTMLPolicy, images ImagePolicy) (Representation, error) {
 	policy, err := policy.resolve()
 	if err != nil {
 		return Representation{}, err
 	}
-	for _, c := range candidates(doc) {
+	cands, err := candidates(doc, images)
+	if err != nil {
+		return Representation{}, err
+	}
+	for _, c := range cands {
 		if !reads(extractor, c) || !reads(judge, c) {
 			continue
 		}
@@ -110,24 +130,54 @@ func Select(doc *Document, extractor, judge []config.Capability, policy HTMLPoli
 type candidate struct {
 	kind       Kind
 	mediaTypes []string
+	images     []Page // the image parts of a Native image or Pages candidate
 }
 
-func candidates(doc *Document) []candidate {
+func candidates(doc *Document, images ImagePolicy) ([]candidate, error) {
 	switch doc.Category {
 	case CategoryText, CategoryEmail:
-		return []candidate{{Text, []string{"text/plain"}}}
+		return []candidate{{kind: Text, mediaTypes: []string{"text/plain"}}}, nil
 	}
-	out := []candidate{{Native, []string{doc.BaseType()}}}
-	if len(doc.Pages) > 0 {
-		var types []string
-		for _, p := range doc.Pages {
-			if !slices.Contains(types, p.MediaType) {
-				types = append(types, p.MediaType)
-			}
+	var out []candidate
+	if doc.Category == CategoryImage {
+		forms, err := images.variants(doc.Data, doc.BaseType())
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, candidate{Pages, types})
+		for _, f := range forms {
+			out = append(out, candidate{kind: Native, mediaTypes: []string{f.MediaType}, images: []Page{f}})
+		}
+	} else {
+		out = append(out, candidate{kind: Native, mediaTypes: []string{doc.BaseType()}})
 	}
-	return out
+	if len(doc.Pages) == 0 {
+		return out, nil
+	}
+	converted := make([]Page, len(doc.Pages))
+	changed := false
+	for i, p := range doc.Pages {
+		forms, err := images.variants(p.Data, p.MediaType)
+		if err != nil {
+			return nil, fmt.Errorf("page %d: %w", i+1, err)
+		}
+		converted[i] = forms[0]
+		changed = changed || forms[0].MediaType != p.MediaType || !bytes.Equal(forms[0].Data, p.Data)
+	}
+	out = append(out, pagesCandidate(converted))
+	if changed {
+		out = append(out, pagesCandidate(doc.Pages))
+	}
+	return out, nil
+}
+
+func pagesCandidate(pages []Page) candidate {
+	var types []string
+	for _, p := range pages {
+		if !slices.Contains(types, p.MediaType) {
+			types = append(types, p.MediaType)
+		}
+	}
+	return candidate{kind: Pages, mediaTypes: types, images: pages}
 }
 
 // reads reports whether one endpoint-model pair of the group reads every media type of
@@ -159,17 +209,13 @@ func build(doc *Document, c candidate, policy HTMLPolicy) (Representation, error
 	r := Representation{Kind: c.kind, MediaTypes: c.mediaTypes}
 	switch c.kind {
 	case Native:
-		blob := &provider.Blob{MediaType: doc.BaseType(), Data: doc.Data}
 		if doc.Category == CategoryPDF {
-			r.Parts = []provider.Part{{Document: blob}}
+			r.Parts = []provider.Part{{Document: &provider.Blob{MediaType: doc.BaseType(), Data: doc.Data}}}
 		} else {
-			r.Parts = []provider.Part{{Image: blob}}
+			r.Parts = imageParts(c.images)
 		}
 	case Pages:
-		r.Parts = make([]provider.Part, len(doc.Pages))
-		for i, p := range doc.Pages {
-			r.Parts[i] = provider.Part{Image: &provider.Blob{MediaType: p.MediaType, Data: p.Data}}
-		}
+		r.Parts = imageParts(c.images)
 	case Text:
 		text, err := doc.Text(policy)
 		if err != nil {
@@ -181,6 +227,14 @@ func build(doc *Document, c candidate, policy HTMLPolicy) (Representation, error
 		}
 	}
 	return r, nil
+}
+
+func imageParts(images []Page) []provider.Part {
+	parts := make([]provider.Part, len(images))
+	for i, p := range images {
+		parts[i] = provider.Part{Image: &provider.Blob{MediaType: p.MediaType, Data: p.Data}}
+	}
+	return parts
 }
 
 func (d *Document) hasHTML() bool {
