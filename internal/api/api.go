@@ -7,6 +7,7 @@ import (
 	"time"
 
 	spec "github.com/kaanemec/vde/api"
+	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
@@ -46,6 +47,8 @@ type Deps struct {
 	Wake func()
 	// Metrics receives HTTP, quota and in-progress observations; nil means none.
 	Metrics *metrics.Metrics
+	// Audit records job events; nil records nothing.
+	Audit *audit.Recorder
 }
 
 type server struct {
@@ -84,13 +87,13 @@ func newServer(deps Deps) *server {
 func (s *server) routes() []route {
 	v1 := func(need string, h http.HandlerFunc) http.Handler { return s.authenticate(need, s.limit(h)) }
 	return []route{
-		{"POST /v1/jobs", v1(auth.ScopeJobs, s.notImplemented)},         // epic 04: submission
-		{"GET /v1/jobs/{id}", v1(auth.ScopeJobsRead, s.notImplemented)}, // epics 03, 06: poll, retention
-		{"DELETE /v1/jobs/{id}", v1(auth.ScopeJobs, s.notImplemented)},  // epic 06: early delete
-		{"GET /v1/quota", v1(auth.ScopeJobsRead, s.notImplemented)},     // epic 05: quota body
-		{"GET /v1/openapi.yaml", v1("", s.openAPI)},                     // any valid token
-		{"GET /healthz", http.HandlerFunc(s.healthz)},                   // unauthenticated (contract §12)
-		{"GET /metrics", http.HandlerFunc(s.notImplemented)},            // epic 07: Prometheus, own protection
+		{"POST /v1/jobs", v1(auth.ScopeJobs, s.submitJob)},        // submit.go: submission
+		{"GET /v1/jobs/{id}", v1(auth.ScopeJobsRead, s.getJob)},   // jobs_get.go: poll, first-read deletion
+		{"DELETE /v1/jobs/{id}", v1(auth.ScopeJobs, s.deleteJob)}, // jobs_get.go: early delete
+		{"GET /v1/quota", v1(auth.ScopeJobsRead, s.getQuota)},     // quota_get.go
+		{"GET /v1/openapi.yaml", v1("", s.openAPI)},               // any valid token
+		{"GET /healthz", s.healthHandler()},                       // health.go, unauthenticated (contract §12)
+		{"GET /metrics", s.metricsRoute()},                        // metrics.go, own protection
 	}
 }
 
@@ -128,50 +131,8 @@ func (p *probeWriter) Header() http.Header         { return p.header }
 func (p *probeWriter) Write(b []byte) (int, error) { return len(b), nil }
 func (p *probeWriter) WriteHeader(status int)      { p.status = status }
 
-// notImplemented stands in for the handlers of later epics (see routes).
-func (s *server) notImplemented(w http.ResponseWriter, r *http.Request) {
-	writeError(w, r, newError(codeUnavailable, msgNotImplemented))
-}
-
 // openAPI serves the service's own API document (api/openapi.yaml).
 func (s *server) openAPI(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
 	_, _ = w.Write(spec.OpenAPI) // the client went away
 }
-
-// Reasons /healthz reports when the service cannot accept jobs. Epic 07 adds the
-// database and blob store checks.
-const (
-	reasonExtractorDown = "role_extractor_down"
-	reasonJudgeDown     = "role_judge_down"
-)
-
-type healthBody struct {
-	Status  string       `json:"status"`
-	Reasons []string     `json:"reasons,omitempty"`
-	Error   *errorDetail `json:"error,omitempty"`
-}
-
-// healthz answers 200 {"status":"ok"} when every role group has a pair not marked down,
-// else 503 with the reasons and the contract §9 error object.
-func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
-	var reasons []string
-	if !healthy(s.deps.Extractor) {
-		reasons = append(reasons, reasonExtractorDown)
-	}
-	if !healthy(s.deps.Judge) {
-		reasons = append(reasons, reasonJudgeDown)
-	}
-	if len(reasons) == 0 {
-		writeJSON(w, http.StatusOK, healthBody{Status: "ok"})
-		return
-	}
-	e := newError(codeUnavailable, msgServiceUnhealthy)
-	writeJSON(w, e.status, healthBody{
-		Status:  "unavailable",
-		Reasons: reasons,
-		Error:   &errorDetail{Code: e.code, Message: e.message, RequestID: w.Header().Get(headerRequestID)},
-	})
-}
-
-func healthy(c HealthChecker) bool { return c != nil && c.Healthy() }

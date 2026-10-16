@@ -162,13 +162,37 @@ func (s *server) accessLog(next http.Handler) http.Handler {
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 			slog.String("request_id", requestIDFrom(r.Context())),
 			slog.String("app_id", fields.appID))
+		if s.deps.Metrics != nil {
+			s.deps.Metrics.ObserveHTTP(r.Pattern, status) // the route pattern, never the path
+		}
 	})
 }
 
-// limit is the per-route rate limit and quota step, after authenticate. Epic 05 replaces
-// it: X-Quota-Remaining and X-Quota-Reset on every authenticated response, 429
-// rate_limited or quota_exhausted with Retry-After.
-func (s *server) limit(next http.Handler) http.Handler { return next }
+// limit is the per-route rate limit and quota step, after authenticate: it sets
+// X-Quota-Remaining and X-Quota-Reset before the handler runs, so every authenticated
+// response carries them, errors included (quota.go), then takes a token from the
+// application's requests-per-minute bucket and answers 429 rate_limited with
+// Retry-After when it is empty (ratelimit.go). The submit handler charges the quota
+// and applies the submission limits itself.
+func (s *server) limit(next http.Handler) http.Handler {
+	rates := s.rates()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		app, ok := ApplicationFrom(r.Context())
+		if !ok { // authenticate always runs first; fail closed if it did not
+			writeError(w, r, newError(codeInternal, msgInternal))
+			return
+		}
+		if _, ok := s.quotaHeaders(w, r, app); !ok {
+			return
+		}
+		if wait, ok := rates.take(app.ID, bucketRequests, app.RequestsPerMinute, s.now()); !ok {
+			closeIfBodyPending(w, r)
+			writeError(w, r, newError(codeRateLimited, msgRateLimited).withRetryAfter(wait))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // statusWriter records whether and with which status the header was written.
 type statusWriter struct {

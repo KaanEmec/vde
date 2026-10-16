@@ -28,6 +28,11 @@ type Config struct {
 	Auth         Auth                 `yaml:"auth"`
 	Logging      Logging              `yaml:"logging"`
 	Debug        Debug                `yaml:"debug"`
+	// Metrics, Worker, Retention and Audit configure the serve process (service.go).
+	Metrics   Metrics          `yaml:"metrics"`
+	Worker    Worker           `yaml:"worker"`
+	Retention ServiceRetention `yaml:"retention"`
+	Audit     Audit            `yaml:"audit"`
 }
 
 // Server configures the HTTP listener (used from v0.2).
@@ -130,6 +135,7 @@ type Limits struct {
 	DocumentBytes        int64 `yaml:"document_bytes"`
 	PageBytes            int64 `yaml:"page_bytes"`
 	Pages                int   `yaml:"pages"`
+	RequestBytes         int64 `yaml:"request_bytes"` // whole multipart request body (v0.2)
 }
 
 // Documents sets the representation policy.
@@ -165,6 +171,9 @@ type Rate struct {
 type Retention struct {
 	Default   string `yaml:"default"`    // a duration such as 24h, or none
 	ForceNone bool   `yaml:"force_none"` // treat every job as retention: none
+	// DeleteBlobsAtTerminal deletes the document and pages of a retention: default job
+	// at its terminal state instead of at expiry.
+	DeleteBlobsAtTerminal bool `yaml:"delete_blobs_at_terminal"`
 }
 
 // AppDocuments overrides the representation policy for one application.
@@ -201,6 +210,7 @@ const (
 	defaultDocumentBytes     = 25 << 20
 	defaultPageBytes         = 10 << 20
 	defaultPages             = 20
+	defaultRequestBytes      = 128 << 20
 	defaultQuotaLimit        = 1000
 	defaultQuotaWindow       = "P1D"
 	defaultRequestsPerMinute = 300
@@ -231,10 +241,14 @@ func defaults() *Config {
 			DocumentBytes:     defaultDocumentBytes,
 			PageBytes:         defaultPageBytes,
 			Pages:             defaultPages,
+			RequestBytes:      defaultRequestBytes,
 		},
 		Documents: Documents{HTML: "raw_html"},
 		Auth:      Auth{MaxTokenTTL: defaultMaxTokenTTL},
 		Logging:   Logging{Level: "info", Format: "json"},
+		Worker:    Worker{Size: defaultWorkerSize, PollInterval: defaultPollInterval},
+		Retention: ServiceRetention{SweepInterval: defaultSweepInterval},
+		Audit:     Audit{Retention: defaultAuditRetention},
 	}
 }
 
@@ -266,6 +280,9 @@ func Parse(data []byte, getenv func(string) string) (*Config, error) {
 		if e != nil && e.APIKeyEnv != "" {
 			e.apiKey = getenv(e.APIKeyEnv)
 		}
+	}
+	if cfg.Metrics.TokenEnv != "" {
+		cfg.Metrics.token = getenv(cfg.Metrics.TokenEnv)
 	}
 	return cfg, nil
 }

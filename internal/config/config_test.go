@@ -101,6 +101,7 @@ func TestParse_example(t *testing.T) {
 		DocumentBytes:     25 << 20,
 		PageBytes:         10 << 20,
 		Pages:             20,
+		RequestBytes:      128 << 20,
 	}
 	if cfg.Limits != wantLimits {
 		t.Errorf("limits = %+v, want %+v", cfg.Limits, wantLimits)

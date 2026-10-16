@@ -58,6 +58,7 @@ Run `vde config check` to validate a file without starting the service.
 | `limits.document_bytes` | int | `26214400` (25 MiB) | Largest document; below the contract minimum is a warning. |
 | `limits.page_bytes` | int | `10485760` (10 MiB) | Largest page image; below the contract minimum is a warning. |
 | `limits.pages` | int | `20` | Most page images per job; below the contract minimum is a warning. |
+| `limits.request_bytes` | int | `134217728` (128 MiB) | Largest whole `POST /v1/jobs` body; over it the service reads up to the limit and answers `413`; below the contract minimum is a warning. |
 
 ## `documents`
 
@@ -79,6 +80,7 @@ Run `vde config check` to validate a file without starting the service.
 | `rate.max_in_progress` | int | `20` | Jobs queued or running at once. |
 | `retention.default` | string | `24h` | Retention for `retention: default` jobs: a duration or `none`. |
 | `retention.force_none` | bool | `false` | Treat every job as `retention: none`. |
+| `retention.delete_blobs_at_terminal` | bool | `false` | Delete the document and pages of `retention: default` jobs when they reach a terminal state instead of at expiry; the result stays readable. See [retention](retention.md). |
 | `documents.html` | string | `documents.html` | Per-application HTML policy override. |
 
 Applications are mirrored into the database when `vde serve` starts: an application
@@ -97,4 +99,21 @@ expire. `vde app list` shows them.
 | --- | --- | --- | --- |
 | `logging.level` | string | `info` | `debug`, `info`, `warn` or `error`. |
 | `logging.format` | string | `json` | `json` or `text`. |
-| `debug.log_content` | bool | `false` | Log document content, for local development only; refused with a non-loopback `server.listen`. |
+| `debug.log_content` | bool | `false` | Log document content to `content.log` in `server.data_dir` (never stdout), for local development only; `serve` warns at start; refused with a non-loopback `server.listen`. |
+
+## `worker`, `retention`, `audit` and `metrics` (used by `vde serve`)
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `worker.size` | int | `4` | Jobs run at once by the worker pool, 1 to 256. |
+| `worker.poll_interval` | duration | `500ms` | Sleep of an idle worker between looks at the queue (a submission wakes one at once); at least `10ms`. |
+| `retention.sweep_interval` | duration | `1m` | Time between expiry sweeps (expired jobs, stale running jobs, old quota, token and audit rows); at least `1s`. |
+| `audit.log` | bool | `false` | Also write each audit event as an info log line with `audit=true` (never content). |
+| `audit.retention` | duration | `8760h` (365 days) | How long audit events are kept; at least `24h`. |
+| `metrics.token_env` | string | empty | Name of an environment variable holding a bearer token that `GET /metrics` requires; the variable must be set when named. |
+| `metrics.listen` | string | empty | A second listener, `host:port`, serving only `/metrics` (with the token when `token_env` is set); `/metrics` then answers `404` on `server.listen`. Not loopback and no token is a warning. With neither key, `/metrics` on `server.listen` answers only loopback peers that did not come through a proxy. |
+| `metrics.go_runtime` | bool | `false` | Add the Go runtime and process series to `/metrics`. |
+
+`GET /healthz` is unauthenticated and not rate limited: it runs a one-row database query
+(1 s timeout), reads the role groups' in-memory state and checks the data directory is
+writable at most every 30 s. Expose it to the orchestrator, not the public internet.
