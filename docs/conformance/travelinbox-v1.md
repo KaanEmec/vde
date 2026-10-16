@@ -88,8 +88,8 @@ on 429, and the Job, Error and Quota schemas of the TravelInbox API document. Ro
 Each row is one MUST sentence (or a required behavior stated as fact in a table the
 contract makes binding), abridged; the number is section.sequence. "not testable
 automatically, verified by: …" marks what this suite cannot reach from outside the
-service, with what covers it instead. Rows marked **DEFECT** have a test that skips with
-the defect reference; the defects are listed in the
+service, with what covers it instead. The defects the suite found (D1 to D3) are fixed and
+their tests no longer skip; their history and resolution are in the
 [job file](../roadmap/v0.2-service/09-contract-conformance/01-acceptance-checklist-tests.md#defects-found).
 
 | # | MUST (abridged) | Evidence |
@@ -116,7 +116,7 @@ the defect reference; the defects are listed in the
 | 4.10 | The judge MUST see the same representation as the extractor, from the same bytes. | `TestItem03DocumentKinds` (every kind), `TestS04RepresentationNativeOrPages` |
 | 4.11 | When no endpoint of either role can read any supplied representation: 415 `unsupported_document` at submit. | `TestS04UnsupportedDocument`, `TestS04RepresentationNativeOrPages` |
 | 4.12 | The representation choice is part of `service_version`. | `TestS11ServiceVersionTracksConfiguration` (models accepting other types give another version) |
-| 4.13 | A repeat with the same `Idempotency-Key` from the same application within 24 hours MUST be the same job: 202 (or 200), existing id, `Idempotency-Replayed: true`, nothing run. | `TestItem09Idempotency`, `TestS04IdempotencyReplayAfterFirstRead` (**DEFECT D2** in the replayed body), `TestS04IdempotencyWindowOutlivesShortRetention` (**DEFECT D3** with a retention below 24 hours); the full 24 hours: not testable automatically, verified by: `internal/api` TestSubmitIdempotency |
+| 4.13 | A repeat with the same `Idempotency-Key` from the same application within 24 hours MUST be the same job: 202 (or 200), existing id, `Idempotency-Replayed: true`, nothing run. | `TestItem09Idempotency`, `TestS04IdempotencyReplayAfterFirstRead` (after the first read of a `retention: none` job: the content-deleted form, D2 fixed), `TestS04IdempotencyWindowOutlivesShortRetention` (with a retention below 24 hours, D3 fixed); the full 24 hours: not testable automatically, verified by: `internal/api` TestSubmitIdempotency |
 | 4.14 | The same key with a different body is 422 `idempotency_mismatch`. | `TestS04IdempotencyMismatch` |
 | 4.15 | Keys are scoped per application. | `TestS04IdempotencyKeyScopedPerApplication` |
 | 4.16 | 202 carries `Location: /v1/jobs/{id}` and the job with `status: "queued"`. | `TestS04SubmitResponse`; every submission of the suite (`submitOK`) |
@@ -124,7 +124,7 @@ the defect reference; the defects are listed in the
 | 5.1 | `GET /v1/jobs/{id}` answers 200 with the job resource: its fields and types. | `TestJobBodyMatchesOpenAPI`; checkResponse on every job body |
 | 5.2 | Status runs `queued`, `running`, then exactly one terminal state; a terminal status never changes. | `TestS05TerminalStatusStable` |
 | 5.3 | `result` is null while in progress and when no attempt produced parseable JSON. | `TestS04SubmitResponse`, `TestS06NoJSONRepair` |
-| 5.4 | For `accepted`, `result` is never null and validates against the schema. | `TestS05AcceptedOnlyOnJudgeAccept`, `TestItem03DocumentKinds`, `TestS04IdempotencyReplayAfterFirstRead` (**DEFECT D2**) |
+| 5.4 | For `accepted`, `result` is never null and validates against the schema. | `TestS05AcceptedOnlyOnJudgeAccept`, `TestItem03DocumentKinds`, `TestS04IdempotencyReplayAfterFirstRead` (a replay of a content-deleted job answers `result: null` with `content_deleted_at` set: the reading of §5 recorded as ambiguity 10 of [the review](travelinbox-v1-review.md), D2 fixed) |
 | 5.5 | For `rejected` and `failed`, `result` is kept exactly as the extractor produced it, invalid or not. | `TestItem04SchemaViolation`, `TestS06JudgeUnparseableTwice`, `TestItem05JudgeGroupUnreachable`, `TestS06JobTimeout` |
 | 5.6 | `feedback`: the judge's on a rejection, the schema validator's when the last candidate did not validate, empty on `accepted` and in progress; entries carry `pointer`, `message`, `source`. | `TestItem04SchemaViolation`, `TestS06RejectUntilAttemptLimit`, `TestS05AcceptedOnlyOnJudgeAccept`, `TestS07FeedbackOrderAndMessagesUnedited` |
 | 5.7 | `attempts` is at least 1 in any terminal state unless `error` says the extractor was never reached. | `TestItem03DocumentKinds`, `TestItem05JudgeGroupUnreachable`, `TestS06AttemptLimit` |
@@ -171,7 +171,7 @@ the defect reference; the defects are listed in the
 | 10.1 | `retention: none`: the document and pages MUST be deleted as soon as the job is terminal. | `TestItem08RetentionNone` (blobs gone before any read), `TestS10OperatorForcesRetentionNone` |
 | 10.2 | `retention: none`: result, feedback and error MUST be deleted on the first GET returning a terminal status, or 24 hours after `created_at`; then the job is 404. | `TestItem08RetentionNone`; the 24-hour path: not testable automatically, verified by: `internal/sweeper` TestExpiredJobsAreRemovedWithTheirBlobs |
 | 10.3 | `expires_at` reports the 24-hour bound. | `TestItem08RetentionNone` |
-| 10.4 | Nothing of the job's content survives in the database, object store, queue or cache afterwards; only the audit record. | `TestS10NoContentSurvivesFirstRead` (**DEFECT D1**) |
+| 10.4 | Nothing of the job's content survives in the database, object store, queue or cache afterwards; only the audit record. | `TestS10NoContentSurvivesFirstRead` (D1 fixed: WAL checkpoint after each content deletion); `internal/job` TestDeletedContentLeavesNoTraceInDatabaseFiles. Freed disk blocks: not testable automatically, see `docs/security.md` |
 | 10.5 | `retention: default` is the operator's configured retention for the application. | `TestS10DefaultRetention` |
 | 10.6 | The operator MUST be able to force `none` for an application whatever requests say. | `TestS10OperatorForcesRetentionNone` |
 | 10.7 | Document bytes, pages, instructions, schema, candidates, results and feedback MUST NOT appear in logs, traces, metrics or error messages at any level. | `TestS10NoContentInLogsOrMetrics` (debug level), `TestS02ErrorMessagesQuoteNoContent`; traces: the service emits none |

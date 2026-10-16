@@ -559,8 +559,10 @@ func TestS04IdempotencyMismatch(t *testing.T) {
 }
 
 // TestS04IdempotencyReplayAfterFirstRead: a replay of a retention: none job whose
-// terminal state was read still names the same job and runs nothing, and its body obeys
-// §5: an accepted job's result is never null.
+// terminal state was read still names the same job and runs nothing. Its body is the
+// content-deleted form (docs/api/guide.md, docs/conformance/travelinbox-v1-review.md):
+// status kept, result null, feedback empty and content_deleted_at set, which tells the
+// client the result was delivered and must not be re-submitted for.
 func TestS04IdempotencyReplayAfterFirstRead(t *testing.T) {
 	c := mainClient()
 	loadInputs(t)
@@ -568,28 +570,33 @@ func TestS04IdempotencyReplayAfterFirstRead(t *testing.T) {
 	hdr := http.Header{"Idempotency-Key": {key}}
 	parts := append(standardParts(textDocument(key)), textPart("retention", "none"))
 	created := c.submitOK(t, env.token, parts, hdr)
-	c.waitTerminal(t, env.token, created.ID) // the first terminal read deletes the content
+	final := c.waitTerminal(t, env.token, created.ID) // the first terminal read deletes the content
 	before := 0
 	if !env.remote {
 		before = providerCalls()
 	}
 	r := c.submit(t, env.token, parts, hdr)
-	if r.status != http.StatusAccepted && r.status != http.StatusOK {
-		t.Fatalf("replay after the first read: %d %s", r.status, r.body)
+	if r.status != http.StatusAccepted {
+		t.Fatalf("replay after the first read: %d %s, want 202", r.status, r.body)
 	}
 	replayed := parseJob(t, r)
 	if replayed.ID != created.ID || r.header.Get("Idempotency-Replayed") != "true" {
 		t.Errorf("replay: id %s (want %s), Idempotency-Replayed %q", replayed.ID, created.ID, r.header.Get("Idempotency-Replayed"))
+	}
+	if replayed.Status != final.Status {
+		t.Errorf("replayed status %q, want the terminal %q", replayed.Status, final.Status)
+	}
+	if replayed.ContentDeletedAt == nil || *replayed.ContentDeletedAt == "" {
+		t.Errorf("replay of a content-deleted job without content_deleted_at: %s", r.body)
+	}
+	if len(replayed.Result) != 0 && string(replayed.Result) != "null" || len(replayed.Feedback) != 0 {
+		t.Errorf("replay of a content-deleted job carries content: %s", r.body)
 	}
 	if !env.remote {
 		settle()
 		if providerCalls() != before {
 			t.Error("the replay reached the provider")
 		}
-	}
-	if replayed.Status == "accepted" && (len(replayed.Result) == 0 || string(replayed.Result) == "null") {
-		t.Skipf("DEFECT D2 (docs/roadmap/v0.2-service/09-contract-conformance/01-acceptance-checklist-tests.md): "+
-			"the replay answers status accepted with result null, which §5 forbids: %s", r.body)
 	}
 }
 
@@ -611,13 +618,19 @@ func TestS04IdempotencyWindowOutlivesShortRetention(t *testing.T) {
 	if r.status == http.StatusAccepted && r.header.Get("Idempotency-Replayed") != "true" {
 		j := parseJob(t, r)
 		t.Cleanup(func() { c.drain(tok, j.ID) })
-		c.waitTerminal(t, tok, j.ID)
-		t.Skipf("DEFECT D3 (docs/roadmap/v0.2-service/09-contract-conformance/01-acceptance-checklist-tests.md): "+
-			"a repeat 4 s after submission ran as a new job %s (%d provider calls) because the job row, and with it the key, "+
-			"expired with a retention of 2 s", j.ID, env.llm.count(inst.name)-before)
 	}
-	if r.header.Get("Idempotency-Replayed") != "true" || parseJob(t, r).ID != created.ID {
+	if r.status != http.StatusAccepted || r.header.Get("Idempotency-Replayed") != "true" || parseJob(t, r).ID != created.ID {
 		t.Errorf("repeat within 24 hours: %d, Idempotency-Replayed %q: %s", r.status, r.header.Get("Idempotency-Replayed"), r.body)
+	}
+	if j := parseJob(t, r); j.ContentDeletedAt == nil {
+		t.Errorf("replay past a 2 s retention without content_deleted_at: %s", r.body)
+	}
+	settle()
+	if n := env.llm.count(inst.name) - before; n != 0 {
+		t.Errorf("the repeat made %d provider calls", n)
+	}
+	if r := c.get(t, tok, created.ID); r.status != http.StatusNotFound {
+		t.Errorf("poll past the retention: %d, want 404", r.status)
 	}
 }
 
@@ -1334,8 +1347,7 @@ func TestS10NoContentSurvivesFirstRead(t *testing.T) {
 		}
 	}
 	if len(found) > 0 {
-		t.Skipf("DEFECT D1 (docs/roadmap/v0.2-service/09-contract-conformance/01-acceptance-checklist-tests.md): "+
-			"content of a retention: none job survives its first terminal read in the data directory: %s", strings.Join(found, "; "))
+		t.Errorf("content of a retention: none job survives its first terminal read in the data directory: %s", strings.Join(found, "; "))
 	}
 }
 

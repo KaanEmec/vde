@@ -285,8 +285,11 @@ components:
       required: false
       description: |
         Up to 128 characters. A repeat with the same key from the same application within
-        24 hours returns the existing job with `Idempotency-Replayed: true` and runs nothing;
-        the same key with a different body is 422 `idempotency_mismatch`.
+        24 hours returns the existing job with `Idempotency-Replayed: true` and runs nothing,
+        also when the job is no longer readable: a job whose content was already read
+        (`retention: none`) or has expired is replayed with `content_deleted_at` set and
+        `result` null (see Job); treat it as already delivered and do not re-submit. The
+        same key with a different body is 422 `idempotency_mismatch`.
       schema: { type: string, minLength: 1, maxLength: 128 }
     RequestId:
       name: X-Request-Id
@@ -399,7 +402,8 @@ components:
         result:
           description: |
             The last candidate the extractor produced. Null while in progress or when no attempt
-            produced parseable JSON. Never null and schema-valid when `status` is `accepted`.
+            produced parseable JSON. Never null and schema-valid when `status` is `accepted`,
+            except in the content-deleted form of an idempotent replay (`content_deleted_at` set).
           type: [object, "null"]
         feedback:
           description: Final feedback on `result`; empty on `accepted` and while in progress.
@@ -430,6 +434,15 @@ components:
         expires_at:
           description: When the job becomes 404.
           type: string
+          format: date-time
+        content_deleted_at:
+          description: |
+            Added by vde. When the job's content (result, feedback, error) was deleted: at
+            the first terminal read of a `retention: none` job, or at `expires_at`. Present only
+            in an idempotent replay of such a job (a poll of it is 404), whose `status` is kept
+            and whose `result` and `error` are null and `feedback` empty. Treat the job as
+            already delivered; do not re-submit. Absent otherwise.
+          type: [string, "null"]
           format: date-time
 
     Quota:

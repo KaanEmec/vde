@@ -46,6 +46,7 @@ send or read any of it.
 | `text/markdown`, `image/webp`, `image/heic` | The contract's SHOULD types, accepted. | As implemented in the media table |
 | Raw HTML by default | See section 1. | As implemented |
 | No server-side rendering | The service never renders PDF pages. A PDF that no configured endpoint can read and that comes without `page` parts is refused with `415 unsupported_document`. Operators configure a PDF-capable model, or callers send pages as the contract allows. | As implemented in representation selection; the refusal at submit is planned |
+| `content_deleted_at` | Job field, RFC 3339 or `null`; present only in an idempotent replay of a job whose content is gone (read once under `retention: none`, or expired). Absent on every pollable job. | As implemented; see ambiguity 10 |
 | `method_not_allowed` | A known route with the wrong method answers `405 method_not_allowed` with `Allow`. An added error code, as section 9 allows. | As implemented |
 | `X-Service-Version` per application | The header and the job's `service_version` use the hash of the application's own effective configuration (attempt limit, HTML policy). | As implemented |
 | `insecure_http` development switch | `server.insecure_http: true` accepts plain HTTP from any peer. Off by default; `vde serve` and `vde config check` warn; refused together with `server.tls`. It exists for containers and development on a trusted private network. It is the one setting that relaxes a contract MUST (HTTPS outside loopback), so a TravelInbox deployment must not use it. | As implemented |
@@ -110,6 +111,23 @@ is a statement TravelInbox can rely on.
    covers the effective role configuration, framings, HTML policy and attempt limit of
    that application, so two applications on one deployment can differ. A build without a
    release version reports `vde-0.0.0-dev+<hex>`. As implemented.
+10. **A replay of a job whose content is gone. Open point for TravelInbox.** Section 4
+    requires a repeat within 24 hours to be the same job and run nothing; section 5 says
+    an `accepted` job's `result` is never `null`; section 10 deletes the content of a
+    `retention: none` job at its first terminal read. A replay after that read cannot
+    satisfy all three with the old body. Chosen behaviour: `202`,
+    `Idempotency-Replayed: true`, the same job id, `status` kept as it was, `result` and
+    `error` `null`, `feedback` `[]`, and the added field `content_deleted_at` set (RFC
+    3339). No provider call, no quota charge. The same answer is given for a
+    `retention: default` job replayed after its `expires_at` (its row is kept, metadata
+    only, until `created_at` + 24 hours so that the key keeps naming the job). The
+    client reads `content_deleted_at` as "already delivered, do not re-submit". A poll of
+    such a job stays `404`. TravelInbox always polls a replayed job and then gets `404`,
+    so it loses nothing; a client that trusts the replay body without reading
+    `content_deleted_at` would see `accepted` with `result: null`. To confirm with the
+    contract owner: this reading of §5 for the replay body (alternatives considered:
+    `404 not_found` for the replay, which breaks the §4 "same job" reading). As
+    implemented (defect D2 of the conformance suite).
 
 ## 5. Proposed pinned version
 

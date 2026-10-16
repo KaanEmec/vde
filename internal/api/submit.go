@@ -462,8 +462,8 @@ func (s *server) refuseDocument(w http.ResponseWriter, r *http.Request, err erro
 }
 
 // replay answers a submission whose Idempotency-Key the application used before: 202
-// with the existing job as it is now and Idempotency-Replayed: true when the body hash
-// matches, 422 idempotency_mismatch when it does not. It reports false, having written
+// with the existing job as it is now (in its content-deleted form, replayResponse, once
+// its content is gone) and Idempotency-Replayed: true when the body hash matches, 422 idempotency_mismatch when it does not. It reports false, having written
 // nothing, when the key is unused. A replay charges no quota and runs nothing.
 func (s *server) replay(w http.ResponseWriter, r *http.Request, app job.Application, key, bodyHash string) bool {
 	ctx := r.Context()
@@ -480,7 +480,7 @@ func (s *server) replay(w http.ResponseWriter, r *http.Request, app job.Applicat
 	default:
 		w.Header().Set(headerIdempotencyReplayed, "true")
 		w.Header().Set("Location", "/v1/jobs/"+existing.ID)
-		writeJSON(w, http.StatusAccepted, jobToResponse(&existing))
+		writeJSON(w, http.StatusAccepted, replayResponse(existing, s.now()))
 	}
 	return true
 }

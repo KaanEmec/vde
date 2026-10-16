@@ -30,6 +30,9 @@ Contract §14 acceptance checklist; §2 to §12 MUSTs.
       starts compose, creates a token with `docker compose exec vde vde token create` and
       runs `go test ./test/conformance/ -count=1` against it.
 - [x] A `make conformance` target, and a `conformance` job in `.github/workflows/ci.yml`.
+- [x] Fix the defects the suite found (D1 to D3, below) and remove their skips:
+      `TestS10NoContentSurvivesFirstRead`, `TestS04IdempotencyReplayAfterFirstRead` and
+      `TestS04IdempotencyWindowOutlivesShortRetention` now pass without skipping.
 
 ## Acceptance criteria
 
@@ -52,8 +55,9 @@ Quality evaluation (next job).
 
 ## Defects found
 
-Found by the suite on 2026-10-16; the service code was not changed here. Each test skips
-with its reference until the defect is fixed; remove the skip with the fix.
+Found by the suite on 2026-10-16; the service code was not changed here. Each test skipped
+with its reference until the defect was fixed. All three were fixed on 2026-10-16 and the
+skips removed; each entry keeps its finding and adds its resolution.
 
 - **D1: content of a `retention: none` job survives its first terminal read in the
   database files** (contract §10: "Nothing of the job's content survives in the
@@ -68,6 +72,16 @@ with its reference until the defect is fixed; remove the skip with the fix.
   database with `PRAGMA secure_delete = ON` and run `PRAGMA wal_checkpoint(TRUNCATE)` after
   the content deletion (first read, sweeper), or keep job content encrypted under a per-job
   key that is deleted with the content.
+  **Resolved:** `secure_delete` was already on. The SQLite store now runs
+  `PRAGMA wal_checkpoint(TRUNCATE)` after every statement that deletes job content
+  (`MarkContentDeleted` when it cleared a row, `DeleteJob`; the sweeper and the first read
+  go through them), best effort: a failure or a checkpoint kept from completing is logged
+  at debug and never fails the request. Test: `internal/job`
+  `TestDeletedContentLeavesNoTraceInDatabaseFiles` greps `vde.db`, `-wal` and `-shm` after
+  `MarkContentDeleted(ContentAll)` and after `DeleteJob` (it fails without the
+  checkpoint). Not guaranteed, documented in `docs/operator/retention.md` ("What is on
+  disk") and `docs/security.md`: freed blocks the OS keeps; host disk encryption is still
+  recommended.
 - **D2: an idempotent replay of a `retention: none` job after its first terminal read
   answers `status: "accepted"` with `result: null`** (contract §5: "For `accepted` it is
   never `null`"). Test: `TestS04IdempotencyReplayAfterFirstRead`. Reproduction: submit a
@@ -79,6 +93,14 @@ with its reference until the defect is fixed; remove the skip with the fix.
   but the body breaks §5. The Job schema requires `result`, so it cannot be left out; the
   simplest contract-safe answer to a replay of a content-deleted job is 404 `not_found`,
   the same answer a poll of it gives (to confirm with the contract owner).
+  **Resolved** (decision differs from the suggestion above: 404 would break the §4 "same
+  job" reading): the replay answers `202`, `Idempotency-Replayed: true`, the same id,
+  `status` kept, `result` and `error` `null`, `feedback` `[]`, and a new optional job
+  field `content_deleted_at` (RFC 3339) that says the content was delivered or expired
+  (`internal/api/jobjson.go` `replayResponse`; absent on every pollable job). No provider
+  call, no quota charge. Documented in `api/openapi.yaml` (Job, additive),
+  `docs/api/guide.md` (Idempotency) and as open point 10 for TravelInbox in
+  `docs/conformance/travelinbox-v1-review.md`. The test asserts this behaviour.
 - **D3: the idempotency window ends with the job row, before 24 hours when
   `retention.default` is shorter** (contract §4: a repeat "within 24 hours" MUST be the same
   job and run nothing). Test: `TestS04IdempotencyWindowOutlivesShortRetention`.
@@ -90,4 +112,13 @@ with its reference until the defect is fixed; remove the skip with the fix.
   kept 24 h) is not affected; an operator who sets a retention below 24 h is. Possible fixes:
   keep `(application, key, body hash, job id)` for 24 h independently of the job row, or
   have `vde config check` refuse (or warn about) `retention.default` below 24 h.
+  **Resolved:** the job row, metadata only, is kept until max(`expires_at`, `created_at` +
+  24h); GET still answers 404 from `expires_at`. The sweeper's expiry is split in two
+  steps: at `expires_at` it deletes the blobs and the content of terminal jobs
+  (`MarkContentDeleted(ContentAll)`, audit `job.expired`; new store method
+  `ListContentExpired`), and it removes the row once both bounds are past (`ListExpired`
+  now applies the 24 h floor, `job.IdempotencyWindow`). A replay in between gets the
+  content-deleted form of D2. Tests: `internal/job` `TestListContentExpiredAndRowFloor`,
+  `internal/sweeper` `TestShortRetentionExpiresContentAndKeepsRowForIdempotency` (fake
+  clock). Documented in `docs/operator/retention.md`.
 

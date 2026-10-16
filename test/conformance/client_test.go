@@ -345,9 +345,10 @@ type jobBody struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
-	CreatedAt  string  `json:"created_at"`
-	FinishedAt *string `json:"finished_at"`
-	ExpiresAt  string  `json:"expires_at"`
+	CreatedAt        string  `json:"created_at"`
+	FinishedAt       *string `json:"finished_at"`
+	ExpiresAt        string  `json:"expires_at"`
+	ContentDeletedAt *string `json:"content_deleted_at"` // vde superset: set only in a replay of a content-deleted job
 
 	raw    []byte
 	header http.Header

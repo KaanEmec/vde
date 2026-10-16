@@ -453,6 +453,115 @@ func TestListExpiredAndCountRunning(t *testing.T) {
 	}
 }
 
+func TestListContentExpiredAndRowFloor(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	short := testApp("short")
+	short.RetentionDefault = "2s"
+	seedApp(t, s, short)
+	terminal := createJob(t, s, newJob("short")) // expires t0+2s
+	finishJob(t, s, terminal.ID, StatusAccepted)
+	queued := newJob("short")
+	queued.CreatedAt = t0.Add(time.Second) // expires t0+3s, stays queued
+	createJob(t, s, queued)
+
+	ids := func(jobs []Job) []string {
+		var out []string
+		for _, j := range jobs {
+			out = append(out, j.ID)
+		}
+		return out
+	}
+	if got, err := s.ListContentExpired(ctx, t0.Add(time.Second), 10); err != nil || len(got) != 0 {
+		t.Errorf("ListContentExpired before expiry = %v, %v", ids(got), err)
+	}
+	got, err := s.ListContentExpired(ctx, t0.Add(time.Minute), 10)
+	if err != nil || !slices.Equal(ids(got), []string{terminal.ID}) {
+		t.Errorf("ListContentExpired past expiry = %v, %v; want only the terminal job", ids(got), err)
+	}
+	if err := s.MarkContentDeleted(ctx, terminal.ID, ContentAll, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.ListContentExpired(ctx, t0.Add(time.Minute), 10); len(got) != 0 {
+		t.Errorf("a job whose content is deleted is listed again: %v", ids(got))
+	}
+
+	// Rows stay for the idempotency window although expires_at is long past.
+	if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow-time.Millisecond), 10); len(got) != 0 {
+		t.Errorf("ListExpired inside the idempotency window = %v", ids(got))
+	}
+	if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow), 10); !slices.Equal(ids(got), []string{terminal.ID}) {
+		t.Errorf("ListExpired at created_at+24h = %v, want %s", ids(got), terminal.ID)
+	}
+	if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow+time.Second), 10); len(got) != 2 {
+		t.Errorf("ListExpired past both windows = %v, want both", ids(got))
+	}
+}
+
+// TestDeletedContentLeavesNoTraceInDatabaseFiles: after MarkContentDeleted(ContentAll)
+// and after DeleteJob, the content is in none of vde.db, vde.db-wal and vde.db-shm
+// (secure_delete plus the WAL checkpoint).
+func TestDeletedContentLeavesNoTraceInDatabaseFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vde.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	ctx := t.Context()
+	seedApp(t, s, testApp("app"))
+
+	marked := func(marker string) *Job {
+		j := newJob("app")
+		j.ExtractorInstructions, j.JudgeInstructions = marker+"-extractor", marker+"-judge"
+		j.Schema = `{"$comment":"` + marker + `-schema"}`
+		createJob(t, s, j)
+		if _, err := s.LeaseNextQueued(ctx, "w", t0, t0.Add(time.Minute), nil); err != nil {
+			t.Fatal(err)
+		}
+		err := s.Finish(ctx, j.ID, "w", Outcome{
+			Status: StatusRejected, Attempts: 1, Result: json.RawMessage(`{"r":"` + marker + `-result"}`),
+			Feedback: json.RawMessage(`[{"pointer":"/r","message":"` + marker + `-feedback","source":"judge"}]`),
+		}, t0.Add(time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return j
+	}
+	assertGone := func(marker string) {
+		t.Helper()
+		found := false
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			b, err := os.ReadFile(path + suffix)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(b, []byte(marker)) {
+				t.Errorf("%s survives in vde.db%s", marker, suffix)
+			}
+			found = found || suffix == "-wal"
+		}
+		if !found {
+			t.Error("no vde.db-wal: the scan proves little")
+		}
+	}
+
+	read := marked("MARKER-READ")
+	if err := s.MarkContentDeleted(ctx, read.ID, ContentAll, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	assertGone("MARKER-READ")
+
+	deleted := marked("MARKER-DELETE")
+	if err := s.DeleteJob(ctx, deleted.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertGone("MARKER-DELETE")
+}
+
 func finishJob(t *testing.T, s *SQLite, id string, status Status) {
 	t.Helper()
 	ctx := t.Context()

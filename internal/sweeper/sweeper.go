@@ -31,7 +31,9 @@ const (
 
 // Observer receives the sweeper's metric (epic 07).
 type Observer interface {
-	// AddSwept counts n expired jobs removed with their blobs.
+	// AddSwept counts n expired jobs: their content, blobs included, deleted at
+	// expires_at (or their row removed, for a job whose content the sweeper had not
+	// expired).
 	AddSwept(n int)
 }
 
@@ -64,7 +66,8 @@ type Options struct {
 
 // Result counts what one sweep removed or finished.
 type Result struct {
-	Expired     int // expired jobs removed with their blobs
+	Expired     int // expired jobs: content and blobs deleted, or row removed (one job.expired each)
+	Removed     int // job rows removed, past both expires_at and the idempotency window
 	Stale       int // running jobs finished as failed/timeout
 	QuotaRows   int
 	Tokens      int
@@ -72,7 +75,8 @@ type Result struct {
 	Orphans     int // blob directories without a job row
 }
 
-// Sweeper removes what retention says is due: expired jobs and their blobs, stale
+// Sweeper removes what retention says is due: the content and blobs of expired jobs,
+// their rows once the idempotency window is over too, stale
 // running jobs, old quota, token and audit rows, and orphan blobs.
 type Sweeper struct {
 	store job.Store
@@ -161,6 +165,16 @@ func (s *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		}
 	}
 	step("expired jobs", &r.Expired, func() (int, error) { return s.expired(ctx, now) })
+	var lateExpired int // rows removed whose content the sweeper had not expired
+	step("expired job rows", &r.Removed, func() (int, error) {
+		var (
+			n   int
+			err error
+		)
+		n, lateExpired, err = s.removeRows(ctx, now)
+		return n, err
+	})
+	r.Expired += lateExpired
 	step("stale running jobs", &r.Stale, func() (int, error) { return s.stale(ctx, now) })
 	step("quota rows", &r.QuotaRows, func() (int, error) { return s.quota(ctx, now) })
 	step("tokens", &r.Tokens, func() (int, error) {
@@ -183,23 +197,63 @@ func (s *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	return r, errors.Join(errs...)
 }
 
-// expired removes the blobs and then the row of every job past its expires_at, batch by
-// batch until a batch comes back short. The audit record stays. A job whose blobs cannot
-// be removed keeps its row, so the next sweep retries it.
+// expired deletes the blobs and then the content (instructions, schema, result,
+// feedback, error) of every terminal job past its expires_at, batch by batch until a
+// batch comes back short, and records job.expired. The row stays, metadata only, until
+// removeRows: GET already answers 404, and an idempotent replay still names the job. A
+// job still queued or running at its expires_at is expired once it is terminal. A job
+// whose blobs cannot be removed keeps its content, so the next sweep retries it.
 func (s *Sweeper) expired(ctx context.Context, now time.Time) (int, error) {
 	var (
 		total int
 		errs  []error
 	)
 	for {
-		batch, err := s.store.ListExpired(ctx, now, s.opts.Batch)
+		batch, err := s.store.ListContentExpired(ctx, now, s.opts.Batch)
 		if err != nil {
 			return total, errors.Join(append(errs, err)...)
 		}
-		removed := 0
+		done := 0
 		for _, j := range batch {
 			if err := ctx.Err(); err != nil {
-				return total + removed, errors.Join(append(errs, err)...)
+				return total + done, errors.Join(append(errs, err)...)
+			}
+			if err := s.blobs.DeleteAll(ctx, j.ID); err != nil {
+				errs = append(errs, fmt.Errorf("delete blobs of %s: %w", j.ID, err))
+				continue
+			}
+			switch err := s.store.MarkContentDeleted(ctx, j.ID, job.ContentAll, now); {
+			case errors.Is(err, job.ErrNotFound): // deleted by someone else meanwhile
+			case err != nil:
+				errs = append(errs, fmt.Errorf("delete content of %s: %w", j.ID, err))
+			default:
+				done++
+				s.audit.JobExpired(ctx, j)
+			}
+		}
+		total += done
+		if len(batch) < s.opts.Batch || done == 0 {
+			return total, errors.Join(errs...)
+		}
+	}
+}
+
+// removeRows removes the blobs (normally gone already) and then the row of every job
+// past both its expires_at and created_at + job.IdempotencyWindow, batch by batch. The
+// audit record stays. A row whose content the sweeper had not expired (deleted at the
+// first read, or a job not terminal at its expires_at) gets its job.expired here; late
+// counts those. A job whose blobs cannot be removed keeps its row for the next sweep.
+func (s *Sweeper) removeRows(ctx context.Context, now time.Time) (removed, late int, err error) {
+	var errs []error
+	for {
+		batch, err := s.store.ListExpired(ctx, now, s.opts.Batch)
+		if err != nil {
+			return removed, late, errors.Join(append(errs, err)...)
+		}
+		n := 0
+		for _, j := range batch {
+			if err := ctx.Err(); err != nil {
+				return removed + n, late, errors.Join(append(errs, err)...)
 			}
 			if err := s.blobs.DeleteAll(ctx, j.ID); err != nil {
 				errs = append(errs, fmt.Errorf("delete blobs of %s: %w", j.ID, err))
@@ -210,13 +264,16 @@ func (s *Sweeper) expired(ctx context.Context, now time.Time) (int, error) {
 			case err != nil:
 				errs = append(errs, fmt.Errorf("delete job %s: %w", j.ID, err))
 			default:
-				removed++
-				s.audit.JobExpired(ctx, j)
+				n++
+				if j.ContentDeletedAt.IsZero() || j.ContentDeletedAt.Before(j.ExpiresAt) {
+					late++
+					s.audit.JobExpired(ctx, j)
+				}
 			}
 		}
-		total += removed
-		if len(batch) < s.opts.Batch || removed == 0 {
-			return total, errors.Join(errs...)
+		removed += n
+		if len(batch) < s.opts.Batch || n == 0 {
+			return removed, late, errors.Join(errs...)
 		}
 	}
 }

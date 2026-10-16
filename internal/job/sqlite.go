@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -653,6 +654,7 @@ func (s *SQLite) MarkContentDeleted(ctx context.Context, id string, what Content
 		return fmt.Errorf("job: mark content deleted: %w", err)
 	}
 	if n > 0 {
+		s.checkpoint(ctx)
 		return nil
 	}
 	j, err := s.GetJobAny(ctx, id)
@@ -674,7 +676,22 @@ func (s *SQLite) DeleteJob(ctx context.Context, id string) error {
 	if n, err := affected(res); err != nil || n == 0 {
 		return errors.Join(ErrNotFound, err)
 	}
+	s.checkpoint(ctx)
 	return nil
+}
+
+// checkpoint copies the WAL into the database file and truncates it, after a statement
+// that deleted job content. secure_delete zeroes the deleted content in the database
+// pages, but the WAL keeps the earlier page images, content included, until a
+// checkpoint. Best effort: a failure, or readers that keep it from completing, is logged
+// at debug and never fails the caller; the next checkpoint catches up.
+func (s *SQLite) checkpoint(ctx context.Context) {
+	var busy, frames, done int
+	err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &frames, &done)
+	if err != nil || busy != 0 {
+		slog.DebugContext(ctx, "wal checkpoint after content deletion incomplete",
+			slog.String("component", "job"), slog.Int("busy", busy), slog.Any("error", err))
+	}
 }
 
 // FindByIdempotencyKey implements Store.
@@ -687,25 +704,40 @@ func (s *SQLite) FindByIdempotencyKey(ctx context.Context, applicationID, key st
 	return j, nil
 }
 
-// ListExpired implements Store.
+// ListExpired implements Store. Both bounds are checked, so the expires_at index
+// serves the query.
 func (s *SQLite) ListExpired(ctx context.Context, now time.Time, limit int) ([]Job, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+jobColumns+` FROM jobs WHERE expires_at <= ? ORDER BY expires_at, id LIMIT ?`,
+	return s.queryJobs(ctx, "list expired",
+		`SELECT `+jobColumns+` FROM jobs WHERE expires_at <= ? AND created_at <= ? ORDER BY expires_at, id LIMIT ?`,
+		now.UnixMilli(), now.Add(-IdempotencyWindow).UnixMilli(), limit)
+}
+
+// ListContentExpired implements Store.
+func (s *SQLite) ListContentExpired(ctx context.Context, now time.Time, limit int) ([]Job, error) {
+	return s.queryJobs(ctx, "list content expired", `
+		SELECT `+jobColumns+` FROM jobs
+		WHERE expires_at <= ? AND content_deleted_at IS NULL AND status IN ('accepted', 'rejected', 'failed')
+		ORDER BY expires_at, id LIMIT ?`,
 		now.UnixMilli(), limit)
+}
+
+// queryJobs runs a query over jobColumns and scans every row; what names it in errors.
+func (s *SQLite) queryJobs(ctx context.Context, what, query string, args ...any) ([]Job, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("job: list expired: %w", err)
+		return nil, fmt.Errorf("job: %s: %w", what, err)
 	}
 	defer rows.Close()
 	var out []Job
 	for rows.Next() {
 		j, err := scanJob(rows)
 		if err != nil {
-			return nil, fmt.Errorf("job: list expired: %w", err)
+			return nil, fmt.Errorf("job: %s: %w", what, err)
 		}
 		out = append(out, j)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("job: list expired: %w", err)
+		return nil, fmt.Errorf("job: %s: %w", what, err)
 	}
 	return out, nil
 }
