@@ -8,5 +8,5 @@ returns a verdict and a calibrated confidence instead of text.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [AWS Bedrock and Vertex AI adapters](01-bedrock-and-vertex-adapters.md) | in progress |
+| 01 | [AWS Bedrock and Vertex AI adapters](01-bedrock-and-vertex-adapters.md) | done except the live smoke test |
 | 02 | [Classifier-style judge adapter](02-classifier-judge-adapter.md) | in progress |
