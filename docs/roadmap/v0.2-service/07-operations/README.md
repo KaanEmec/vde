@@ -1,6 +1,6 @@
 # Epic 07: Operations
 
-Version: v0.2 · Status: done · Depends on: 01, 03
+Version: v0.2 · Status: done· Depends on: 01, 03
 
 Liveness, Prometheus metrics and an audit log that never carries content.
 

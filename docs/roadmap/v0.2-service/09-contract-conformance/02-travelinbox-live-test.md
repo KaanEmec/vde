@@ -1,6 +1,6 @@
 # Job: TravelInbox live test and evaluation run
 
-Version: v0.2 · Epic: 09 Contract conformance · Status: planned · Depends on: 01, 08-02
+Version: v0.2 · Epic: 09 Contract conformance · Status: in progress · Depends on: 01, 08-02
 
 ## Goal
 

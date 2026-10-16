@@ -1,6 +1,6 @@
 # Epic 08: Packaging and deployment
 
-Version: v0.2 · Status: done · Depends on: 01
+Version: v0.2 · Status: done· Depends on: 01
 
 One container image for `linux/amd64` and `linux/arm64`, a docker compose example, and
 a release workflow that publishes tagged images and binaries.
