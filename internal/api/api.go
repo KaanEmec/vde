@@ -8,8 +8,10 @@ import (
 
 	spec "github.com/kaanemec/vde/api"
 	"github.com/kaanemec/vde/internal/auth"
+	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/metrics"
 )
 
 // HealthChecker reports whether a role's group has a pair not marked down;
@@ -36,6 +38,14 @@ type Deps struct {
 	// Extractor and Judge are the role groups checked by /healthz. They may be the
 	// same group.
 	Extractor, Judge HealthChecker
+	// Blobs stores document and page bytes (epic 04 submit and delete); nil disables
+	// job submission with 503.
+	Blobs blob.Store
+	// Wake is called after a job is created so the worker pool leases it at once; nil is
+	// allowed (the pool then polls).
+	Wake func()
+	// Metrics receives HTTP, quota and in-progress observations; nil means none.
+	Metrics *metrics.Metrics
 }
 
 type server struct {
