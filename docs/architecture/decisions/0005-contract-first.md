@@ -16,7 +16,7 @@ is broader (schema optional, emails, Swift and web clients) but less precise.
   endpoints, extra fields and error codes. Every MUST in the contract maps to at least one
   job in the roadmap and one automated test.
 - Where the brief is broader, the service is a superset: `schema` is optional at the
-  service level (TravelInbox always sends it), `message/rfc822` is a v0.3 media type,
+  service level (TravelInbox always sends it), `message/rfc822` is a core media type from v0.1 (decision 7),
   a synchronous endpoint and webhooks are v0.3 options.
 - Where the brief and contract differ in detail (for example error shapes), the contract
   wins for `/v1`.

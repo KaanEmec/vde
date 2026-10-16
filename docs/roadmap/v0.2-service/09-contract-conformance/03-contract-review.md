@@ -1,6 +1,6 @@
 # Job: Contract review and feedback
 
-Version: v0.2 · Epic: 09 Contract conformance · Status: planned · Depends on: 01, 02
+Version: v0.2 · Epic: 09 Contract conformance · Status: in progress (document written; review meeting open) · Depends on: 01, 02
 
 ## Goal
 
@@ -17,7 +17,7 @@ version).
 
 ## Tasks
 
-- [ ] Write `docs/conformance/travelinbox-v1-review.md`: decisions on each open point
+- [x] Write `docs/conformance/travelinbox-v1-review.md`: decisions on each open point
       (from `docs/roadmap/open-questions.md` 13–16), the superset list (optional schema,
       `DELETE`, `X-Request-Id`, `/v1/openapi.yaml`, `jobs:read` scope, `judge_confidence`,
       `attachments`, `message/rfc822`, raw HTML default, no server-side rendering),
@@ -25,8 +25,9 @@ version).
       and anything the implementation found ambiguous in the contract (for example
       whether `attempts` counts an unparseable extractor answer, which the roadmap says
       yes).
-- [ ] Propose the pinned version string and link to `api/openapi.yaml` at the release tag.
-- [ ] Review meeting notes and resulting changes recorded as an ADR if architectural.
+- [x] Propose the pinned version string and link to `api/openapi.yaml` at the release tag.
+- [ ] Review meeting notes and resulting changes recorded as an ADR if architectural. Open: the meeting has not
+      happened; the draft is `docs/conformance/travelinbox-v1-review.md`, section 6.
 
 ## Acceptance criteria
 
@@ -36,3 +37,13 @@ version).
 ## Out of scope
 
 Changing `/v1` semantics (would be `/v2`).
+
+## Outcome
+
+Drafted as `docs/conformance/travelinbox-v1-review.md`. Statements are marked "as
+implemented" or "planned" against the code of 2026-10-16; the planned marks go when the
+release candidate passes epic 09 job 01. Found while writing: ADR 0005 still says
+`message/rfc822` is a v0.3 media type, whereas decision 7, ADR 0006, the API document and
+the document package have it now; the ADR text is stale (not edited here). The proposed pin
+is API document `0.2.0` and `service_version` prefix `vde-0.2.0`, at tag `v0.2.0` (the tag
+does not exist yet).
