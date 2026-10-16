@@ -54,3 +54,10 @@ Done in `internal/worker` (`New(store, blobs, cfg, roles, Options)`, `Start`, `W
   none; `Finish` and retention use a context detached from the shutdown grace (10 s cap).
 - Metrics are an `Observer` interface (`JobStarted`, `JobFinished(app, status, attempts,
   duration since created_at)`); Prometheus comes with epic 07.
+- A job leased again after a crash resumes with its persisted state: the worker sets
+  `extract.Input.PriorAttempts`, `PriorCandidate` and `PriorFeedback` from the row
+  (`attempts`, `result`, `feedback`), so the first extractor request carries the previous
+  candidate and the feedback on it exactly as a retry does (contract §6 step 2). The loop
+  counts on from `PriorAttempts` up to the job's limit and `Outcome.Attempts` is the
+  total; a job whose persisted attempts already reached the limit ends without a provider
+  call (rejected with the last candidate, or `extractor_failed` when there was none).
