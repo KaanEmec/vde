@@ -1,6 +1,6 @@
 # v0.1 Core engine
 
-Status: planned
+Status: in progress
 
 ## Goal
 
@@ -24,7 +24,7 @@ group that is fully down ending in `provider_unavailable`, and a job deadline pr
 
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
-| 01 | [Project foundation](01-project-foundation/README.md) | none | planned |
+| 01 | [Project foundation](01-project-foundation/README.md) | none | in progress |
 | 02 | [Provider adapters](02-provider-adapters/README.md) | 01 | planned |
 | 03 | [Endpoint groups and failover](03-endpoint-groups-and-failover/README.md) | 02 | planned |
 | 04 | [Document representation](04-document-representation/README.md) | 01, 02 (capabilities) | planned |

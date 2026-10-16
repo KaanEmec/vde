@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "Holiday Inn Express Edinburgh - Haymarket",
+      "provider": "IHG Hotels & Resorts",
+      "booking_ref": "79822051",
+      "status": "confirmed",
+      "starts_at_local": "2027-08-12T15:00:00",
+      "ends_at_local": "2027-08-15T12:00:00",
+      "start_place": {
+        "name": "Holiday Inn Express Edinburgh - Haymarket",
+        "address": "14 Dalry Road, Edinburgh, EH11 2BA, United Kingdom",
+        "iata": null,
+        "city": "Edinburgh",
+        "country": "GB"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Callum Gallagher", "type": null }
+      ],
+      "price": { "amount": "763.35", "currency": "GBP" },
+      "cancellation": "Cancelling your reservation before 4:00 PM (local hotel time) on Wednesday, 11 August 2027 will result in no charge. Cancelling your reservation after 4:00 PM (local hotel time) on Wednesday, 11 August 2027, or failing to show, will result in a charge equal to the first night's stay per room to your credit card.",
+      "details": {
+        "room": "Standard Room, 1 Double Bed, Non-Smoking",
+        "guests": 2,
+        "address": "14 Dalry Road, Edinburgh, EH11 2BA, United Kingdom",
+        "phone": "+44 131 496 0418",
+        "checkin_time": "15:00",
+        "checkout_time": "12:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Edinburgh",
+    "country": "GB",
+    "starts_on": "2027-08-12",
+    "ends_on": "2027-08-15"
+  },
+  "notes": "Payment is taken by the hotel at check-in; the total includes the 5% Edinburgh Visitor Levy."
+}

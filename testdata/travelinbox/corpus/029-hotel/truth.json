@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "Hotel Casa del Azahar",
+      "provider": "Hotel Casa del Azahar",
+      "booking_ref": "WOF2729967",
+      "status": "confirmed",
+      "starts_at_local": "2027-10-07T14:00:00",
+      "ends_at_local": "2027-10-10T12:00:00",
+      "start_place": {
+        "name": "Hotel Casa del Azahar",
+        "address": "Calle Águilas 17, 41003 Sevilla, España",
+        "iata": null,
+        "city": "Seville",
+        "country": "ES"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Mateo Quintero", "type": null }
+      ],
+      "price": { "amount": "475.00", "currency": "EUR" },
+      "cancellation": "Cancelación gratuita hasta 72 horas antes de la fecha de llegada. Las cancelaciones posteriores y la no presentación conllevarán el cargo de la primera noche.",
+      "details": {
+        "room": "Doble Superior con balcón",
+        "guests": 2,
+        "address": "Calle Águilas 17, 41003 Sevilla, España",
+        "phone": "+34 954 21 63 08",
+        "checkin_time": "14:00",
+        "checkout_time": "12:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Seville",
+    "country": "ES",
+    "starts_on": "2027-10-07",
+    "ends_on": "2027-10-10"
+  },
+  "notes": "The full amount is paid at the hotel on arrival; the card is held only as a guarantee."
+}

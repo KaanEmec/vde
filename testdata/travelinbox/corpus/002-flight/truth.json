@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "Hamburg to Nairobi via Amsterdam",
+      "provider": "KLM",
+      "booking_ref": "B8H5ZS",
+      "status": "confirmed",
+      "starts_at_local": "2027-02-11T06:00:00",
+      "ends_at_local": "2027-02-11T20:40:00",
+      "start_place": {
+        "name": "Hamburg Airport",
+        "address": null,
+        "iata": "HAM",
+        "city": "Hamburg",
+        "country": "DE"
+      },
+      "end_place": {
+        "name": "Jomo Kenyatta International Airport",
+        "address": null,
+        "iata": "NBO",
+        "city": "Nairobi",
+        "country": "KE"
+      },
+      "travellers": [
+        { "name": "Bastian Weissmann", "type": "adult" }
+      ],
+      "price": { "amount": "631.47", "currency": "EUR" },
+      "cancellation": "Changing your booking: allowed. A change fee of EUR 150 per ticket applies, plus any difference in fare. Cancelling your booking: not allowed. You can request a refund of the unused taxes and charges.",
+      "details": {
+        "number": "KL 1776",
+        "carrier": "KLM",
+        "from_iata": "HAM",
+        "to_iata": "NBO",
+        "seat": null,
+        "cabin": "Economy",
+        "terminal": null,
+        "gate": null,
+        "legs": [
+          {
+            "number": "KL 1776",
+            "carrier": "KLM",
+            "from_iata": "HAM",
+            "to_iata": "AMS",
+            "departs_at_local": "2027-02-11T06:00:00",
+            "arrives_at_local": "2027-02-11T07:15:00",
+            "seat": null,
+            "cabin": "Economy",
+            "terminal": null
+          },
+          {
+            "number": "KL 565",
+            "carrier": "KLM",
+            "from_iata": "AMS",
+            "to_iata": "NBO",
+            "departs_at_local": "2027-02-11T10:20:00",
+            "arrives_at_local": "2027-02-11T20:40:00",
+            "seat": null,
+            "cabin": "Economy",
+            "terminal": null
+          }
+        ]
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Nairobi",
+    "country": "KE",
+    "starts_on": "2027-02-11",
+    "ends_on": null
+  },
+  "notes": "KL 1776 is operated by KLM Cityhopper."
+}

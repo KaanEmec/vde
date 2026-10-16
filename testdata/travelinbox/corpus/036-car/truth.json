@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "car_rental",
+      "title": "Car rental in Munich",
+      "provider": "Sixt",
+      "booking_ref": "4481128530",
+      "status": "confirmed",
+      "starts_at_local": "2027-04-26T09:30:00",
+      "ends_at_local": "2027-04-30T18:00:00",
+      "start_place": {
+        "name": "München Flughafen",
+        "address": "Terminalstraße Mitte, Mietwagenzentrum, 85356 München",
+        "iata": "MUC",
+        "city": "Munich",
+        "country": "DE"
+      },
+      "end_place": {
+        "name": "München Flughafen",
+        "address": "Terminalstraße Mitte, Mietwagenzentrum, 85356 München",
+        "iata": "MUC",
+        "city": "Munich",
+        "country": "DE"
+      },
+      "travellers": [
+        { "name": "Oskar Schaller", "type": null }
+      ],
+      "price": { "amount": "406.00", "currency": "EUR" },
+      "cancellation": "Sie können Ihre Reservierung bis zum Abholzeitpunkt kostenlos ändern oder stornieren. Wird das Fahrzeug ohne vorherige Stornierung nicht abgeholt, entstehen Ihnen keine Kosten.",
+      "details": {
+        "vehicle": "BMW 1er oder ähnlich",
+        "pickup": "Der Sixt Schalter befindet sich im Mietwagenzentrum im Zentralbereich, Ebene 03, zwischen Terminal 1 und Terminal 2. Folgen Sie im Terminal der Beschilderung „Mietwagen“.",
+        "dropoff": "Folgen Sie auf dem Flughafengelände der Beschilderung „Mietwagenrückgabe“ zum Parkhaus P20, Ebene 01. Den Fahrzeugschlüssel geben Sie bitte am Sixt Rückgabeschalter ab."
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Munich",
+    "country": "DE",
+    "starts_on": "2027-04-26",
+    "ends_on": "2027-04-30"
+  },
+  "notes": null
+}

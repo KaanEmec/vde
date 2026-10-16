@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "rail",
+      "title": "Rome to Florence",
+      "provider": "Trenitalia",
+      "booking_ref": "HS3T6D",
+      "status": "confirmed",
+      "starts_at_local": "2027-05-14T08:50:00",
+      "ends_at_local": "2027-05-14T10:22:00",
+      "start_place": {
+        "name": "Roma Termini",
+        "address": null,
+        "iata": null,
+        "city": "Rome",
+        "country": "IT"
+      },
+      "end_place": {
+        "name": "Firenze S. M. Novella",
+        "address": null,
+        "iata": null,
+        "city": "Florence",
+        "country": "IT"
+      },
+      "travellers": [
+        { "name": "Chiara Rinaldi", "type": "adult" },
+        { "name": "Marco Esposito", "type": "adult" }
+      ],
+      "price": { "amount": "59.80", "currency": "EUR" },
+      "cancellation": "Il cambio di data e ora è consentito una sola volta prima della partenza del treno, con pagamento dell'eventuale differenza di prezzo. Non è consentito il rimborso. Non è consentito il cambio del nominativo.",
+      "details": {
+        "train": "Frecciarossa 9524",
+        "coach": "3",
+        "seat": "7A, 7B",
+        "platform": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Florence",
+    "country": "IT",
+    "starts_on": "2027-05-14",
+    "ends_on": null
+  },
+  "notes": null
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "ferry",
+      "title": "Piraeus to Naxos",
+      "provider": "Blue Star Ferries",
+      "booking_ref": "PT1X4Q",
+      "status": "confirmed",
+      "starts_at_local": "2027-08-17T07:25:00",
+      "ends_at_local": null,
+      "start_place": {
+        "name": null,
+        "address": null,
+        "iata": null,
+        "city": "Piraeus",
+        "country": "GR"
+      },
+      "end_place": {
+        "name": null,
+        "address": null,
+        "iata": null,
+        "city": "Naxos",
+        "country": "GR"
+      },
+      "travellers": [
+        { "name": "Sofia Ferreira", "type": "adult" },
+        { "name": "Rafael Ferreira", "type": "adult" }
+      ],
+      "price": { "amount": "83.00", "currency": "EUR" },
+      "cancellation": null,
+      "details": null,
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Naxos",
+    "country": "GR",
+    "starts_on": "2027-08-17",
+    "ends_on": null
+  },
+  "notes": "Vessel Blue Star Delos, Airseat class, seats 215 and 216. Ticket number 247856781."
+}

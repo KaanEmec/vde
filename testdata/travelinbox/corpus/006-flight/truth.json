@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "Istanbul to Antalya",
+      "provider": "Pegasus",
+      "booking_ref": "ZM0W2E",
+      "status": "confirmed",
+      "starts_at_local": "2027-08-15T08:40:00",
+      "ends_at_local": "2027-08-15T09:55:00",
+      "start_place": {
+        "name": "İstanbul Sabiha Gökçen Havalimanı",
+        "address": null,
+        "iata": "SAW",
+        "city": "Istanbul",
+        "country": "TR"
+      },
+      "end_place": {
+        "name": "Antalya Havalimanı",
+        "address": null,
+        "iata": "AYT",
+        "city": "Antalya",
+        "country": "TR"
+      },
+      "travellers": [
+        { "name": "Elif Yilmaz", "type": "adult" },
+        { "name": "Emre Yilmaz", "type": "adult" }
+      ],
+      "price": { "amount": "2972.98", "currency": "TRY" },
+      "cancellation": "Değişiklik: Uçuşunuzdan 2 saat öncesine kadar, değişiklik ücreti ve varsa fiyat farkı ödenerek değişiklik yapabilirsiniz. İptal/İade: Temel Paket biletler iade edilmez; kullanılmayan vergi ve harçlar iade edilir.",
+      "details": {
+        "number": "PC 2012",
+        "carrier": "Pegasus",
+        "from_iata": "SAW",
+        "to_iata": "AYT",
+        "seat": "14A, 14B",
+        "cabin": null,
+        "terminal": null,
+        "gate": null,
+        "legs": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Antalya",
+    "country": "TR",
+    "starts_on": "2027-08-15",
+    "ends_on": null
+  },
+  "notes": null
+}

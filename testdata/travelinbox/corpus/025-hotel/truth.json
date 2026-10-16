@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "京の宿 花筏",
+      "provider": "Rakuten Travel",
+      "booking_ref": "PAI8O6C4",
+      "status": "confirmed",
+      "starts_at_local": "2027-11-19T15:00:00",
+      "ends_at_local": "2027-11-21T10:00:00",
+      "start_place": {
+        "name": "京の宿 花筏",
+        "address": "〒605-0074 京都府京都市東山区祇園町南側515-2",
+        "iata": null,
+        "city": "Kyoto",
+        "country": "JP"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Haruto Ishikawa", "type": null }
+      ],
+      "price": { "amount": "128000", "currency": "JPY" },
+      "cancellation": "宿泊日の3日前から前々日までのキャンセルは宿泊料金の20%、前日のキャンセルは宿泊料金の50%、当日のキャンセルおよび不泊は宿泊料金の100%を申し受けます。",
+      "details": {
+        "room": "【禁煙】本館 和室10畳（内風呂付）",
+        "guests": 2,
+        "address": "〒605-0074 京都府京都市東山区祇園町南側515-2",
+        "phone": "075-561-4827",
+        "checkin_time": "15:00",
+        "checkout_time": "10:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Kyoto",
+    "country": "JP",
+    "starts_on": "2027-11-19",
+    "ends_on": "2027-11-21"
+  },
+  "notes": "Plan with dinner and breakfast, paid at the ryokan at check-out; the Kyoto accommodation tax of 1,000 JPY per person per night is not included and is paid there separately."
+}

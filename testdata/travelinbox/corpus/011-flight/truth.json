@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "Budapest to London",
+      "provider": "Wizz Air",
+      "booking_ref": "WZD3TF",
+      "status": "confirmed",
+      "starts_at_local": "2027-05-21T06:00:00",
+      "ends_at_local": "2027-05-21T07:40:00",
+      "start_place": {
+        "name": null,
+        "address": null,
+        "iata": "BUD",
+        "city": "Budapest",
+        "country": "HU"
+      },
+      "end_place": {
+        "name": "London Luton",
+        "address": null,
+        "iata": "LTN",
+        "city": "London",
+        "country": "GB"
+      },
+      "travellers": [
+        { "name": "Ilka Novak", "type": "adult" },
+        { "name": "Tomas Novak", "type": "adult" }
+      ],
+      "price": { "amount": "157.98", "currency": "EUR" },
+      "cancellation": "Flight changes and cancellations are possible until 3 hours before the scheduled departure time for a fee. If you cancel, the fare minus the cancellation fee is refunded to your WIZZ account; administration fees and optional services are non-refundable.",
+      "details": {
+        "number": "W6 2201",
+        "carrier": "Wizz Air",
+        "from_iata": "BUD",
+        "to_iata": "LTN",
+        "seat": "14C, 14D",
+        "cabin": null,
+        "terminal": "2B",
+        "gate": null,
+        "legs": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "London",
+    "country": "GB",
+    "starts_on": "2027-05-21",
+    "ends_on": null
+  },
+  "notes": null
+}

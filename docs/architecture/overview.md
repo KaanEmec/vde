@@ -1,7 +1,8 @@
 # Architecture overview
 
-Status: planning, 2026-10-16. Nothing here is implemented yet. This document describes the
-target shape of the service; the roadmap under `docs/roadmap/` says in which order it is built.
+Status: in implementation since 2026-10-16. This document describes the target shape of the
+service; the roadmap under `docs/roadmap/` says in which order it is built and which jobs are
+done. Each job file carries its own `Status`.
 
 ## What the service is
 
@@ -199,6 +200,47 @@ first releases:
 - [0004 Provider adapters: Anthropic and OpenAI-compatible first](decisions/0004-provider-adapters.md)
 - [0005 Contract-first: the TravelInbox contract is the acceptance test](decisions/0005-contract-first.md)
 - [0006 Representation policy: raw HTML by default, no server-side rendering](decisions/0006-representation-policy.md)
+
+## Implementation decisions (build start, 2026-10-16)
+
+Concrete choices that the ADRs left open, fixed so parallel work agrees:
+
+| Topic | Choice |
+| --- | --- |
+| Module path | `github.com/kaanemec/vde` (open question 1 closed; rename is a one-line change) |
+| Go | 1.27 toolchain, `go 1.25` in `go.mod`; pure Go, `CGO_ENABLED=0` everywhere |
+| YAML | `gopkg.in/yaml.v3` with `KnownFields(true)` |
+| JSON Schema 2020-12 | `github.com/santhosh-tekuri/jsonschema/v6` |
+| SQLite | `modernc.org/sqlite` via `database/sql`, WAL, one writer |
+| IDs | `github.com/oklog/ulid/v2`, job ids `j_<ULID>`, tokens `vde_<prefix>_<random>` |
+| Metrics | `github.com/prometheus/client_golang` (v0.2 epic 07) |
+| HTML to text | `golang.org/x/net/html`; charsets `golang.org/x/text` |
+| CLI | standard `flag` with a hand-written subcommand dispatcher, no framework |
+| Tests | standard `testing` only, table-driven, fake provider as the backbone; no testify |
+
+Allowed third-party dependencies are exactly the rows above. Anything else needs an ADR.
+
+### Build order
+
+v0.1 is built in three waves so independent packages proceed in parallel:
+
+1. **Foundation** (sequential): scaffold, `internal/config`, `config check`, and the
+   `internal/provider` types every adapter compiles against.
+2. **Parallel**: provider adapters (fake, Anthropic, OpenAI-compatible, Gemini),
+   `internal/router`, `internal/document` (model, representation, HTML policy, email).
+3. **Integration**: `internal/extract` (framings, parsing, schema feedback, verdict, loop,
+   schema-less, `service_version`), then `vde extract`, dev config, scenarios, smoke test.
+
+v0.2 follows the same pattern: HTTP foundation, store and worker, packaging in parallel;
+then applications and tokens, submission, quota, retention, operations, admin API; then
+contract conformance and documentation as the gate.
+
+### Working agreement while building autonomously
+
+Until a remote repository exists, each job lands as one commit on `main` named after the
+job file, with the job file's `Status` and the epic table updated in the same commit.
+`make check` must pass before a commit. Content never appears in test fixtures that are
+logged; fixtures are redacted TravelInbox corpus documents.
 
 ## Non-goals for the first releases
 
