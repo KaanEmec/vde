@@ -1,6 +1,6 @@
 # Job: Log redaction and the debug content switch
 
-Version: v0.2 · Epic: 06 Retention and privacy · Status: planned · Depends on: 01-01
+Version: v0.2 · Epic: 06 Retention and privacy · Status: in progress (logging package, redaction test and operator page done; wiring open) · Depends on: 01-01
 
 ## Goal
 
@@ -16,22 +16,32 @@ model. Brief: "exclude credentials and document contents from routine logs."
 
 ## Tasks
 
-- [ ] `slog` with a JSON handler and a fixed vocabulary of attribute keys (`job_id`,
+- [x] (`internal/logging`: `New`, `AllowedKeys`) `slog` with a JSON handler and a fixed vocabulary of attribute keys (`job_id`,
       `app_id`, `request_id`, `status`, `attempts`, `endpoint`, `model`, `duration_ms`,
       `media_type`, `bytes`, `pages`, `error_code`); a `ReplaceAttr` hook that drops any
       attribute whose key is not in the allow-list and truncates string values over 256
-      characters, as a safety net against future mistakes.
-- [ ] Provider adapters log status codes and provider error *codes*, never response
+      characters, as a safety net against future mistakes. The list also holds the keys
+      the existing code logs (`application_id`, `reason`, `error`, `panic`, `stack`, ...);
+      wiring `logging.New` into `serve` and `extract` in place of `newLogger` is open:
+      wired by epic 05/07 agent.
+- [ ] (not started) Provider adapters log status codes and provider error *codes*, never response
       bodies; the error type keeps the body in an unexported field available only when
       `debug.log_content` is on.
 - [ ] `debug.log_content: true` is refused by `config check` and `serve` unless the
       listener is loopback (v0.1 job 01-03 rule); when on, a startup warning is logged
-      and content goes to a separate log file, never stdout.
-- [ ] Redaction test: run the full scenario suite with a capturing log handler and
-      assert that none of the known content markers (a unique sentinel string planted in
+      and content goes to a separate log file, never stdout. Done: `logging.OpenContentLog`
+      / `NewContentLogger` / `(*ContentLogger).Log` (nil-safe, 0600, refuses standard
+      streams). Open, wired by epic 05/07 agent: construct it in `serve` only when
+      `debug.log_content` is on, choose the file (`<data_dir>/content.log`), log the
+      startup warning, and call it from the worker and adapters.
+- [x] Redaction test (`internal/logging/redaction_test.go`: nine extraction-loop
+      scenarios with `internal/provider/fake` and sentinels in the document, both
+      instructions, the schema and the answers; the `cmd/vde` scenario suite and metric
+      labels are not covered, wired by epic 05/07 agent). Original wording: run the full
+      scenario suite with a capturing log handler and assert that none of the known content markers (a unique sentinel string planted in
       each sample document, instruction, schema and fake answer) appears in any log line
       or metric label.
-- [ ] `docs/operator/privacy.md` section on logging and the debug switch.
+- [x] `docs/operator/privacy.md` section on logging and the debug switch.
 
 ## Acceptance criteria
 
