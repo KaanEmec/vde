@@ -10,6 +10,7 @@ roles and one application, `dev-app`. About ten minutes from clone to a first jo
 | [`.env.example`](.env.example) | The variables compose reads: the provider key, the image tag. |
 | [`Caddyfile`](Caddyfile) | TLS termination for the commented `caddy` service. |
 | [`prometheus.yml`](prometheus.yml) | Scrape configuration for the `prometheus` profile. |
+| [`scaled/`](scaled/README.md) | A separate example: one `--role api` and two `--role worker` processes on PostgreSQL and RustFS (S3). |
 
 > **Status.** v0.2 is implemented; this example has not yet been run against a real
 > provider (see the [changelog](../../CHANGELOG.md)). `docker compose config` validates the

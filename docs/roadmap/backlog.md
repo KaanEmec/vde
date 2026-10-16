@@ -15,6 +15,6 @@ giving it an epic folder in a version and removing it here.
 | Streaming partial results | Polling fits the first consumer. | A latency-sensitive interactive client |
 | Judge-only endpoint (verify a caller-supplied candidate) | Not requested; small to add later behind the same loop code. | A consumer that extracts elsewhere |
 | Per-user (not per-application) tokens with a sign-in flow | Brief mentions Swift and browser clients; contract says only server workers hold tokens. | A direct mobile or browser consumer |
-| Cost accounting per application (tokens, money) | Metrics expose usage; billing is an operator concern. | An operator hosting the service for several tenants |
+| Cost accounting per application (tokens, money) | Usage is exposed: `vde_provider_tokens_total` by role, group, endpoint and model, and `input_tokens`/`output_tokens` per job (admin API, `job.finished` audit events). Money and per-application billing are an operator concern. | An operator hosting the service for several tenants |
 | Server-side PDF page rendering | Decided against on 2026-10-16 (ADR 0006): operators choose PDF-capable models or callers send pages. | A consumer that can do neither, with the owner reversing the decision |
 | Helm chart | First deployment is docker compose on one VM. | A Kubernetes user |

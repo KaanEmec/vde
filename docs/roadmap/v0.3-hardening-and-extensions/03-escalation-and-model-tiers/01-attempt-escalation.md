@@ -58,7 +58,9 @@ Deviations:
   still pass `cfg.Capabilities` of the two primary groups to `document.Select`; they must
   switch to `extract.RoleCapabilities(cfg)` (owned by other jobs). Until then a
   representation unreadable by an escalation group fails that attempt as unusable, never
-  silently.
+  silently. Resolved in 07-01: both use `extract.RoleCapabilities(cfg)`.
 - No separate group label in metrics: provider-call metrics already carry endpoint and
   model, which identify the group. `cmd/vde/serve.go` should attach `OnFailover` to
-  `roles.Groups()` instead of the two primary groups.
+  `roles.Groups()` instead of the two primary groups. Resolved in 07-01: provider-call
+  metrics carry a `group` label, the hooks cover `roles.Groups()`, and `/healthz` checks
+  every group of a role.

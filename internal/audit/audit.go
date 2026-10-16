@@ -101,6 +101,9 @@ type JobFinished struct {
 	Attempts       int    `json:"attempts"`
 	ErrorCode      string `json:"error_code,omitempty"`
 	ServiceVersion string `json:"service_version"`
+	// InputTokens and OutputTokens are the provider token usage of the job, counts only.
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
 }
 
 // Reasons a job was deleted, for JobDeleted.
@@ -367,6 +370,7 @@ func (r *Recorder) JobCreated(ctx context.Context, j job.Job) {
 func (r *Recorder) JobFinished(ctx context.Context, j job.Job) {
 	r.warn(ctx, j.ApplicationID, j.ID, JobFinished{
 		Status: string(j.Status), Attempts: j.Attempts, ErrorCode: errorCode(j.Error), ServiceVersion: j.ServiceVersion,
+		InputTokens: j.InputTokens, OutputTokens: j.OutputTokens,
 	})
 }
 

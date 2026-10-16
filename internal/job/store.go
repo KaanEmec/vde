@@ -427,6 +427,37 @@ func (s *sqlStore) IncrementQuota(ctx context.Context, applicationID string, win
 	return count, nil
 }
 
+// IncrementRate implements Store: the same capped UPSERT as IncrementQuota, on the
+// rate_windows table.
+func (s *sqlStore) IncrementRate(ctx context.Context, applicationID, kind string, windowStart time.Time, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, ErrRateLimited
+	}
+	var count int
+	err := s.queryRow(ctx, `
+		INSERT INTO rate_windows (application_id, kind, window_start, count) VALUES (?, ?, ?, 1)
+		ON CONFLICT (application_id, kind, window_start) DO UPDATE SET count = rate_windows.count + 1
+			WHERE rate_windows.count < ?
+		RETURNING count`,
+		applicationID, kind, windowStart.UnixMilli(), limit).Scan(&count)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrRateLimited
+	}
+	if err != nil {
+		return 0, fmt.Errorf("job: increment rate: %w", err)
+	}
+	return count, nil
+}
+
+// DeleteRateBefore implements Store.
+func (s *sqlStore) DeleteRateBefore(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.exec(ctx, `DELETE FROM rate_windows WHERE window_start < ?`, before.UnixMilli())
+	if err != nil {
+		return 0, fmt.Errorf("job: delete rate windows: %w", err)
+	}
+	return affected(res)
+}
+
 // GetQuota implements Store.
 func (s *sqlStore) GetQuota(ctx context.Context, applicationID string, windowStart time.Time) (int, error) {
 	var count int
@@ -471,7 +502,7 @@ const jobColumns = `id, application_id, status, attempts, result, feedback, erro
 	service_version, representation, media_type, size, page_count, retention, idempotency_key,
 	body_hash, attachments, extractor_instructions, judge_instructions, schema, max_attempts, created_at,
 	started_at, finished_at, expires_at, lease_until, worker_id, inputs_deleted_at,
-	content_deleted_at`
+	content_deleted_at, input_tokens, output_tokens`
 
 func scanJob(r scanner) (Job, error) {
 	var j Job
@@ -482,7 +513,7 @@ func scanJob(r scanner) (Job, error) {
 		&j.ServiceVersion, &j.Representation, &j.MediaType, &j.Size, &j.PageCount, &j.Retention, &key,
 		&j.BodyHash, &attachments, &j.ExtractorInstructions, &j.JudgeInstructions, &j.Schema, &j.MaxAttempts, &created,
 		&started, &finished, &expires, &lease, &j.WorkerID, &inputsDeleted,
-		&contentDeleted)
+		&contentDeleted, &j.InputTokens, &j.OutputTokens)
 	if err != nil {
 		return Job{}, err
 	}
@@ -650,10 +681,12 @@ func (s *sqlStore) RenewLease(ctx context.Context, id, workerID string, leaseUnt
 // RecordAttempt implements Store.
 func (s *sqlStore) RecordAttempt(ctx context.Context, id, workerID string, p Progress, leaseUntil time.Time) error {
 	res, err := s.exec(ctx, `
-		UPDATE jobs SET attempts = ?, result = ?, feedback = ?, lease_until = ?
-		WHERE id = ? AND status = 'running' AND worker_id = ? AND attempts <= ?`,
+		UPDATE jobs SET attempts = ?1, result = ?2, feedback = ?3, lease_until = ?4,
+			input_tokens = CASE WHEN input_tokens > ?7 THEN input_tokens ELSE ?7 END,
+			output_tokens = CASE WHEN output_tokens > ?8 THEN output_tokens ELSE ?8 END
+		WHERE id = ?5 AND status = 'running' AND worker_id = ?6 AND attempts <= ?1`,
 		p.Attempts, jsonText(p.Result), jsonText(p.Feedback), leaseUntil.UnixMilli(),
-		id, workerID, p.Attempts)
+		id, workerID, p.InputTokens, p.OutputTokens)
 	if err != nil {
 		return fmt.Errorf("job: record attempt: %w", err)
 	}
@@ -671,10 +704,12 @@ func (s *sqlStore) Finish(ctx context.Context, id, workerID string, o Outcome, n
 	}
 	res, err := s.exec(ctx, `
 		UPDATE jobs SET status = ?1, attempts = CASE WHEN attempts > ?2 THEN attempts ELSE ?2 END, result = ?3, feedback = ?4,
-			error = ?5, judge_confidence = ?6, finished_at = ?7, lease_until = NULL
+			error = ?5, judge_confidence = ?6, finished_at = ?7, lease_until = NULL,
+			input_tokens = CASE WHEN input_tokens > ?10 THEN input_tokens ELSE ?10 END,
+			output_tokens = CASE WHEN output_tokens > ?11 THEN output_tokens ELSE ?11 END
 		WHERE id = ?8 AND status = 'running' AND (?9 = '' OR worker_id = ?9)`,
 		o.Status, o.Attempts, jsonText(o.Result), jsonText(o.Feedback), jsonText(o.Error),
-		confidence, now.UnixMilli(), id, workerID)
+		confidence, now.UnixMilli(), id, workerID, o.InputTokens, o.OutputTokens)
 	if err != nil {
 		return fmt.Errorf("job: finish: %w", err)
 	}
@@ -820,6 +855,15 @@ func (s *sqlStore) CountInProgress(ctx context.Context, applicationID string) (i
 		return 0, fmt.Errorf("job: count in progress: %w", err)
 	}
 	return n, nil
+}
+
+// OldestQueuedAt implements Store. MIN over the jobs_queue index (status, created_at).
+func (s *sqlStore) OldestQueuedAt(ctx context.Context) (time.Time, error) {
+	var oldest sql.NullInt64
+	if err := s.queryRow(ctx, `SELECT MIN(created_at) FROM jobs WHERE status = 'queued'`).Scan(&oldest); err != nil {
+		return time.Time{}, fmt.Errorf("job: oldest queued: %w", err)
+	}
+	return fromMS(oldest), nil
 }
 
 // ListJobs implements Store.

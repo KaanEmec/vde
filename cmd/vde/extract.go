@@ -34,7 +34,9 @@ job-shaped result as JSON on stdout. The media type defaults from the file exten
 models that read PDFs as images. Without --schema the extraction is schema-less.
 --provider-script replaces every endpoint's provider with one fake provider replaying the
 script (a fake script or a testdata/scenarios file), so no key is needed or used.
---verbose writes one line per attempt and per model call to stderr, never content.
+--verbose writes one line per attempt and per model call to stderr, never content. The
+result's usage counts the provider calls of the run (failed ones included) and the input
+and output tokens the providers reported.
 
 Exit codes: 0 accepted, 2 rejected, 3 failed, 1 usage or configuration error.
 
@@ -90,6 +92,7 @@ type jobOutput struct {
 	Result          json.RawMessage    `json:"result"`
 	Feedback        []extract.Feedback `json:"feedback"`
 	Attempts        int                `json:"attempts"`
+	Usage           extract.Usage      `json:"usage"` // every provider call of the run, failed ones included
 	ServiceVersion  string             `json:"service_version"`
 	JudgeConfidence *float64           `json:"judge_confidence"`
 	Error           *extract.JobError  `json:"error"`
@@ -280,6 +283,7 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		Result:          res.Result,
 		Feedback:        res.Feedback,
 		Attempts:        res.Attempts,
+		Usage:           extract.Usage{InputTokens: in, OutputTokens: outTokens, Calls: calls},
 		ServiceVersion:  sv,
 		JudgeConfidence: res.JudgeConfidence,
 		Error:           res.Error,

@@ -61,6 +61,10 @@ type Group struct {
 	// another, with the caller's request and both pairs; for metrics.
 	// Set it before the first Complete; it must not block.
 	OnFailover func(req provider.Request, from, to Served)
+	// OnCall, when set, is called after every provider call the group makes, with the
+	// request as sent (Model set), the pair, the answer (token counts included; empty on
+	// failure), the error and the call's duration; for metrics. It must not block.
+	OnCall func(req provider.Request, served Served, resp provider.Response, err error, d time.Duration)
 
 	mu     sync.Mutex
 	health []health // per pair, guarded by mu
@@ -196,7 +200,12 @@ func (g *Group) try(ctx context.Context, p *pair, req provider.Request) (provide
 	if req.MaxTokens == 0 {
 		req.MaxTokens = p.maxOut
 	}
-	return p.provider.Complete(ctx, req)
+	start := time.Now()
+	resp, err := p.provider.Complete(ctx, req)
+	if g.OnCall != nil {
+		g.OnCall(req, p.Served, resp, err, time.Since(start))
+	}
+	return resp, err
 }
 
 // order returns the indexes of the pairs that can read req, healthy first, each part in

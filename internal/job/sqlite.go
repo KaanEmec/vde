@@ -58,3 +58,9 @@ func Open(path string) (*SQLite, error) {
 	}
 	return s, nil
 }
+
+// TryLock is the no-op twin of Postgres.TryLock: one process owns a SQLite database, so
+// the lock is always granted.
+func (s *SQLite) TryLock(context.Context, int64) (release func(), ok bool, err error) {
+	return func() {}, true, nil
+}

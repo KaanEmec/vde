@@ -458,6 +458,8 @@ type adminJobResponse struct {
 	ExpiresAt        string     `json:"expires_at"`
 	InputsDeletedAt  *string    `json:"inputs_deleted_at"`
 	ContentDeletedAt *string    `json:"content_deleted_at"`
+	InputTokens      int64      `json:"input_tokens"`  // provider token usage, all runs
+	OutputTokens     int64      `json:"output_tokens"` // provider token usage, all runs
 }
 
 func adminJob(j job.Job) adminJobResponse {
@@ -474,6 +476,7 @@ func adminJob(j job.Job) adminJobResponse {
 		ErrorCode: e.Code, CreatedAt: formatTime(j.CreatedAt), StartedAt: optionalTime(j.StartedAt),
 		FinishedAt: optionalTime(j.FinishedAt), ExpiresAt: formatTime(j.ExpiresAt),
 		InputsDeletedAt: optionalTime(j.InputsDeletedAt), ContentDeletedAt: optionalTime(j.ContentDeletedAt),
+		InputTokens: j.InputTokens, OutputTokens: j.OutputTokens,
 	}
 }
 

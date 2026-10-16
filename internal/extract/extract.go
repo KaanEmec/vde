@@ -92,6 +92,16 @@ type Progress struct {
 	Attempts int
 	Result   json.RawMessage // the last parseable candidate, nil when none yet
 	Feedback []Feedback      // the feedback on Result, or on an answer that was not JSON
+	Usage    Usage           // of this Run so far (not of Input.PriorAttempts)
+}
+
+// Usage is the provider token usage of the role calls of one Run, as the providers
+// report it: every call that answered, judge reparse tries, the second judge and the
+// feedback group included. A call that failed reports no tokens.
+type Usage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	Calls        int `json:"calls"` // role calls that answered
 }
 
 // Outcome is a job's terminal state, shaped like the job resource of contract §5.
@@ -108,6 +118,8 @@ type Outcome struct {
 	// JudgeConfidence is the confidence of the last parsed verdict, nil when absent.
 	JudgeConfidence *float64  `json:"judge_confidence"`
 	Error           *JobError `json:"error"` // set exactly when Status is StatusFailed
+	// Usage is the token usage of this Run (metadata, not part of the job resource).
+	Usage Usage `json:"-"`
 }
 
 // errTimeout and errUnavailable end the loop with their job error codes; any other
@@ -161,6 +173,7 @@ type loop struct {
 	prev       json.RawMessage // the candidate for the next extractor request
 	next       []Feedback      // the feedback for the next extractor request
 	confidence *float64        // of the last parsed verdict
+	usage      Usage
 }
 
 func (l *loop) run(ctx context.Context) Outcome {
@@ -312,6 +325,9 @@ func (l *loop) call(ctx context.Context, g *router.Group, system string, parts [
 	resp, served, err := g.Complete(ctx, provider.Request{System: system, Parts: parts})
 	switch {
 	case err == nil:
+		l.usage.Calls++
+		l.usage.InputTokens += resp.InputTokens
+		l.usage.OutputTokens += resp.OutputTokens
 		return resp, served, nil
 	case ctx.Err() != nil:
 		return provider.Response{}, router.Served{}, errTimeout
@@ -360,12 +376,13 @@ func (l *loop) outcome(status Status, jobErr *JobError) Outcome {
 		Attempts:        l.attempts,
 		JudgeConfidence: l.confidence,
 		Error:           jobErr,
+		Usage:           l.usage,
 	}
 }
 
 func (l *loop) progress() {
 	if l.in.OnAttempt != nil {
-		l.in.OnAttempt(Progress{Attempts: l.attempts, Result: l.result, Feedback: l.feedback})
+		l.in.OnAttempt(Progress{Attempts: l.attempts, Result: l.result, Feedback: l.feedback, Usage: l.usage})
 	}
 }
 

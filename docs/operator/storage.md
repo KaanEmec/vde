@@ -27,12 +27,22 @@ every combination.
   backups, point-in-time recovery and monitoring instead of a file on a volume.
 - **Small or ephemeral disks**: `s3` alone moves the bulky part (documents) off the host.
 
-Per-process limits stay per process: `rate.requests_per_minute` and
-`rate.submits_per_minute` are counted in memory by each replica, so N replicas admit up to N
-times the rate. Quotas (`quota.limit`) are rows in the job store and are shared exactly.
+Per-process limits stay per process by default: `rate.requests_per_minute` and
+`rate.submits_per_minute` are token buckets in each replica's memory, so N replicas admit up
+to N times the rate (a load balancer spreading requests evenly makes that roughly N times).
+Set the top-level `rate.shared: true` to count them in the job store instead: one fixed
+window per application and UTC minute, one `UPSERT` per request, one limit across all
+replicas. A fixed window admits the whole limit at the end of one minute and again at the
+start of the next, so a burst of up to twice the limit can pass within a few seconds; the
+token bucket smooths that, per process. Quotas (`quota.limit`) are rows in the job store and
+are shared exactly.
 `rate.max_in_progress` is counted in the job store, but the count is not locked: replicas
 admitting or leasing at the same instant may each count before the other commits, so an
 application can briefly exceed it by the number of replicas.
+
+How the processes split the work (`vde serve --role api|worker`) and what each reports on
+`/healthz` is in [operations](operations.md#process-roles); a compose example with one API,
+two workers, PostgreSQL and RustFS is [`examples/compose/scaled/`](../../examples/compose/scaled/README.md).
 
 ## PostgreSQL
 
@@ -176,7 +186,7 @@ version start:
 
 ```
 vde migrate --config /etc/vde/vde.yaml
-storage postgres: schema version 5
+storage postgres: schema version 7
 ```
 
 Concurrent starts are safe: on PostgreSQL a migration takes an advisory lock, on SQLite the

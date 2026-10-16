@@ -322,8 +322,10 @@ paths:
         200 when the service can accept jobs, else 503 with the reasons: `db` when the
         database (and so the job queue) does not answer within 1 s, `blobs` when the data
         directory is not writable (checked at most every 30 s), `role_extractor_down` or
-        `role_judge_down` when every endpoint-model pair of that role's group is marked
-        down. Served at the root, not under `/v1`.
+        `role_judge_down` when every endpoint-model pair of one of that role's groups
+        (escalation steps, second judge and feedback group included) is marked down. A
+        process run with `vde serve --role api` runs no job and calls no provider: it skips
+        the role checks and adds `queue_age_seconds`. Served at the root, not under `/v1`.
       security: []
       servers:
         - url: http://localhost:8090
@@ -342,6 +344,12 @@ paths:
                 required: [status]
                 properties:
                   status: { type: string, const: ok }
+                  queue_age_seconds:
+                    type: integer
+                    minimum: 0
+                    description: |
+                      Only on an API-only process: seconds the oldest queued job has waited,
+                      0 when none waits. Growing, it means no worker process leases jobs.
         "503":
           description: Not ready.
           headers:
@@ -631,6 +639,10 @@ components:
           description: db, blobs, role_extractor_down, role_judge_down, or a reason added later.
           type: array
           items: { type: string }
+        queue_age_seconds:
+          type: integer
+          minimum: 0
+          description: Only on an API-only process, when the database answered.
         error:
           $ref: "#/components/schemas/Error/properties/error"
 

@@ -1,0 +1,57 @@
+# Configuration shared by the api and worker processes of the scaled compose example.
+# Reference for every key: docs/operator/configuration.md; scaling: docs/operator/storage.md
+# ("Several replicas") and docs/operator/operations.md ("Process roles").
+
+server:
+  listen: ":8090"          # api: the API; workers: /healthz and /metrics only
+  insecure_http: true      # plain HTTP on the compose network: development only
+  data_dir: /var/lib/vde   # nothing durable here: jobs are in PostgreSQL, documents in the bucket
+
+storage:
+  driver: postgres
+  dsn_env: VDE_DATABASE_URL   # set by docker-compose.yaml
+
+blobs:
+  driver: s3
+  bucket: vde-documents
+  endpoint: http://rustfs:9000
+  region: us-east-1           # any value for RustFS and MinIO
+  path_style: true
+  sse: ""                     # RustFS without a master key refuses SSE headers; encrypt its disk instead
+
+worker:
+  size: 4             # jobs per worker process
+  poll_interval: 500ms  # how soon a worker process sees a job the api stored
+  lease: 2m           # a killed worker's job resumes on another within this
+
+rate:
+  shared: true        # requests_per_minute and submits_per_minute count across every api replica
+
+endpoints:
+  anthropic:
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    models:
+      claude-sonnet-4-5:
+        accepts: [application/pdf, image/png, image/jpeg, image/webp, text/plain, text/html]
+
+groups:
+  main:
+    endpoints:
+      - {endpoint: anthropic, model: claude-sonnet-4-5}
+
+roles:
+  extractor: {group: main}
+  judge: {group: main}   # use two models for real use
+
+applications:
+  - id: dev-app
+    name: Development application
+    quota: {limit: 1000, window: P1D}
+    rate: {requests_per_minute: 300, submits_per_minute: 30, max_in_progress: 20}
+    retention: {default: 24h}
+
+# The admin API listens here on the api process only (workers ignore it). To reach it from
+# the host, set listen: ":8091" and publish 127.0.0.1:8091:8091 on the api service.
+# admin:
+#   listen: ":8091"

@@ -263,8 +263,8 @@ func TestAdminTokens(t *testing.T) {
 // adminJobKeys is the complete key set of a job in the admin API: metadata only.
 var adminJobKeys = []string{
 	"application_id", "attempts", "bytes", "content_deleted_at", "created_at", "error_code", "expires_at",
-	"finished_at", "id", "inputs_deleted_at", "max_attempts", "media_type", "pages", "representation",
-	"retention", "service_version", "started_at", "status",
+	"finished_at", "id", "input_tokens", "inputs_deleted_at", "max_attempts", "media_type", "output_tokens",
+	"pages", "representation", "retention", "service_version", "started_at", "status",
 }
 
 func TestAdminJobs(t *testing.T) {

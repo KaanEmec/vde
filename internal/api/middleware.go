@@ -188,7 +188,7 @@ func (s *server) limit(next http.Handler) http.Handler {
 		if _, ok := s.quotaHeaders(w, r, app); !ok {
 			return
 		}
-		if wait, ok := s.limits.take(app.ID, bucketRequests, app.RequestsPerMinute, s.now()); !ok {
+		if wait, ok := s.takeRate(r.Context(), app.ID, bucketRequests, app.RequestsPerMinute, s.now()); !ok {
 			closeIfBodyPending(w, r)
 			writeError(w, r, newError(codeRateLimited, msgRateLimited).withRetryAfter(wait))
 			return

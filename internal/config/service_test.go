@@ -9,8 +9,11 @@ import (
 func TestServiceDefaults(t *testing.T) {
 	t.Parallel()
 	c := validConfig(t)
-	if c.Worker.Size != 4 || c.Worker.PollInterval != 500*time.Millisecond {
-		t.Errorf("worker = %+v, want size 4 and poll_interval 500ms", c.Worker)
+	if c.Worker.Size != 4 || c.Worker.PollInterval != 500*time.Millisecond || c.Worker.Lease != 2*time.Minute {
+		t.Errorf("worker = %+v, want size 4, poll_interval 500ms and lease 2m", c.Worker)
+	}
+	if c.Rate.Shared {
+		t.Error("rate.shared is on by default, want per-process buckets")
 	}
 	if c.Retention.SweepInterval != time.Minute {
 		t.Errorf("retention.sweep_interval = %s, want 1m", c.Retention.SweepInterval)
@@ -121,6 +124,10 @@ func TestServiceValidate(t *testing.T) {
 		{name: "worker size zero", yaml: "worker: {size: 0}", wantKey: "worker.size", wantMessage: "between 1 and 256"},
 		{name: "worker size too large", yaml: "worker: {size: 1000}", wantKey: "worker.size"},
 		{name: "poll interval too short", yaml: "worker: {poll_interval: 1ms}", wantKey: "worker.poll_interval"},
+		{name: "lease too short", yaml: "worker: {lease: 1s}", wantKey: "worker.lease", wantMessage: "at least 3s"},
+		{name: "custom lease", yaml: "worker: {lease: 30s}"},
+		{name: "shared rate on sqlite warns", yaml: "rate: {shared: true}", wantKey: "rate.shared",
+			wantMessage: "per-process limits are already exact", wantWarning: true},
 		{name: "sweep interval too short", yaml: "retention: {sweep_interval: 10ms}", wantKey: "retention.sweep_interval"},
 		{name: "audit retention too short", yaml: "audit: {retention: 1h}", wantKey: "audit.retention"},
 		{name: "audit log on", yaml: "audit: {log: true, retention: 2160h}"},

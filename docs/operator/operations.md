@@ -7,14 +7,48 @@ Install is in [install](install.md); problems are in [troubleshooting](troublesh
 
 `vde serve` is one process: the HTTP API, `worker.size` job workers (default 4), and the
 sweeper that enforces [retention](retention.md) every `retention.sweep_interval` (default one
-minute). State lives in the [data directory](install.md#the-data-directory). Jobs are
-leased from the database: a job whose worker died or whose process was killed is leased
-again after the one-minute lease passes, and a job still `running` after its time limit plus
-one minute is finished by the sweeper as `failed` with code `timeout`.
+minute). State lives in the [data directory](install.md#the-data-directory), or in
+PostgreSQL and S3 ([storage](storage.md)). Jobs are leased from the database: a job whose
+worker died or whose process was killed is leased again once its lease passes
+(`worker.lease`, default 2 minutes), and a job still `running` after its time limit plus one
+minute is finished by the sweeper as `failed` with code `timeout`.
 
 Shutdown on `SIGINT` or `SIGTERM` drains for up to 30 seconds. In Docker the default stop
 timeout is 10 seconds, so set `stop_grace_period: 40s` (compose) or `docker stop -t 40` to
 let running jobs finish; a job cut off resumes after the next start either way.
+
+## Process roles
+
+On PostgreSQL and S3 the parts of the service can run in separate processes, scaled
+separately, with `vde serve --role`:
+
+| `--role` | Runs | HTTP on `server.listen` |
+| --- | --- | --- |
+| `all` (default) | API, worker pool, sweeper | `/v1`, `/healthz`, `/metrics`; the admin API on `admin.listen` |
+| `api` | API only: submissions are stored and wait for a worker | `/v1`, `/healthz` with `queue_age_seconds`, `/metrics`; the admin API on `admin.listen` |
+| `worker` | worker pool and sweeper | `/healthz` and `/metrics` only; `admin.listen` is ignored |
+
+All processes use the same configuration file. What they share and what they do not:
+
+- **The queue.** Workers lease the oldest queued job with `FOR UPDATE SKIP LOCKED`, so no two
+  take the same job, and write every attempt and the terminal state under their lease (the
+  worker id is the host name, pid and a random suffix: containers all run as pid 1). A
+  killed worker's job resumes on another process once its lease expires (`worker.lease`,
+  2 minutes; renewed every 40 s while the job runs).
+- **Wake-up.** A submission wakes a worker of its own process at once; other processes find it
+  at their next poll, within `worker.poll_interval` (500 ms). There is no `LISTEN/NOTIFY`:
+  the poll is one indexed query per idle worker and keeps the code path the same on SQLite.
+- **The sweeper** runs on worker processes only, one at a time: each sweep takes a PostgreSQL
+  advisory lock without waiting and is skipped while another process holds it. A process that
+  dies loses its session and the lock with it. On SQLite the lock is always granted.
+- **Webhooks** are sent by the worker process that finished the job; `POST /v1/extract` on an
+  API-only process polls the job store for the result.
+- **Per-process state.** Endpoint health (pairs marked down after failures) is per process and
+  heals on its own; `vde_endpoint_up` exposes it with an `instance` label. Rate limits are per
+  process unless `rate.shared: true` ([storage](storage.md#which-to-choose)).
+
+A compose example with one API, two workers, PostgreSQL and RustFS is
+[`examples/compose/scaled/`](../../examples/compose/scaled/README.md).
 
 ## Health: `/healthz`
 
@@ -29,8 +63,14 @@ let running jobs finish; a job cut off resumes after the next start either way.
 | --- | --- |
 | `db` | The one-row database query failed or took over 1 second. |
 | `blobs` | A file cannot be created in `server.data_dir` (checked at most every 30 seconds). |
-| `role_extractor_down` | Every pair of the extractor group is marked down after retryable failures. |
-| `role_judge_down` | The same for the judge group. |
+| `role_extractor_down` | Every pair of the extractor group, or of one of its escalation groups, is marked down after retryable failures. |
+| `role_judge_down` | The same for the judge group, its escalation groups, the second judge or the feedback group. |
+
+On an API-only process (`--role api`) no provider is called, so the role reasons are not
+checked; the body carries `queue_age_seconds` instead, the age of the oldest queued job (0
+when none waits): `{"status":"ok","queue_age_seconds":3}`. It never turns the answer into a
+`503` (restarting the API does not bring workers back); alert on it instead, for example
+above a minute.
 
 A role recovers by itself: a down mark lasts 30 seconds, doubling to at most 5 minutes, and
 the pair is still tried after the healthy ones. Reasons never name providers or documents.
@@ -50,8 +90,10 @@ never content.
 | `vde_jobs_total` | counter | `app`, `status` | Jobs that reached `accepted`, `rejected` or `failed`. |
 | `vde_job_attempts` | histogram | | Extractor attempts per terminal job. |
 | `vde_job_duration_seconds` | histogram | `status` | Creation to terminal status, queue time included. |
-| `vde_provider_calls_total` | counter | `role`, `endpoint`, `model`, `outcome` | Provider calls; `outcome` is `ok`, `retryable` or `permanent`. |
-| `vde_provider_latency_seconds` | histogram | `role`, `endpoint` | Seconds per provider call. |
+| `vde_provider_calls_total` | counter | `role`, `group`, `endpoint`, `model`, `outcome` | Provider calls; `outcome` is `ok`, `retryable` or `permanent`. `group` tells escalation steps and the second judge apart. |
+| `vde_provider_latency_seconds` | histogram | `role`, `group`, `endpoint` | Seconds per provider call. |
+| `vde_provider_tokens_total` | counter | `role`, `group`, `endpoint`, `model`, `kind` | Tokens the providers reported; `kind` is `input` or `output`. The same counts are kept per job (admin API, `job.finished` audit events). |
+| `vde_endpoint_up` | gauge | `instance`, `group`, `endpoint`, `model` | `1` while this process has not marked the pair down, `0` during its cooldown. Per process: `instance` is the process's id (host, pid, random suffix); Prometheus renames it `exported_instance` beside its own `instance` target label. Not on API-only processes. |
 | `vde_failovers_total` | counter | `role`, `from`, `to` | Moves from one endpoint to the next in a group. |
 | `vde_quota_remaining` | gauge | `app` | Submissions left in the current quota window. |
 | `vde_jobs_in_progress` | gauge | `app` | Jobs queued or running. |
@@ -63,7 +105,8 @@ never content.
 Useful alerts: `/healthz` not `200` for a few minutes; a rising share of
 `vde_jobs_total{status="failed"}`; `vde_provider_calls_total{outcome!="ok"}` growing for one
 endpoint; `vde_quota_remaining` near zero for an application; `vde_jobs_in_progress` stuck at
-`rate.max_in_progress`.
+`rate.max_in_progress`; `queue_age_seconds` of an API-only process above a minute (no worker
+leases). Token spend per model: `sum by (model, kind) (rate(vde_provider_tokens_total[1h]))`.
 
 ### Protecting `/metrics`
 

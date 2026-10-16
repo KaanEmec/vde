@@ -16,6 +16,9 @@ type closingStore interface {
 	job.Store
 	Close() error
 	SchemaVersion(ctx context.Context) (int, error)
+	// TryLock serializes the sweepers of several processes (sweeper.Locker): an advisory
+	// lock on PostgreSQL, always granted on SQLite.
+	TryLock(ctx context.Context, key int64) (release func(), ok bool, err error)
 }
 
 // openStore opens the job store of storage.driver and applies pending migrations:

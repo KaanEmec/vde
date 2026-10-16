@@ -33,7 +33,8 @@ the routes in step. It is not part of the TravelInbox contract.
 | `GET /audit?app=&since=&kind=&limit=` | audit events, oldest first, last 24 h by default | `vde audit list` |
 
 Job resources here are metadata only: status, attempts, service version, representation,
-media type, size, pages, retention, error code and timestamps. Never the result, feedback,
+media type, size, pages, retention, error code, timestamps and the provider token usage
+(`input_tokens`, `output_tokens`, every run of the job included). Never the result, feedback,
 error message, instructions, schema, idempotency key or attachment names.
 
 ## Applications declared in YAML and created here

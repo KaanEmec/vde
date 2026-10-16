@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"net/url"
@@ -91,3 +92,34 @@ func redactDSN(err error, dsn string) error {
 	}
 	return errors.New(redacted)
 }
+
+// TryLock takes the session-level advisory lock key on a connection of its own and
+// returns the function that releases it, or ok false at once when another session holds
+// it (pg_try_advisory_lock never waits). A process that dies loses its session and so
+// the lock, so a crashed holder never blocks the others. SweepLock is the sweeper's key.
+func (p *Postgres) TryLock(ctx context.Context, key int64) (release func(), ok bool, err error) {
+	conn, err := p.db.Conn(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("job: advisory lock: %w", err)
+	}
+	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, key).Scan(&ok); err != nil || !ok {
+		_ = conn.Close()
+		if err != nil {
+			return nil, false, fmt.Errorf("job: advisory lock: %w", err)
+		}
+		return nil, false, nil
+	}
+	return func() {
+		// Unlock on the same session; if that fails, closing the connection returns it to
+		// the pool still holding the lock, so it is discarded instead.
+		uctx, cancel := context.WithTimeout(context.Background(), pgConnectTimeout)
+		defer cancel()
+		if _, err := conn.ExecContext(uctx, `SELECT pg_advisory_unlock($1)`, key); err != nil {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+		_ = conn.Close()
+	}, true, nil
+}
+
+// SweepLock is the advisory lock key that lets one worker process sweep at a time.
+const SweepLock int64 = 0x76646532 // "vde2"

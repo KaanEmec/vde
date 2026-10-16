@@ -22,6 +22,14 @@ type HealthChecker interface {
 	Healthy() bool
 }
 
+// Process roles of vde serve --role (v0.3 epic 07): which parts of the service one process
+// runs. Several processes share the queue through the database.
+const (
+	RoleAll    = "all"    // the API, the worker pool and the sweeper (the default)
+	RoleAPI    = "api"    // the API only; worker processes run the jobs
+	RoleWorker = "worker" // the worker pool and the sweeper; HTTP serves /healthz and /metrics only
+)
+
 // Deps is what the handlers need. Later epics add their fields here: the blob store
 // (epic 03), the quota and rate limiter (epic 05) and the worker's submit side (epics 03
 // and 04).
@@ -55,6 +63,10 @@ type Deps struct {
 	// Completions wakes POST /v1/extract when the pool finished its job; nil leaves it
 	// to poll the store (sync.go).
 	Completions *worker.Notifier
+	// Role is the process role, RoleAll when "". With RoleAPI, /healthz reports the
+	// queue age instead of the role groups (no provider is called here); with RoleWorker
+	// only /healthz and /metrics are served.
+	Role string
 }
 
 type server struct {
@@ -111,6 +123,12 @@ func newServerWith(deps Deps, admin bool) *server {
 // then limit: the per-route steps of the chain. jobs:read may poll and read the quota.
 func (s *server) routes() []route {
 	v1 := func(need string, h http.HandlerFunc) http.Handler { return s.authenticate(need, s.limit(h)) }
+	if s.deps.Role == RoleWorker {
+		return []route{
+			{"GET /healthz", s.healthHandler()},
+			{"GET /metrics", s.metricsRoute()},
+		}
+	}
 	return []route{
 		{"POST /v1/jobs", v1(auth.ScopeJobs, s.submitJob)},        // submit.go: submission
 		{"POST /v1/extract", v1(auth.ScopeJobs, s.extractSync)},   // sync.go: submit and wait

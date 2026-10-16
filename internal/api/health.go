@@ -24,9 +24,12 @@ const (
 )
 
 type healthBody struct {
-	Status  string       `json:"status"`
-	Reasons []string     `json:"reasons,omitempty"`
-	Error   *errorDetail `json:"error,omitempty"`
+	Status  string   `json:"status"`
+	Reasons []string `json:"reasons,omitempty"`
+	// QueueAgeSeconds, on an API-only process (RoleAPI), is how long the oldest queued
+	// job has waited, 0 when none waits: growing, it means no worker process leases.
+	QueueAgeSeconds *int64       `json:"queue_age_seconds,omitempty"`
+	Error           *errorDetail `json:"error,omitempty"`
 }
 
 // health is GET /healthz. It is unauthenticated, so every check is cheap: a one-row
@@ -45,31 +48,62 @@ func (s *server) healthHandler() http.Handler { return &health{s: s} }
 
 // ServeHTTP answers 200 {"status":"ok"} when the database answers, the data directory
 // is writable and every role group has a pair not marked down, else 503 with the
-// reasons and the contract §9 error object.
+// reasons and the contract §9 error object. An API-only process (RoleAPI) calls no
+// provider, so it checks no role group; it reports queue_age_seconds instead, for the
+// orchestrator to notice missing workers, and the age alone never makes it unhealthy.
 func (h *health) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reasons []string
-	if !h.dbOK(r.Context()) {
+	body := healthBody{Status: "ok"}
+	if h.s.deps.Role == RoleAPI {
+		age, ok := h.queueAge(r.Context())
+		if !ok {
+			reasons = append(reasons, reasonDB)
+		} else {
+			body.QueueAgeSeconds = &age
+		}
+	} else if !h.dbOK(r.Context()) {
 		reasons = append(reasons, reasonDB)
 	}
 	if !h.dataDirOK() {
 		reasons = append(reasons, reasonBlobs)
 	}
-	if !healthy(h.s.deps.Extractor) {
-		reasons = append(reasons, reasonExtractorDown)
-	}
-	if !healthy(h.s.deps.Judge) {
-		reasons = append(reasons, reasonJudgeDown)
+	if h.s.deps.Role != RoleAPI {
+		if !healthy(h.s.deps.Extractor) {
+			reasons = append(reasons, reasonExtractorDown)
+		}
+		if !healthy(h.s.deps.Judge) {
+			reasons = append(reasons, reasonJudgeDown)
+		}
 	}
 	if len(reasons) == 0 {
-		writeJSON(w, http.StatusOK, healthBody{Status: "ok"})
+		writeJSON(w, http.StatusOK, body)
 		return
 	}
 	e := newError(codeUnavailable, msgServiceUnhealthy)
-	writeJSON(w, e.status, healthBody{
-		Status:  "unavailable",
-		Reasons: reasons,
-		Error:   &errorDetail{Code: e.code, Message: e.message, RequestID: w.Header().Get(headerRequestID)},
-	})
+	body.Status, body.Reasons = "unavailable", reasons
+	body.Error = &errorDetail{Code: e.code, Message: e.message, RequestID: w.Header().Get(headerRequestID)}
+	writeJSON(w, e.status, body)
+}
+
+// queueAge is the database check of an API-only process: the age in whole seconds of the
+// oldest queued job (one MIN over the queue index, 1 s timeout), and false when the
+// database does not answer.
+func (h *health) queueAge(ctx context.Context) (int64, bool) {
+	if h.s.deps.Store == nil {
+		return 0, false
+	}
+	ctx, cancel := context.WithTimeout(ctx, healthDBTimeout)
+	defer cancel()
+	oldest, err := h.s.deps.Store.OldestQueuedAt(ctx)
+	if err != nil {
+		h.s.log.LogAttrs(ctx, slog.LevelWarn, "healthz: database check failed",
+			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
+		return 0, false
+	}
+	if oldest.IsZero() {
+		return 0, true
+	}
+	return max(int64(h.s.now().Sub(oldest)/time.Second), 0), true
 }
 
 // dbOK runs a one-row query on the jobs table, the queue.

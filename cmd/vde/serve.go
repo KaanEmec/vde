@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"time"
 
@@ -31,7 +33,7 @@ import (
 	"github.com/kaanemec/vde/internal/worker"
 )
 
-const serveUsage = `Usage: vde serve [--config path]
+const serveUsage = `Usage: vde serve [--config path] [--role all|api|worker]
 
 Validates the configuration, opens the database (server.data_dir/vde.db), mirrors the
 configured applications into it (an application no longer configured is disabled and its
@@ -44,6 +46,11 @@ non-loopback listen address unless server.trusted_proxy (a reverse proxy termina
 or server.insecure_http (trusted private networks only) is true. SIGINT or SIGTERM stops
 accepting connections, drains in-flight requests and running jobs for up to 30 s (a job
 still running then resumes after the next start), and stops the sweeper.
+
+--role splits the service across processes sharing one PostgreSQL database and one S3
+bucket: api serves /v1, the admin API, /healthz (with the queue age) and /metrics and runs
+no job; worker runs the worker pool and the sweeper (one worker process sweeps at a time)
+and serves only /healthz and /metrics on server.listen; all (the default) runs everything.
 
 Flags:
 `
@@ -67,6 +74,7 @@ func runServe(args []string, _, stderr io.Writer) int {
 		fs.PrintDefaults()
 	}
 	path := fs.String("config", defaultConfigPath, "configuration file")
+	role := fs.String("role", api.RoleAll, "process role: all, api or worker")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -75,6 +83,10 @@ func runServe(args []string, _, stderr io.Writer) int {
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "vde serve: unexpected argument %q\n", fs.Arg(0))
+		return exitUsage
+	}
+	if !slices.Contains([]string{api.RoleAll, api.RoleAPI, api.RoleWorker}, *role) {
+		fmt.Fprintf(stderr, "vde serve: --role %q is not all, api or worker\n", *role)
 		return exitUsage
 	}
 
@@ -96,7 +108,7 @@ func runServe(args []string, _, stderr io.Writer) int {
 		return exitFailure
 	}
 	var adminLn net.Listener // config validation refused a plain non-loopback admin.listen
-	if cfg.Admin.Listen != "" {
+	if cfg.Admin.Listen != "" && *role != api.RoleWorker {
 		if adminLn, err = net.Listen("tcp", cfg.Admin.Listen); err != nil {
 			ln.Close()
 			fmt.Fprintf(stderr, "vde serve: admin.listen: %v\n", err)
@@ -105,7 +117,7 @@ func runServe(args []string, _, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := serve(ctx, cfg, ln, adminLn, newLogger(stderr, cfg.Logging), newProvider); err != nil {
+	if err := serveAs(ctx, *role, cfg, ln, adminLn, newLogger(stderr, cfg.Logging), newProvider); err != nil {
 		fmt.Fprintf(stderr, "vde serve: %v\n", err)
 		return exitFailure
 	}
@@ -132,13 +144,20 @@ func checkListen(s config.Server) error {
 	return fmt.Errorf("server.listen %q is not a loopback address: set server.tls, or server.trusted_proxy when a reverse proxy terminates TLS", s.Listen)
 }
 
-// serve opens the store, mirrors the configured applications into it, starts the worker
-// pool and the expiry sweeper, and runs the HTTP server on ln (and the metrics listener
-// of metrics.listen, and the admin API on adminLn unless it is nil) until ctx is done. Then it drains in-flight requests, stops the
-// pool (running jobs get the rest of the drain time to finish, or keep their lease and
-// persisted attempts for the next start) and the sweeper. build makes each endpoint's
-// provider. It returns nil after a clean shutdown.
+// serve is serveAs with every role in the process (--role all).
 func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, logger *slog.Logger,
+	build func(*config.Endpoint) (provider.Provider, error)) error {
+	return serveAs(ctx, api.RoleAll, cfg, ln, adminLn, logger, build)
+}
+
+// serveAs opens the store, mirrors the configured applications into it, starts the worker
+// pool and the expiry sweeper (roles all and worker), and runs the HTTP server on ln (and
+// the metrics listener of metrics.listen, and the admin API on adminLn unless it is nil)
+// until ctx is done. Then it drains in-flight requests, stops the pool (running jobs get
+// the rest of the drain time to finish, or keep their lease and persisted attempts for the
+// next lease, by this process or another) and the sweeper. build makes each endpoint's
+// provider. It returns nil after a clean shutdown.
+func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn net.Listener, logger *slog.Logger,
 	build func(*config.Endpoint) (provider.Provider, error)) (err error) {
 	defer func() {
 		if err != nil {
@@ -153,14 +172,15 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 		metricOpts = append(metricOpts, metrics.WithGoRuntime())
 	}
 	m := metrics.New(metricOpts...)
-	roles, err := extract.NewRoles(cfg, meteredFactory(cfg, build, m))
+	roles, err := extract.NewRoles(cfg, build)
 	if err != nil {
 		return err
 	}
-	for _, g := range []*router.Group{roles.Extractor, roles.Judge} { // may be one group
-		g.OnFailover = func(req provider.Request, from, to router.Served) {
-			m.ObserveFailover(roleOf(req.System), from.Endpoint, to.Endpoint)
-		}
+	meter(roles, m)
+	runsJobs := role != api.RoleAPI
+	instance := instanceID()
+	if runsJobs {
+		m.WatchEndpoints(instance, endpointStates(roles))
 	}
 	store, err := openStore(ctx, cfg)
 	if err != nil {
@@ -228,12 +248,16 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 		}
 	}
 
-	// The completion hook: wake POST /v1/extract waiters, queue the webhooks.
+	// The completion hook: wake POST /v1/extract waiters, queue the webhooks. A worker
+	// process sends the webhooks of the jobs it finished; an API-only process has no
+	// in-process completions and POST /v1/extract polls the store.
 	completions := worker.NewNotifier()
 	hooks := webhook.New(webhookTargets(cfg), webhook.Options{Audit: rec, Logger: logger})
 	pool := worker.New(store, blobs, cfg, roles, worker.Options{
 		Size:         cfg.Worker.Size,
 		PollInterval: cfg.Worker.PollInterval,
+		Lease:        cfg.Worker.Lease,
+		WorkerID:     instance,
 		Observer:     progressObserver{Metrics: m, store: store},
 		Logger:       logger,
 		Audit:        rec.WithActor(audit.ActorWorker),
@@ -250,6 +274,7 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 		Observer:               m,
 		Audit:                  rec.WithActor(audit.ActorSweeper),
 		DeleteInputsAtTerminal: inputsAtTerminal,
+		Lock:                   store, // one worker process sweeps at a time
 	})
 	deps := api.Deps{
 		Config:            cfg,
@@ -257,13 +282,17 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 		ServiceVersion:    serviceVersion,
 		AppServiceVersion: appVersion,
 		Logger:            logger,
-		Extractor:         roles.Extractor,
-		Judge:             roles.Judge,
+		Extractor:         allHealthy(extractorGroups(roles)),
+		Judge:             allHealthy(judgeGroups(roles)),
 		Blobs:             blobs,
-		Wake:              pool.Wake,
 		Metrics:           m,
 		Audit:             rec.WithActor(audit.ActorAPI),
-		Completions:       completions,
+		Role:              role,
+	}
+	if runsJobs {
+		// Within the process a submission wakes a worker at once; other processes' workers
+		// find it at their next poll (worker.poll_interval).
+		deps.Wake, deps.Completions = pool.Wake, completions
 	}
 	useTLS := cfg.Server.TLS.CertFile != ""
 	srv := newHTTPServer(api.New(deps), logger)
@@ -289,15 +318,21 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 	// The pool and the sweeper outlive the signal: they stop after the HTTP drain.
 	bgCtx, stopBackground := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopBackground()
-	pool.Start(bgCtx)
 	sweepDone := make(chan struct{})
-	go func() {
-		defer close(sweepDone)
-		sweep.Run(bgCtx)
-	}()
+	if runsJobs {
+		pool.Start(bgCtx)
+		go func() {
+			defer close(sweepDone)
+			sweep.Run(bgCtx)
+		}()
+	} else {
+		close(sweepDone)
+	}
 
 	logger.Info("vde serve starting",
 		"service_version", serviceVersion,
+		"process_role", role,
+		"instance", instance,
 		"listen", ln.Addr().String(),
 		"tls", useTLS,
 		"trusted_proxy", cfg.Server.TrustedProxy,
@@ -427,37 +462,91 @@ func (w *statusRecorder) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
-// meteredFactory wraps build so every provider call is counted and timed in m by role,
-// endpoint id, model id and outcome; nothing from the request or the answer is used.
-func meteredFactory(cfg *config.Config, build func(*config.Endpoint) (provider.Provider, error), m *metrics.Metrics) func(*config.Endpoint) (provider.Provider, error) {
-	names := make(map[*config.Endpoint]string, len(cfg.Endpoints))
-	for name, e := range cfg.Endpoints {
-		names[e] = name
-	}
-	return func(e *config.Endpoint) (provider.Provider, error) {
-		p, err := build(e)
-		if err != nil {
-			return nil, err
+// meter counts and times every provider call of every group in m by role, group,
+// endpoint id, model id and outcome, with the tokens the provider reported, and counts
+// failovers; nothing from the request or the answer is used.
+func meter(roles extract.Roles, m *metrics.Metrics) {
+	for _, g := range roles.Groups() {
+		group := g.Name()
+		g.OnCall = func(req provider.Request, served router.Served, resp provider.Response, err error, d time.Duration) {
+			outcome := "ok"
+			if err != nil {
+				outcome = provider.Classify(err).String()
+			}
+			m.ObserveProviderCall(metrics.ProviderCall{
+				Role: roleOf(req.System), Group: group, Endpoint: served.Endpoint, Model: served.Model,
+				Outcome: outcome, Duration: d, InputTokens: resp.InputTokens, OutputTokens: resp.OutputTokens,
+			})
 		}
-		return metered{endpoint: names[e], p: p, m: m}, nil
+		g.OnFailover = func(req provider.Request, from, to router.Served) {
+			m.ObserveFailover(roleOf(req.System), from.Endpoint, to.Endpoint)
+		}
 	}
 }
 
-type metered struct {
-	endpoint string
-	p        provider.Provider
-	m        *metrics.Metrics
+// endpointStates reads every group's pair health for vde_endpoint_up.
+func endpointStates(roles extract.Roles) func() []metrics.Endpoint {
+	groups := roles.Groups()
+	return func() []metrics.Endpoint {
+		now := time.Now()
+		var out []metrics.Endpoint
+		for _, g := range groups {
+			for _, p := range g.Health() {
+				out = append(out, metrics.Endpoint{Group: g.Name(), Endpoint: p.Endpoint, Model: p.Model, Up: !now.Before(p.DownUntil)})
+			}
+		}
+		return out
+	}
 }
 
-func (p metered) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
-	start := time.Now()
-	resp, err := p.p.Complete(ctx, req)
-	outcome := "ok"
-	if err != nil {
-		outcome = provider.Classify(err).String()
+// extractorGroups and judgeGroups split roles.Groups() by the role they serve, for
+// /healthz: the extractor's group and escalation groups; the judge's group, escalation
+// groups, second judge and feedback group. A group serving both is in both.
+func extractorGroups(r extract.Roles) []*router.Group {
+	out := []*router.Group{r.Extractor}
+	for _, e := range r.ExtractorEscalation {
+		out = append(out, e.Group)
 	}
-	p.m.ObserveProviderCall(roleOf(req.System), p.endpoint, req.Model, outcome, time.Since(start))
-	return resp, err
+	return out
+}
+
+func judgeGroups(r extract.Roles) []*router.Group {
+	out := []*router.Group{r.Judge}
+	for _, e := range r.JudgeEscalation {
+		out = append(out, e.Group)
+	}
+	for _, g := range []*router.Group{r.SecondJudge, r.FeedbackJudge} {
+		if g != nil {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// allHealthy is healthy while every group is: a role whose escalation step or second
+// judge has every pair marked down fails the jobs that reach it.
+type allHealthy []*router.Group
+
+func (gs allHealthy) Healthy() bool {
+	for _, g := range gs {
+		if g == nil || !g.Healthy() {
+			return false
+		}
+	}
+	return len(gs) > 0
+}
+
+// instanceID names this process in leases (worker ids) and in the instance label of
+// vde_endpoint_up: the host name, the pid and a random suffix, so that containers that
+// all run as pid 1, or a restart reusing a host name, never share a lease owner.
+func instanceID() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "vde"
+	}
+	var b [3]byte
+	_, _ = rand.Read(b[:])
+	return fmt.Sprintf("%s-%d-%x", host, os.Getpid(), b)
 }
 
 // webhookTargets are the configured applications' completion webhooks, with their

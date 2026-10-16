@@ -261,3 +261,53 @@ func TestRedactDSN(t *testing.T) {
 		t.Errorf("OpenPostgres on a closed port = %v, want an error without the password", err)
 	}
 }
+
+// TestTryLockPostgres: the advisory lock is held by one session at a time, refused at once
+// to the others, and free again after release or when the holder's connection closes.
+func TestTryLockPostgres(t *testing.T) {
+	dsn, _ := pgTestSchema(t)
+	a, err := OpenPostgres(t.Context(), dsn, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := OpenPostgres(t.Context(), dsn, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	const key = SweepLock + 1000 // not the key of a sweeper of another test run
+	release, ok, err := a.TryLock(t.Context(), key)
+	if err != nil || !ok {
+		t.Fatalf("first TryLock = %t, %v", ok, err)
+	}
+	if _, ok, err := b.TryLock(t.Context(), key); err != nil || ok {
+		t.Fatalf("second TryLock while held = %t, %v; want refused", ok, err)
+	}
+	release()
+	release2, ok, err := b.TryLock(t.Context(), key)
+	if err != nil || !ok {
+		t.Fatalf("TryLock after release = %t, %v", ok, err)
+	}
+	release2()
+	if _, ok, _ := a.TryLock(t.Context(), key); !ok {
+		t.Fatal("TryLock on the first store again refused")
+	}
+	defer a.Close()
+	// The holder dies without releasing: its session ends, and the lock with it.
+	if _, err := b.db.ExecContext(t.Context(), `SELECT pg_terminate_backend(pid) FROM pg_locks
+		WHERE locktype = 'advisory' AND classid = 0 AND objid = $1 AND pid <> pg_backend_pid()`, key); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		release3, ok, err := b.TryLock(t.Context(), key)
+		if err == nil && ok {
+			release3()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lock of a closed store still held: %t, %v", ok, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}

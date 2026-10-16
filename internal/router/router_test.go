@@ -462,3 +462,32 @@ func TestGroup_OnFailover(t *testing.T) {
 		t.Errorf("failovers on a first-try answer: %v", moves)
 	}
 }
+
+func TestGroup_OnCall(t *testing.T) {
+	t.Parallel()
+	g, _ := newGroup(t, config.Failover{MaxTries: 3},
+		spec{name: "a", script: fake.AlwaysRetryable(503)},
+		spec{name: "b", script: fake.Script{fake.Answer("ok")}})
+	var calls []string
+	var input, output int
+	g.OnCall = func(req provider.Request, served Served, resp provider.Response, err error, d time.Duration) {
+		outcome := "ok"
+		if err != nil {
+			outcome = provider.Classify(err).String()
+		}
+		calls = append(calls, served.Endpoint+"/"+req.Model+":"+outcome)
+		input, output = input+resp.InputTokens, output+resp.OutputTokens
+		if d < 0 {
+			t.Errorf("duration %s", d)
+		}
+	}
+	if _, _, err := g.Complete(context.Background(), textReq); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"a/a-model:retryable", "b/b-model:ok"}; !slices.Equal(calls, want) {
+		t.Errorf("calls = %v, want %v", calls, want)
+	}
+	if input != fake.InputTokens || output != fake.OutputTokens {
+		t.Errorf("tokens = %d/%d, want the answer's %d/%d", input, output, fake.InputTokens, fake.OutputTokens)
+	}
+}

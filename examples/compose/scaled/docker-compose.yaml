@@ -1,0 +1,108 @@
+# vde split into one API process and two worker processes on PostgreSQL and an
+# S3-compatible store (RustFS), for trying horizontal scaling on one machine.
+#
+#   cp .env.example .env     # then set ANTHROPIC_API_KEY
+#   docker compose up -d
+#   docker compose ps        # api and both workers become healthy
+#
+# README.md walks through it. Development only: plain HTTP, throwaway credentials.
+
+name: vde-scaled
+
+x-vde: &vde
+  image: ghcr.io/kaanemec/vde:${VDE_IMAGE_TAG:-latest}
+  build:
+    context: ../../..         # `docker compose up --build` builds this checkout instead
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  stop_grace_period: 40s      # vde drains requests and running jobs for up to 30 s
+  environment: &vde-env
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+    VDE_DATABASE_URL: postgres://vde:${VDE_DB_PASSWORD:-vde-dev-only}@postgres:5432/vde?sslmode=disable
+    AWS_ACCESS_KEY_ID: ${VDE_S3_ACCESS_KEY:-vde-dev-only}
+    AWS_SECRET_ACCESS_KEY: ${VDE_S3_SECRET_KEY:-vde-dev-only-secret}
+  volumes:
+    - ./vde.yaml:/etc/vde/vde.yaml:ro
+  # The image's HEALTHCHECK (`vde healthcheck`, /healthz on server.listen) applies to the
+  # api and to each worker.
+  depends_on:
+    migrate: {condition: service_completed_successfully}
+    bucket: {condition: service_completed_successfully}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vde
+      POSTGRES_PASSWORD: ${VDE_DB_PASSWORD:-vde-dev-only}
+      POSTGRES_DB: vde
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "vde", "-d", "vde"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # S3-compatible object store. MinIO's image is no longer pullable from Docker Hub;
+  # RustFS speaks the same S3 API (path-style). Without a master key it refuses SSE
+  # headers, hence blobs.sse: "" in vde.yaml.
+  rustfs:
+    image: rustfs/rustfs:${RUSTFS_TAG:-1.0.1}
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${VDE_S3_ACCESS_KEY:-vde-dev-only}
+      RUSTFS_SECRET_KEY: ${VDE_S3_SECRET_KEY:-vde-dev-only-secret}
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - rustfs-data:/data
+
+  # Creates the bucket once RustFS answers; vde checks it exists at start.
+  bucket:
+    image: amazon/aws-cli:${AWS_CLI_TAG:-2.27.0}
+    depends_on: [rustfs]
+    environment:
+      AWS_ACCESS_KEY_ID: ${VDE_S3_ACCESS_KEY:-vde-dev-only}
+      AWS_SECRET_ACCESS_KEY: ${VDE_S3_SECRET_KEY:-vde-dev-only-secret}
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for i in $$(seq 1 60); do
+          aws --endpoint-url http://rustfs:9000 s3api head-bucket --bucket vde-documents 2>/dev/null && exit 0
+          aws --endpoint-url http://rustfs:9000 s3api create-bucket --bucket vde-documents >/dev/null 2>&1 && exit 0
+          sleep 1
+        done
+        echo "could not create bucket vde-documents" >&2; exit 1
+
+  # Applies the schema migrations once before the replicas start (they would also do it
+  # themselves, serialized by an advisory lock).
+  migrate:
+    <<: *vde
+    restart: "no"
+    command: ["migrate", "--config", "/etc/vde/vde.yaml"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck: {disable: true}
+
+  # The API: /v1, the admin API, /healthz (with queue_age_seconds) and /metrics. It runs no
+  # job; submissions wait in the jobs table for a worker.
+  api:
+    <<: *vde
+    command: ["serve", "--config", "/etc/vde/vde.yaml", "--role", "api"]
+    ports:
+      - "127.0.0.1:8090:8090"   # loopback only; put a TLS-terminating proxy in front for anything real
+
+  # Workers: lease jobs from PostgreSQL (FOR UPDATE SKIP LOCKED), read the documents from
+  # the bucket, call the providers. One of them sweeps at a time (advisory lock). They
+  # serve only /healthz and /metrics. `docker compose up -d --scale worker=3` adds one.
+  worker:
+    <<: *vde
+    command: ["serve", "--config", "/etc/vde/vde.yaml", "--role", "worker"]
+    deploy:
+      replicas: 2
+
+volumes:
+  postgres-data:
+  rustfs-data:
