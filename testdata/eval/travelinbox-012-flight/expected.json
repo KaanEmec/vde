@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "Stockholm to Oslo",
+      "provider": "SAS",
+      "booking_ref": "C3FV3O",
+      "status": "confirmed",
+      "starts_at_local": "2027-11-09T07:10:00",
+      "ends_at_local": "2027-11-09T08:10:00",
+      "start_place": {
+        "name": "Stockholm Arlanda",
+        "address": null,
+        "iata": "ARN",
+        "city": "Stockholm",
+        "country": "SE"
+      },
+      "end_place": {
+        "name": "Oslo Gardermoen",
+        "address": null,
+        "iata": "OSL",
+        "city": "Oslo",
+        "country": "NO"
+      },
+      "travellers": [
+        { "name": "Linnea Bergqvist", "type": "adult" }
+      ],
+      "price": { "amount": "1190.00", "currency": "SEK" },
+      "cancellation": "Ombokning: inte tillåten. Återbetalning: inte tillåten, men outnyttjade skatter och avgifter kan återbetalas.",
+      "details": {
+        "number": "SK 862",
+        "carrier": "SAS",
+        "from_iata": "ARN",
+        "to_iata": "OSL",
+        "seat": "7A",
+        "cabin": "SAS Go",
+        "terminal": "5",
+        "gate": null,
+        "legs": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Oslo",
+    "country": "NO",
+    "starts_on": "2027-11-09",
+    "ends_on": null
+  },
+  "notes": null
+}

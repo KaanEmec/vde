@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "Motel One München-Theresienwiese",
+      "provider": "Motel One",
+      "booking_ref": "10990249",
+      "status": "confirmed",
+      "starts_at_local": "2027-09-26T15:00:00",
+      "ends_at_local": "2027-09-29T12:00:00",
+      "start_place": {
+        "name": "Motel One München-Theresienwiese",
+        "address": "Schwanthalerstraße 112, 80339 München",
+        "iata": null,
+        "city": "Munich",
+        "country": "DE"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Bastian Falkner", "type": null }
+      ],
+      "price": { "amount": "666.00", "currency": "EUR" },
+      "cancellation": "Eine kostenfreie Stornierung ist bis 3 Tage vor Anreise, 18:00 Uhr (Ortszeit), möglich. Bei späterer Stornierung oder Nichtanreise berechnen wir 90 % des gesamten Buchungswertes.",
+      "details": {
+        "room": "Doppelzimmer (Queensize-Bett 160 × 200 cm)",
+        "guests": 2,
+        "address": "Schwanthalerstraße 112, 80339 München",
+        "phone": "+49 89 5150 2840",
+        "checkin_time": "15:00",
+        "checkout_time": "12:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Munich",
+    "country": "DE",
+    "starts_on": "2027-09-26",
+    "ends_on": "2027-09-29"
+  },
+  "notes": "The total includes breakfast for two and is paid at the hotel on arrival."
+}

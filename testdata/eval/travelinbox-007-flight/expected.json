@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "Madrid to Bogotá",
+      "provider": "Iberia",
+      "booking_ref": "W9JU1V",
+      "status": "confirmed",
+      "starts_at_local": "2027-10-14T11:55:00",
+      "ends_at_local": "2027-10-14T15:30:00",
+      "start_place": {
+        "name": "Adolfo Suárez Madrid-Barajas",
+        "address": null,
+        "iata": "MAD",
+        "city": "Madrid",
+        "country": "ES"
+      },
+      "end_place": {
+        "name": "El Dorado",
+        "address": null,
+        "iata": "BOG",
+        "city": "Bogotá",
+        "country": "CO"
+      },
+      "travellers": [
+        { "name": "Mateo Sandoval", "type": "adult" }
+      ],
+      "price": { "amount": "1023.46", "currency": "EUR" },
+      "cancellation": "Cambios: permitidos con una penalización de 150 € por trayecto más la diferencia de tarifa, si la hubiera. Cancelaciones: billete no reembolsable. Se reembolsarán las tasas aeroportuarias no utilizadas.",
+      "details": {
+        "number": "IB 6585",
+        "carrier": "Iberia",
+        "from_iata": "MAD",
+        "to_iata": "BOG",
+        "seat": "24C",
+        "cabin": "Turista",
+        "terminal": "4S",
+        "gate": null,
+        "legs": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Bogotá",
+    "country": "CO",
+    "starts_on": "2027-10-14",
+    "ends_on": null
+  },
+  "notes": null
+}

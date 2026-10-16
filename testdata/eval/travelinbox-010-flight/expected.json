@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "Milan to Bangkok via Dubai",
+      "provider": "Emirates",
+      "booking_ref": "CI5JJV",
+      "status": "confirmed",
+      "starts_at_local": "2027-10-14T15:25:00",
+      "ends_at_local": "2027-10-15T12:30:00",
+      "start_place": {
+        "name": "Milan Malpensa",
+        "address": null,
+        "iata": "MXP",
+        "city": "Milan",
+        "country": "IT"
+      },
+      "end_place": {
+        "name": "Bangkok Suvarnabhumi",
+        "address": null,
+        "iata": "BKK",
+        "city": "Bangkok",
+        "country": "TH"
+      },
+      "travellers": [
+        { "name": "Zofia Kowalczyk", "type": "adult" }
+      ],
+      "price": { "amount": "756.29", "currency": "EUR" },
+      "cancellation": "Changes: Permitted for a fee of EUR 150 per ticket plus any fare difference. Cancellation: Refund permitted before departure for a fee of EUR 300. No-show: Ticket non-refundable after a no-show.",
+      "details": {
+        "number": "EK 92",
+        "carrier": "Emirates",
+        "from_iata": "MXP",
+        "to_iata": "BKK",
+        "seat": null,
+        "cabin": "Economy",
+        "terminal": "1",
+        "gate": null,
+        "legs": [
+          {
+            "number": "EK 92",
+            "carrier": "Emirates",
+            "from_iata": "MXP",
+            "to_iata": "DXB",
+            "departs_at_local": "2027-10-14T15:25:00",
+            "arrives_at_local": "2027-10-14T23:40:00",
+            "seat": null,
+            "cabin": "Economy",
+            "terminal": "1"
+          },
+          {
+            "number": "EK 372",
+            "carrier": "Emirates",
+            "from_iata": "DXB",
+            "to_iata": "BKK",
+            "departs_at_local": "2027-10-15T03:15:00",
+            "arrives_at_local": "2027-10-15T12:30:00",
+            "seat": null,
+            "cabin": "Economy",
+            "terminal": "3"
+          }
+        ]
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Bangkok",
+    "country": "TH",
+    "starts_on": "2027-10-14",
+    "ends_on": null
+  },
+  "notes": null
+}

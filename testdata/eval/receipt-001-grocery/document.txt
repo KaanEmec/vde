@@ -1,0 +1,17 @@
+            GREENLEAF MARKET
+      12 Example Lane, Springfield
+            Tel 555-0142
+
+Receipt No. 004417          2027-03-04 18:22
+--------------------------------------------
+Whole milk 1L           2 x 1.19        2.38
+Sourdough loaf                          3.45
+Apples Braeburn   1.250 kg @ 2.40/kg    3.00
+Free-range eggs (6)                     2.79
+--------------------------------------------
+SUBTOTAL                               11.62
+SALES TAX 6.25%                         0.73
+TOTAL USD                              12.35
+CARD **** 4242                         12.35
+
+      Thank you for shopping with us!

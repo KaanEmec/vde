@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "Hotel De Gouden Spiegel",
+      "provider": "Booking.com",
+      "booking_ref": "9956.401.779",
+      "status": "confirmed",
+      "starts_at_local": "2027-04-09T15:00:00",
+      "ends_at_local": "2027-04-12T11:00:00",
+      "start_place": {
+        "name": "Hotel De Gouden Spiegel",
+        "address": "Herengracht 341, Grachtengordel-West, 1016 AZ Amsterdam, Netherlands",
+        "iata": null,
+        "city": "Amsterdam",
+        "country": "NL"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Callum Gallagher", "type": null }
+      ],
+      "price": { "amount": "759.38", "currency": "EUR" },
+      "cancellation": "You can cancel for free until 23:59 [Amsterdam time] on 6 April 2027. From 00:00 [Amsterdam time] on 7 April 2027, you'll be charged the cost of the first night. If you don't show up, the no-show fee will be the same as the cancellation fee.",
+      "details": {
+        "room": "Deluxe Double Room with Canal View",
+        "guests": 2,
+        "address": "Herengracht 341, Grachtengordel-West, 1016 AZ Amsterdam, Netherlands",
+        "phone": "+31 20 624 1187",
+        "checkin_time": "15:00",
+        "checkout_time": "11:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Amsterdam",
+    "country": "NL",
+    "starts_on": "2027-04-09",
+    "ends_on": "2027-04-12"
+  },
+  "notes": "Booking.com PIN code 6232 is needed together with the confirmation number to manage the booking. The total is paid at the property."
+}

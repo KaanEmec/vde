@@ -1,0 +1,14 @@
+# Fake provider script for `make eval`: the harness mechanics without a model. Every case
+# gets a fresh fake replaying it: the first extractor answer fails the schema, the second
+# is the case's ground truth ({{expected}} is replaced by expected.json) and the judge
+# accepts it. So every case ends accepted after 2 attempts with every field matched.
+description: schema violation, then the ground truth, accepted
+steps:
+  - role: You are the extractor
+    answer: '{"not_in_any_schema": true}'
+  - role: You are the extractor
+    repeat: true
+    answer: '{{expected}}'
+  - role: You are the judge
+    repeat: true
+    answer: '{"verdict": "accept", "feedback": {}}'

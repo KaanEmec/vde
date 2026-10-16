@@ -1,0 +1,35 @@
+{
+  "merchant": {
+    "name": "Apotheke am Beispielplatz",
+    "address": "Beispielplatz 3, 10115 Berlin"
+  },
+  "receipt_number": "7781-23",
+  "date": "2027-11-02",
+  "time": "10:15",
+  "currency": "EUR",
+  "items": [
+    {
+      "description": "Nasenspray 15 ml",
+      "quantity": 1,
+      "unit_price": 4.95,
+      "amount": 4.95
+    },
+    {
+      "description": "Ibuprofen 400 mg 20 St.",
+      "quantity": 2,
+      "unit_price": 5.49,
+      "amount": 10.98
+    },
+    {
+      "description": "Pflaster Sortiment",
+      "quantity": 1,
+      "unit_price": 3.2,
+      "amount": 3.2
+    }
+  ],
+  "subtotal": null,
+  "tax": 3.05,
+  "tip": null,
+  "total": 19.13,
+  "payment_method": "card"
+}

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "Yayue Bund Hotel Shanghai",
+      "provider": "Trip.com",
+      "booking_ref": "7344544557327156",
+      "status": "confirmed",
+      "starts_at_local": "2027-04-14T14:00:00",
+      "ends_at_local": "2027-04-17T12:00:00",
+      "start_place": {
+        "name": "上海外滩雅悦酒店",
+        "address": "上海市黄浦区四川中路261号",
+        "iata": null,
+        "city": "Shanghai",
+        "country": "CN"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Mei Chen", "type": null },
+        { "name": "Wen Chen", "type": null }
+      ],
+      "price": { "amount": "2804", "currency": "CNY" },
+      "cancellation": "2027年4月13日18:00前可免费取消。逾期取消、修改或未入住，将扣除首晚房费¥868。",
+      "details": {
+        "room": "高级大床房",
+        "guests": 2,
+        "address": "上海市黄浦区四川中路261号",
+        "phone": "+86-21-6321 5876",
+        "checkin_time": "14:00",
+        "checkout_time": "12:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Shanghai",
+    "country": "CN",
+    "starts_on": "2027-04-14",
+    "ends_on": "2027-04-17"
+  },
+  "notes": null
+}

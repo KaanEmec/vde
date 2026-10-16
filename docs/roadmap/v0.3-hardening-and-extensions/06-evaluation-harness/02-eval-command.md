@@ -57,3 +57,8 @@ Automatic prompt optimization.
 - Nothing printed or saved carries content: case ids, statuses, counts and JSON pointers of
   mismatched fields only. Tests check that document text and result values stay out of the
   output.
+- Real run recorded in [docs/quality.md](../../../quality.md) (report in
+  `docs/quality/`): 2026-10-16, `vde-0.0.0-dev+56cf97c8`, `google/gemini-3.8-flash` as
+  extractor and LLM judge, 50 TravelInbox cases: false accepts 43 of 50 (86.0%), acceptance
+  100%, field accuracy 92.4%, median 21.1 s, p95 43.5 s, 942k input and 143k output tokens.
+  The classifier judge run is still open: it is not available yet (epic 02).

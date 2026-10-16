@@ -1,0 +1,29 @@
+{
+  "merchant": {
+    "name": "Swiftride",
+    "address": null
+  },
+  "receipt_number": "R-90311",
+  "date": "2027-02-14",
+  "time": "23:10",
+  "currency": "AUD",
+  "items": [
+    {
+      "description": "Fare",
+      "quantity": 1,
+      "unit_price": null,
+      "amount": 18.4
+    },
+    {
+      "description": "Booking fee",
+      "quantity": 1,
+      "unit_price": null,
+      "amount": 2.5
+    }
+  ],
+  "subtotal": 20.9,
+  "tax": 1.9,
+  "tip": 3.0,
+  "total": 23.9,
+  "payment_method": "mobile"
+}

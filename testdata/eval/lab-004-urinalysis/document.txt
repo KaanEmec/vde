@@ -1,0 +1,18 @@
+NORTHGATE DIAGNOSTICS - URINALYSIS
+Synthetic test report - not a real patient
+
+Report ID ........ ND-2027-007730
+Patient .......... Sasha Mockridge
+Date of birth .... 30/01/2001
+Collected ........ 11/10/2027
+Reported ......... 12/10/2027
+
+Test            Result     Reference
+Colour          Yellow
+pH              6.0        5.0-8.0
+Protein         Negative   Negative
+Glucose         Negative   Negative
+Leukocytes      2+  *      Negative
+Nitrite         Positive * Negative
+
+* = abnormal result

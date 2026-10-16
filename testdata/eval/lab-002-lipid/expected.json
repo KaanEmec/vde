@@ -1,0 +1,42 @@
+{
+  "laboratory": "Harbor Lane Laboratory",
+  "report_id": "HLL-88213",
+  "patient": {
+    "name": "Ezra Samplewood",
+    "date_of_birth": null,
+    "sex": "male"
+  },
+  "collected_on": "2027-06-18",
+  "reported_on": "2027-06-19",
+  "ordering_clinician": "A. Placeholder",
+  "results": [
+    {
+      "test": "Total cholesterol",
+      "value": 6.2,
+      "unit": "mmol/L",
+      "reference_range": "<5.0",
+      "flag": "high"
+    },
+    {
+      "test": "HDL cholesterol",
+      "value": 1.1,
+      "unit": "mmol/L",
+      "reference_range": ">1.0",
+      "flag": null
+    },
+    {
+      "test": "LDL cholesterol",
+      "value": 4.3,
+      "unit": "mmol/L",
+      "reference_range": "<3.0",
+      "flag": "high"
+    },
+    {
+      "test": "Triglycerides",
+      "value": 1.9,
+      "unit": "mmol/L",
+      "reference_range": "<1.7",
+      "flag": "high"
+    }
+  ]
+}

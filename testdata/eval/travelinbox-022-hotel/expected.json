@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "DoubleTree by Hilton London Southwark Quay",
+      "provider": "Hilton",
+      "booking_ref": "5653641318",
+      "status": "confirmed",
+      "starts_at_local": "2027-12-03T15:00:00",
+      "ends_at_local": "2027-12-05T11:00:00",
+      "start_place": {
+        "name": "DoubleTree by Hilton London Southwark Quay",
+        "address": "17 Clink Wharf Road, London, SE1 9DG, United Kingdom",
+        "iata": null,
+        "city": "London",
+        "country": "GB"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Priya Mehta", "type": null }
+      ],
+      "price": { "amount": "408.00", "currency": "GBP" },
+      "cancellation": "If you wish to cancel, please do so before 11:59 PM local hotel time on 01 Dec 2027 to avoid a cancellation charge of 189.00 GBP.",
+      "details": {
+        "room": "1 King Bed Deluxe Room",
+        "guests": 2,
+        "address": "17 Clink Wharf Road, London, SE1 9DG, United Kingdom",
+        "phone": "+44 20 7946 0382",
+        "checkin_time": "15:00",
+        "checkout_time": "11:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "London",
+    "country": "GB",
+    "starts_on": "2027-12-03",
+    "ends_on": "2027-12-05"
+  },
+  "notes": "Payment is taken at the hotel on departure; the card only guarantees the reservation."
+}

@@ -1,0 +1,16 @@
+NORTHGATE DIAGNOSTICS
+Synthetic test report - not a real patient
+
+Report ID: ND-2027-004512
+Patient: TESTCASE, Rowan        DOB: 12/07/1984        Sex: F
+Requested by: Dr. Imogen Fictive
+Collected: 03/04/2027           Reported: 04/04/2027
+
+COMPLETE BLOOD COUNT
+Test                 Result    Units      Reference
+Haemoglobin          13.8      g/dL       12.0-15.5
+White cell count     11.6  H   10^9/L     4.0-11.0
+Platelets            250       10^9/L     150-400
+MCV                  88        fL         80-100
+
+End of report.

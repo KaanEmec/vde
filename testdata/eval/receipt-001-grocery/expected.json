@@ -1,0 +1,41 @@
+{
+  "merchant": {
+    "name": "Greenleaf Market",
+    "address": "12 Example Lane, Springfield"
+  },
+  "receipt_number": "004417",
+  "date": "2027-03-04",
+  "time": "18:22",
+  "currency": "USD",
+  "items": [
+    {
+      "description": "Whole milk 1L",
+      "quantity": 2,
+      "unit_price": 1.19,
+      "amount": 2.38
+    },
+    {
+      "description": "Sourdough loaf",
+      "quantity": 1,
+      "unit_price": null,
+      "amount": 3.45
+    },
+    {
+      "description": "Apples Braeburn",
+      "quantity": 1.25,
+      "unit_price": 2.4,
+      "amount": 3.0
+    },
+    {
+      "description": "Free-range eggs (6)",
+      "quantity": 1,
+      "unit_price": null,
+      "amount": 2.79
+    }
+  ],
+  "subtotal": 11.62,
+  "tax": 0.73,
+  "tip": null,
+  "total": 12.35,
+  "payment_method": "card"
+}

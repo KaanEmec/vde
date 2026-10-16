@@ -1,0 +1,23 @@
+From: Swiftride Receipts <receipts@swiftride.example>
+To: rider@example.com
+Subject: Your Swiftride receipt R-90311
+Date: Sun, 14 Feb 2027 23:41:00 +1100
+Message-ID: <r-90311@swiftride.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Thanks for riding with Swiftride.
+
+Receipt R-90311
+Trip on 14/02/2027, picked up at 23:10
+
+Fare                      18.40 AUD
+Booking fee                2.50 AUD
+Subtotal                  20.90 AUD
+Tip                        3.00 AUD
+Total                     23.90 AUD
+Total includes GST of      1.90 AUD
+
+Paid with your phone wallet.
+Swiftride is a fictional company used for testing.

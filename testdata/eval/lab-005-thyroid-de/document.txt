@@ -1,0 +1,14 @@
+LABOR MUSTERSTADT
+Synthetischer Testbefund - keine reale Person
+
+Befund-Nr.: LM-27-55190
+Patient: Beispielmann, Kai          Geb.-Datum: 14.03.1977     Geschlecht: männlich
+Einsender: Dr. med. Lena Probe
+Entnahme: 08.12.2027                Befunddatum: 09.12.2027
+
+Untersuchung       Ergebnis      Einheit     Referenzbereich
+TSH basal          4,9   H       mU/l        0,27–4,20
+fT4                14,2          pmol/l      12,0–22,0
+fT3                4,1           pmol/l      3,1–6,8
+
+H = oberhalb des Referenzbereichs
