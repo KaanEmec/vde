@@ -6,6 +6,62 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-17
+
+Hardening and extensions: alternative storage, more providers, other delivery shapes, an
+evaluation harness and more than one replica. `/v1` semantics are unchanged.
+
+### Added
+
+- PostgreSQL job store (`storage.driver: postgres`, `SKIP LOCKED` leasing) and S3-compatible
+  blob store (`blobs.driver: s3`), with `vde migrate` to apply migrations explicitly;
+  SQLite and the filesystem stay the default.
+- Provider adapters for AWS Bedrock (Converse API) and Google Vertex AI (Gemini and
+  Anthropic models), using cloud IAM instead of API keys.
+- Classifier judge adapter (`provider: classifier`, generic classify contract) with
+  `roles.judge.feedback_fallback` (`whole_result` or `llm`) and `feedback_group`.
+- Per-attempt group escalation (`roles.*.escalation`) and a second judge
+  (`roles.second_judge`), both off by default.
+- Image conversion: WebP converted to JPEG or PNG, EXIF orientation applied, oversized images
+  downscaled (`documents.images`).
+- `POST /v1/extract` (synchronous, `sync.max_wait`), signed completion webhooks
+  (`applications[].webhook`, HMAC-SHA256 `X-VDE-Signature`, retries) and JSON submission with
+  a base64 or guarded URL document (`documents.fetch`: HTTPS, host allow-list, address
+  checks against private ranges).
+- `vde eval`: evaluation harness with a corpus format, a TravelInbox importer, synthetic
+  receipts and lab reports, and false accepts as the headline; results in `docs/quality.md`.
+- Horizontal scaling: `vde serve --role all|api|worker`, an advisory-locked sweeper,
+  `worker.lease`, queue age in `/healthz` on API-only processes, `rate.shared` (per-minute
+  counters in the store, `rate_windows` table) and a scaled compose example
+  (`examples/compose/scaled`: one API and two workers on PostgreSQL and RustFS).
+- Provider token usage: `vde_provider_tokens_total`, `input_tokens` and `output_tokens` per
+  job (admin API metadata, audit details, logs, `vde extract` output), and a `group` label
+  on provider-call metrics.
+- `max_output_tokens` per model (default 16384), a truncation signal from the adapters and
+  cut-off feedback in the extraction loop.
+
+### Changed
+
+- The SQLite WAL is checkpointed (best effort) after every statement that deletes job
+  content, so deleted content does not linger in the WAL.
+- Replaying an `Idempotency-Key` for a job whose content was deleted answers with
+  `content_deleted_at` set; the idempotency window has a 24-hour floor, kept until
+  `created_at` + 24 h even when content expires earlier.
+- `/healthz` is exempt from the HTTPS requirement, so a probe can reach the service directly.
+- Worker ids are `<host>-<pid>-<random>`: in containers every process is pid 1, and the old
+  ids let replicas renew each other's leases.
+
+### Known gaps
+
+- The Bedrock and Vertex adapters have not run against live endpoints (no credentials); do
+  not treat them as supported until their opt-in smoke tests have passed.
+- The classifier judge has not been evaluated against a vendor API (unavailable).
+- HEIC is not converted (no pure-Go decoder); it is accepted only where an endpoint declares it.
+- Postgres `LISTEN/NOTIFY` was skipped: workers poll. `rate.shared` keeps its counters in the
+  job store; there is no Redis. Pending webhook deliveries live in memory and are lost on restart.
+- The first TravelInbox evaluation shows a high false-accept rate that points at instruction
+  and comparison-rule alignment (see `docs/quality.md` and ADR 0008).
+
 ## [0.2.0] - 2026-10-16
 
 The service release: the v0.1 engine behind an authenticated HTTP API. Implemented, but not
