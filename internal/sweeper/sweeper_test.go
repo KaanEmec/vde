@@ -237,6 +237,64 @@ func TestExpiredJobsAreRemovedWithTheirBlobs(t *testing.T) {
 	}
 }
 
+// TestShortRetentionExpiresContentAndKeepsRowForIdempotency: with a retention shorter
+// than the idempotency window, the content and blobs go at expires_at and the row,
+// metadata only, at created_at + 24h, so the key still names the job meanwhile.
+func TestShortRetentionExpiresContentAndKeepsRowForIdempotency(t *testing.T) {
+	r := newRig(t)
+	ctx := t.Context()
+	short := job.Application{ID: "short", QuotaLimit: 100, QuotaWindow: "P1D", RetentionDefault: "2s", MaxAttempts: 3}
+	if err := r.store.UpsertApplication(ctx, short, t0); err != nil {
+		t.Fatal(err)
+	}
+	j := &job.Job{
+		ID: job.NewID(), ApplicationID: "short", ServiceVersion: "vde-test", Representation: "text",
+		MediaType: "text/plain", Size: 10, IdempotencyKey: "k", CreatedAt: t0,
+		ExtractorInstructions: sentinel, JudgeInstructions: sentinel, Schema: sentinel,
+	}
+	if err := r.blobs.Put(ctx, j.ID, blob.Document, strings.NewReader(sentinel)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.CreateJob(ctx, j); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.store.LeaseNextQueued(ctx, "w", t0, t0.Add(time.Minute), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.Finish(ctx, j.ID, "w", job.Outcome{Status: job.StatusAccepted, Attempts: 1,
+		Result: json.RawMessage(`{"s":"` + sentinel + `"}`), Feedback: json.RawMessage(`[]`)}, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	s := r.sweeper()
+
+	if res := mustOnce(t, s, t0.Add(time.Second)); res.Expired != 0 || res.Removed != 0 {
+		t.Fatalf("before expires_at: %+v", res)
+	}
+	if res := mustOnce(t, s, t0.Add(4*time.Second)); res.Expired != 1 || res.Removed != 0 {
+		t.Fatalf("past expires_at: %+v, want the content expired and the row kept", res)
+	}
+	got, err := r.store.FindByIdempotencyKey(ctx, "short", "k")
+	if err != nil {
+		t.Fatalf("the key no longer names the job: %v", err)
+	}
+	if got.ID != j.ID || got.Status != job.StatusAccepted || got.ContentDeletedAt.IsZero() || got.Result != nil ||
+		got.ExtractorInstructions != "" || r.hasBlobs(j.ID) {
+		t.Errorf("kept row = %+v, blobs %v; want metadata only", got, r.hasBlobs(j.ID))
+	}
+	if res := mustOnce(t, s, t0.Add(job.IdempotencyWindow-time.Second)); res.Expired != 0 || res.Removed != 0 {
+		t.Fatalf("inside the idempotency window: %+v", res)
+	}
+	if res := mustOnce(t, s, t0.Add(job.IdempotencyWindow)); res.Expired != 0 || res.Removed != 1 || r.exists(t, j.ID) {
+		t.Fatalf("at created_at+24h: %+v, want the row removed", res)
+	}
+	if events := r.auditKinds(t, audit.JobExpiredKind); len(events) != 1 || events[0].JobID != j.ID {
+		t.Errorf("job.expired events = %+v, want one for %s", events, j.ID)
+	}
+	if got := r.obs.total(); got != 1 {
+		t.Errorf("observer saw %d swept jobs, want 1", got)
+	}
+}
+
 func TestExpiredJobsAreRemovedInBatches(t *testing.T) {
 	r := newRig(t)
 	r.opts.Batch = 2

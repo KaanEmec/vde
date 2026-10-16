@@ -9,22 +9,25 @@ import (
 )
 
 // jobResponse is the job resource of contract §5, with the superset fields
-// judge_confidence and attachments (api/openapi.yaml, Job). result and error are null
-// unless set; feedback is an array, never null; finished_at is null until the terminal
-// state. Timestamps are RFC 3339 UTC with second precision.
+// judge_confidence, attachments and content_deleted_at (api/openapi.yaml, Job). result
+// and error are null unless set; feedback is an array, never null; finished_at is null
+// until the terminal state; content_deleted_at is present only on a job whose content is
+// gone, which only an idempotent replay shows. Timestamps are RFC 3339 UTC with second
+// precision.
 type jobResponse struct {
-	ID              string           `json:"id"`
-	Status          job.Status       `json:"status"`
-	Result          json.RawMessage  `json:"result"`
-	Feedback        json.RawMessage  `json:"feedback"`
-	Attempts        int              `json:"attempts"`
-	ServiceVersion  string           `json:"service_version"`
-	JudgeConfidence *float64         `json:"judge_confidence"`
-	Error           json.RawMessage  `json:"error"`
-	Attachments     []job.Attachment `json:"attachments,omitempty"`
-	CreatedAt       string           `json:"created_at"`
-	FinishedAt      *string          `json:"finished_at"`
-	ExpiresAt       string           `json:"expires_at"`
+	ID               string           `json:"id"`
+	Status           job.Status       `json:"status"`
+	Result           json.RawMessage  `json:"result"`
+	Feedback         json.RawMessage  `json:"feedback"`
+	Attempts         int              `json:"attempts"`
+	ServiceVersion   string           `json:"service_version"`
+	JudgeConfidence  *float64         `json:"judge_confidence"`
+	Error            json.RawMessage  `json:"error"`
+	Attachments      []job.Attachment `json:"attachments,omitempty"`
+	CreatedAt        string           `json:"created_at"`
+	FinishedAt       *string          `json:"finished_at"`
+	ExpiresAt        string           `json:"expires_at"`
+	ContentDeletedAt *string          `json:"content_deleted_at,omitempty"`
 }
 
 // emptyFeedback is the feedback of a job without any.
@@ -53,7 +56,27 @@ func jobToResponse(j *job.Job) jobResponse {
 		f := formatTime(j.FinishedAt)
 		resp.FinishedAt = &f
 	}
+	if !j.ContentDeletedAt.IsZero() {
+		d := formatTime(j.ContentDeletedAt)
+		resp.ContentDeletedAt = &d
+	}
 	return resp
+}
+
+// replayResponse is the job resource an idempotent replay answers. A job whose content
+// is gone (read once under retention: none, or past its expires_at, swept or not yet)
+// keeps its id and status but answers result null, feedback [], error null and
+// content_deleted_at set: the result was delivered or has expired, and the client must
+// not re-submit (docs/api/guide.md).
+func replayResponse(j job.Job, now time.Time) jobResponse {
+	if j.ContentDeletedAt.IsZero() && now.Before(j.ExpiresAt) {
+		return jobToResponse(&j)
+	}
+	if j.ContentDeletedAt.IsZero() {
+		j.ContentDeletedAt = j.ExpiresAt
+	}
+	j.Result, j.Feedback, j.Error, j.JudgeConfidence, j.Attachments = nil, nil, nil, nil, nil
+	return jobToResponse(&j)
 }
 
 // jobAttachments is the stored form of an email document's attachments; nil for other

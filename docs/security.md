@@ -78,10 +78,16 @@ The documents and page images are not in the database but in separate files unde
 deleted when the job is terminal; with `default` at `expires_at`.
 
 Deleting clears columns and unlinks files; it does not wipe storage. The database sets
-`secure_delete`, so SQLite overwrites deleted content in the database file, but earlier
-copies of a page can remain in the write-ahead log until the next checkpoint, and unlinked
-blob files can be recovered from the volume. Protect the
-volume (see the checklist); do not treat deletion as erasure against someone with raw disk access.
+`secure_delete`, so SQLite overwrites deleted content in the database file, and after every
+statement that deletes job content (first read, expiry, `DELETE`) the store runs
+`PRAGMA wal_checkpoint(TRUNCATE)`, so the write-ahead log no longer holds the earlier page
+images either: once the checkpoint completes, the content is in none of `vde.db`,
+`vde.db-wal` and `vde.db-shm` as files. The checkpoint is best effort: a long reader can
+keep it from completing (logged at debug), and the next one catches up. What is not
+guaranteed: the file system and the disk may keep the freed blocks of the truncated WAL and
+of unlinked blob files, which can be recovered from the volume. Protect the volume with host
+disk encryption (see the checklist); do not treat deletion as erasure against someone with
+raw disk access.
 
 ### What providers receive
 
@@ -118,7 +124,7 @@ and documents what must be set at account level: [provider adapters](providers/R
 | Admin API | `admin.listen` (default `127.0.0.1:8091`; empty disables) | implemented | Separate listener, admin tokens only (`vde token create --admin`), never accepted on `/v1`. 60 requests per minute per admin token. Changes are audited under `admin:<token id>`; job listings carry metadata only. A non-loopback `admin.listen` is refused unless `server.tls` or `server.insecure_http` is set. `server.trusted_proxy` does not apply to it: do not put it behind the public proxy. |
 | `/healthz` | none | implemented | Unauthenticated; returns `ok` or `503` with reason codes (`role_extractor_down`, `role_judge_down`), nothing about documents or configuration. |
 | `/metrics` | `metrics.token_env`, `metrics.listen`, `metrics.go_runtime` | implemented | With `token_env` it needs that bearer token (compared in constant time; `vde serve` refuses an unset variable). With `listen` it moves to its own listener and answers `404` on `server.listen`. With neither, only loopback peers without a proxy forwarding header are served. A non-loopback `metrics.listen` without a token is a warning. Do not expose it publicly. |
-| Secure delete | none (always on) | implemented | The database sets SQLite `secure_delete`, so deleted content is overwritten in the file; the write-ahead log and unlinked blob files are not wiped (see "What a leaked database file reveals"). |
+| Secure delete | none (always on) | implemented | The database sets SQLite `secure_delete`, so deleted content is overwritten in the file, and checkpoints the write-ahead log (`wal_checkpoint(TRUNCATE)`, best effort) after each content deletion, so the content is not left in `vde.db-wal` either. Not guaranteed: blocks the OS freed (the truncated WAL, unlinked blob files) are not wiped; use host disk encryption (see "What a leaked database file reveals"). |
 | Response headers | none | implemented | `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Request-Id` on every response. |
 | File permissions | `server.data_dir` | implemented | Database `0600`, blob directories `0700`, files `0600`; the data directory is created `0700` when missing. The container runs as the unprivileged user 65532 on a distroless image. |
 

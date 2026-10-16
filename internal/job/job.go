@@ -38,6 +38,11 @@ const (
 // noneExpiry is how long a retention: none job may exist at most (contract §10).
 const noneExpiry = 24 * time.Hour
 
+// IdempotencyWindow is how long an Idempotency-Key names its job (contract §4). A job's
+// row, metadata only once its content is gone, is kept at least this long after
+// created_at, even when its expires_at is earlier.
+const IdempotencyWindow = 24 * time.Hour
+
 // Errors returned by Store methods. Messages never carry content.
 var (
 	ErrNotFound       = errors.New("job: not found")
@@ -271,14 +276,20 @@ type Store interface {
 	// any lease (the sweeper). ErrConflict when the job is not running (a terminal
 	// status never changes) or is leased by another worker.
 	Finish(ctx context.Context, id, workerID string, o Outcome, now time.Time) error
-	// MarkContentDeleted clears the columns of what and records when.
+	// MarkContentDeleted clears the columns of what and records when. After clearing
+	// it checkpoints the WAL (best effort), so the cleared content does not survive in it.
 	MarkContentDeleted(ctx context.Context, id string, what Content, now time.Time) error
-	// DeleteJob removes the row.
+	// DeleteJob removes the row and checkpoints the WAL as MarkContentDeleted does.
 	DeleteJob(ctx context.Context, id string) error
 	// FindByIdempotencyKey returns the application's job submitted with key.
 	FindByIdempotencyKey(ctx context.Context, applicationID, key string) (Job, error)
-	// ListExpired returns up to limit jobs whose expires_at is not after now, oldest
-	// first.
+	// ListContentExpired returns up to limit terminal jobs whose expires_at is not after
+	// now and whose content is not deleted yet, oldest expires_at first: their content is
+	// due for deletion.
+	ListContentExpired(ctx context.Context, now time.Time, limit int) ([]Job, error)
+	// ListExpired returns up to limit jobs whose row is due for deletion: expires_at and
+	// created_at + IdempotencyWindow both not after now, oldest expires_at first. The row
+	// outlives a shorter expires_at so that the idempotency key keeps naming the job.
 	ListExpired(ctx context.Context, now time.Time, limit int) ([]Job, error)
 	// ListStaleRunning returns up to limit running jobs created at or before createdBefore
 	// (their time limit and grace are over: a lost worker), oldest first.

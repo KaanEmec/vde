@@ -147,6 +147,7 @@ failures in a row. A `404` while polling means the job expired, was deleted, or 
 | `error` | `null` unless `status` is `failed`: `{"code", "message"}`. |
 | `attachments` | For `message/rfc822` documents only: `[{"name", "media_type", "bytes"}]`. |
 | `expires_at` | When the job becomes `404`. |
+| `content_deleted_at` | Added by vde; absent on every job you can poll. Only an idempotent replay of a job whose content is gone carries it (see [Idempotency](#idempotency)). |
 
 ### Interpreting the status
 
@@ -185,6 +186,13 @@ with the same key from the same application within 24 hours returns the existing
 `Idempotency-Replayed: true` and runs nothing, so a retry after a lost response never pays
 for a second extraction. The same key with a different body is `422 idempotency_mismatch`.
 
+The 24 hours hold even when the job itself is no longer readable. A replayed job whose
+content was already read (`retention: none`, first terminal read) or has expired has
+`content_deleted_at` set and `result` null: `status` is the job's terminal status as it
+was, `feedback` is empty and `error` is null. Treat it as already delivered: you stored the
+result when you first read it, or it expired unread. Do not re-submit with the same key
+(you would get the same answer); if you really need the extraction again, use a new key.
+
 Derive the key from what makes the request the same: a hash of the document bytes plus the
 version of your instructions and schema. A random key per attempt defeats the purpose; a
 key per document and version makes every retry safe.
@@ -217,8 +225,8 @@ Every `429` has `Retry-After` (seconds or an HTTP date):
   status** (or 24 hours after `created_at`, whichever is first). After that the job is
   `404`. So store the result when you read it; there is no second read. If your client
   crashes between the response and storing it, that job's content is gone and the
-  extraction must be run again, which should use a new idempotency key (a replay of the old key may only
-  lead back to the deleted job).
+  extraction must be run again, which should use a new idempotency key (a replay of the old key leads
+  back to the deleted job: `202` with `content_deleted_at` set and `result: null`).
 - `retention: default` (or the part absent): the operator's configured retention for your
   application, 24 hours unless changed. You can read the job repeatedly until `expires_at`.
 - The operator can force `none` for an application whatever you send.

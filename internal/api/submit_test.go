@@ -914,6 +914,46 @@ func TestSubmitIdempotency(t *testing.T) {
 			t.Error("another key replayed the first job")
 		}
 	})
+	t.Run("replay of a job whose content is gone names it without content", func(t *testing.T) {
+		t.Parallel()
+		rg := newSubmitRig(t, submitRigOptions{})
+		ctx := t.Context()
+		id := decodeJob(t, rg.submit(t, validParts(), idempotencyKey("gone")))["id"].(string)
+		if _, err := rg.db.LeaseNextQueued(ctx, "w", time.Now(), time.Now().Add(time.Minute), nil); err != nil {
+			t.Fatal(err)
+		}
+		err := rg.db.Finish(ctx, id, "w", job.Outcome{Status: job.StatusAccepted, Attempts: 1,
+			Result: json.RawMessage(`{"name":"x"}`), Feedback: json.RawMessage(`[]`)}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		check := func(when string) {
+			t.Helper()
+			w := rg.submit(t, validParts(), idempotencyKey("gone"))
+			body := decodeJob(t, w)
+			if w.Code != http.StatusAccepted || w.Header().Get(headerIdempotencyReplayed) != "true" || body["id"] != id {
+				t.Errorf("%s: %d replayed %q id %v, want 202 true %s", when, w.Code, w.Header().Get(headerIdempotencyReplayed), body["id"], id)
+			}
+			deleted, _ := body["content_deleted_at"].(string)
+			if body["status"] != string(job.StatusAccepted) || body["result"] != nil || deleted == "" ||
+				fmt.Sprint(body["feedback"]) != "[]" {
+				t.Errorf("%s: body %s, want status accepted, result null, feedback [], content_deleted_at set", when, w.Body.String())
+			}
+		}
+		if w := rg.submit(t, validParts(), idempotencyKey("gone")); strings.Contains(w.Body.String(), "content_deleted_at") {
+			t.Errorf("a replay of a readable job carries content_deleted_at: %s", w.Body.String())
+		}
+		rg.clock.Set(time.Now().Add(25 * time.Hour)) // past expires_at, not swept yet
+		check("expired")
+		rg.clock.Set(time.Time{})
+		if err := rg.db.MarkContentDeleted(ctx, id, job.ContentAll, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		check("content deleted")
+		if rg.quotaUsed(t) != 1 {
+			t.Errorf("quota %d, want 1: replays are not charged", rg.quotaUsed(t))
+		}
+	})
 	t.Run("concurrent identical submissions create one job", func(t *testing.T) {
 		t.Parallel()
 		rg := newSubmitRig(t, submitRigOptions{})
