@@ -96,6 +96,11 @@ sweeper does not shrink the SQLite file; to reclaim space, stop the service or r
 
 ## What is on disk
 
+This section describes the defaults (`storage.driver: sqlite`, `blobs.driver: fs`). With
+PostgreSQL or S3 the same rows and objects are deleted at the same moments; what those stores
+keep afterwards (old row versions, the WAL archive, object versions) and the bucket
+lifecycle rule recommended as a safety net are described in [storage](storage.md).
+
 Job content lives in two places: the blob directory (`<data_dir>/blobs/<job id>/`) and the
 SQLite database (`vde.db` with its `vde.db-wal` and `vde.db-shm`). Each deletion above
 removes the blob directory and clears or deletes the row; the database runs with

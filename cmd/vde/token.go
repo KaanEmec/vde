@@ -66,7 +66,7 @@ func tokenFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 }
 
 // openOperatorStore loads the configuration at path and opens its database.
-func openOperatorStore(path string) (*job.SQLite, time.Duration, error) {
+func openOperatorStore(path string) (closingStore, time.Duration, error) {
 	cfg, err := loadOperatorConfig(path)
 	if err != nil {
 		return nil, 0, err
@@ -74,7 +74,7 @@ func openOperatorStore(path string) (*job.SQLite, time.Duration, error) {
 	if cfg.Auth.MaxTokenTTL <= 0 {
 		return nil, 0, errors.New("config: auth.max_token_ttl must be positive")
 	}
-	store, err := openStore(cfg)
+	store, err := openStore(context.Background(), cfg)
 	if err != nil {
 		return nil, 0, err
 	}

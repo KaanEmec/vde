@@ -40,8 +40,44 @@ configured to use.
 | --- | --- | --- |
 | `anthropic` | Anthropic API | `api_key_env` required |
 | `gemini` | Google Gemini API | `api_key_env` required |
+| `bedrock` | Models on Amazon Bedrock (Converse API) | none: AWS default credential chain; `region` required |
+| `vertex` | Gemini and Anthropic models on Google Vertex AI | none: Google application default credentials; `project` and `region` required |
 | `openai_compatible` | OpenAI, Azure OpenAI, OpenRouter (`preset: openrouter`), Ollama, vLLM, LM Studio | `api_key_env` optional (local servers); `base_url` required without a preset |
 | `fake` | Tests only | none |
+
+### Cloud providers: Bedrock and Vertex AI
+
+Use these when your organization already has a cloud account and wants cloud IAM instead of
+API keys, and the document to stay inside that account and region. Neither takes
+`api_key_env`: credentials come from the cloud's own chain, and `vde config check` rejects a
+key variable. Model ids below are placeholders; use current ids from the provider's
+console.
+
+```yaml
+endpoints:
+  bedrock:
+    provider: bedrock
+    region: us-east-1                   # required
+    models:
+      anthropic.example-model-v1:0:
+        accepts: [application/pdf, image/png, image/jpeg, text/plain]
+  vertex:
+    provider: vertex
+    project: my-gcp-project             # required
+    region: us-east5                    # required; "global" lets Google pick the location
+    models:
+      gemini-example-model:             # gemini* ids go to Google, claude* ids to Anthropic
+        accepts: [application/pdf, image/png, image/jpeg, text/plain]
+      claude-example-model@20260101:
+        accepts: [application/pdf, image/png, image/jpeg, text/plain]
+```
+
+Bedrock reads the AWS default chain (`AWS_PROFILE`, `AWS_ACCESS_KEY_ID` and friends, SSO,
+or the role of the task, pod or instance); Vertex reads `GOOGLE_APPLICATION_CREDENTIALS`, the
+`gcloud` application default login or the attached service account. Set these in the
+service's environment, not in the YAML. Permissions, regions and retention terms are in the
+[Bedrock](../providers/bedrock.md) and [Vertex AI](../providers/vertex.md) pages; read them
+before approving either endpoint.
 
 ## Choosing models per role
 
@@ -73,6 +109,14 @@ documentation and keep it conservative.
 | `application/pdf` | The model reads PDF files itself. |
 | `image/png`, `image/jpeg`, `image/webp`, `image/heic` | The model reads these images. (HEIC: Gemini adapter only.) |
 | `text/plain`, `text/html`, `text/markdown` | The model reads text. Text, HTML and `.eml` documents are sent as text, so listing `text/plain` is enough for all of them. |
+
+`image/webp` and `image/heic` need a decision. For WebP you do not have to declare it: with
+`documents.images.enabled: true` (the default) `vde` converts a WebP to JPEG (or PNG, per
+`convert_to`) when the two groups do not both read WebP, so a model that lists only
+`image/png` and `image/jpeg` processes WebP documents. Declare `image/webp` only if you want
+the model to receive the WebP unchanged (it is then used as is unless the image must be
+downscaled). HEIC cannot be converted without cgo: list `image/heic` on the models of both
+groups (Gemini adapter only) or HEIC documents are refused with `415`.
 
 What a wrong list does:
 
@@ -145,7 +189,9 @@ see which pair is failing.
 An endpoint names the environment variable that holds its key (`api_key_env`). The variable
 must be set when the configuration is loaded, or validation fails with
 `environment variable X is not set`. The key is read at start; to change one, restart the
-service. Keys are never printed by `config check`, logged or returned by the API. In
+service. `bedrock` and `vertex` endpoints have no key variable: their cloud credentials are
+resolved by the AWS and Google libraries (Bedrock on the first call, Vertex when the
+endpoint is built) and refreshed by them. Keys are never printed by `config check`, logged or returned by the API. In
 compose, put the key in `.env`; with systemd, in an `EnvironmentFile` with mode `0600`.
 
 ## Provider pages
@@ -155,6 +201,8 @@ compose, put the key in `.env`; with systemd, in an `EnvironmentFile` with mode 
 | `anthropic` | [anthropic.md](../providers/anthropic.md) |
 | `openai_compatible` (OpenAI, Azure, OpenRouter, Ollama, vLLM, LM Studio) | [openai-compatible.md](../providers/openai-compatible.md) |
 | `gemini` | [gemini.md](../providers/gemini.md) |
+| `bedrock` | [bedrock.md](../providers/bedrock.md) |
+| `vertex` | [vertex.md](../providers/vertex.md) |
 | `fake` | [fake.md](../providers/fake.md) |
 
 Common provider failures and how to read them are in

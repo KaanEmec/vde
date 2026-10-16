@@ -11,7 +11,7 @@ LDFLAGS := -s -w \
 	-X $(MODULE)/internal/version.Date=$(DATE)
 GOBUILD := CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: build test lint check scenarios live cross clean image image-multiarch conformance
+.PHONY: build test lint check scenarios eval live cross clean image image-multiarch conformance
 
 build:
 	$(GOBUILD) -o bin/vde ./cmd/vde
@@ -28,6 +28,15 @@ check: lint test build
 # The end-to-end scenarios of testdata/scenarios with the fake provider, verbosely.
 scenarios:
 	go test ./cmd/vde -run TestScenarios -count=1 -v
+
+# The evaluation harness mechanics (docs/operator/evaluation.md) on testdata/eval with the
+# fake provider: every case replays testdata/eval/fake-script.yaml, so no key is needed; each
+# case ends accepted and correct, and a case the harness cannot run fails the target. Real
+# runs are manual and recorded in docs/quality.md.
+EVAL_OUT ?= eval-reports
+eval:
+	go run ./cmd/vde eval --corpus testdata/eval --config testdata/scenarios/config/vde.yaml \
+		--provider-script testdata/eval/fake-script.yaml --concurrency 4 --out $(EVAL_OUT)
 
 # The opt-in smoke test against every real provider whose key is set (see CONTRIBUTING.md).
 live:

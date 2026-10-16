@@ -118,6 +118,10 @@ database migrations itself. Requirements:
   See [security](../security.md).
 - Back it up as described in [operations](operations.md#backups).
 
+With `storage.driver: postgres` and `blobs.driver: s3` the database and the blobs live
+outside the data directory, which then holds only `content.log` when that is on, and several
+replicas may run; see [storage](storage.md).
+
 The default `/var/lib/vde` usually needs root to create. Outside a container, set `data_dir`
 to a directory the service user owns.
 

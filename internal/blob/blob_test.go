@@ -24,14 +24,22 @@ func newFS(t *testing.T) *FS {
 	return s
 }
 
-func put(t *testing.T, s *FS, jobID, name, data string) {
+// forEachStore runs fn as a subtest per implementation, each with a fresh, empty store:
+// the filesystem always, S3 when VDE_TEST_S3_ENDPOINT is set (see newS3Test).
+func forEachStore(t *testing.T, fn func(t *testing.T, s Store)) {
+	t.Helper()
+	t.Run("fs", func(t *testing.T) { fn(t, newFS(t)) })
+	t.Run("s3", func(t *testing.T) { fn(t, newS3Test(t)) })
+}
+
+func put(t *testing.T, s Store, jobID, name, data string) {
 	t.Helper()
 	if err := s.Put(t.Context(), jobID, name, strings.NewReader(data)); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func read(t *testing.T, s *FS, jobID, name string) (string, error) {
+func read(t *testing.T, s Store, jobID, name string) (string, error) {
 	t.Helper()
 	rc, err := s.Get(t.Context(), jobID, name)
 	if err != nil {
@@ -42,21 +50,32 @@ func read(t *testing.T, s *FS, jobID, name string) (string, error) {
 	return string(b), err
 }
 
-func TestPutGetLayoutAndPermissions(t *testing.T) {
+func TestPutGet(t *testing.T) {
+	forEachStore(t, func(t *testing.T, s Store) {
+		put(t, s, jobA, Document, "doc bytes")
+		put(t, s, jobA, Page(1), "page one")
+		put(t, s, jobA, Page(1), "page one, replaced")
+
+		if got, err := read(t, s, jobA, Document); err != nil || got != "doc bytes" {
+			t.Errorf("document = %q, %v", got, err)
+		}
+		if got, _ := read(t, s, jobA, Page(1)); got != "page one, replaced" {
+			t.Errorf("page-01 = %q", got)
+		}
+		if _, err := read(t, s, jobA, Page(2)); !errors.Is(err, ErrNotFound) {
+			t.Errorf("missing page: %v, want ErrNotFound", err)
+		}
+		if _, err := read(t, s, jobB, Document); !errors.Is(err, ErrNotFound) {
+			t.Errorf("missing job: %v, want ErrNotFound", err)
+		}
+	})
+}
+
+func TestFSLayoutAndPermissions(t *testing.T) {
 	s := newFS(t)
 	put(t, s, jobA, Document, "doc bytes")
 	put(t, s, jobA, Page(1), "page one")
 	put(t, s, jobA, Page(1), "page one, replaced")
-
-	if got, err := read(t, s, jobA, Document); err != nil || got != "doc bytes" {
-		t.Errorf("document = %q, %v", got, err)
-	}
-	if got, _ := read(t, s, jobA, Page(1)); got != "page one, replaced" {
-		t.Errorf("page-01 = %q", got)
-	}
-	if _, err := read(t, s, jobA, Page(2)); !errors.Is(err, ErrNotFound) {
-		t.Errorf("missing page: %v, want ErrNotFound", err)
-	}
 
 	dir := filepath.Join(s.root, "HB", jobA)
 	entries, err := os.ReadDir(dir)
@@ -81,20 +100,21 @@ func TestPutGetLayoutAndPermissions(t *testing.T) {
 }
 
 func TestRejectsUnsafeNames(t *testing.T) {
-	s := newFS(t)
-	for _, tt := range []struct{ id, name string }{
-		{"../../etc", Document}, {"j_", Document}, {jobA, "../document"}, {jobA, "page-1"}, {jobA, "other"},
-	} {
-		if err := s.Put(t.Context(), tt.id, tt.name, strings.NewReader("x")); err == nil {
-			t.Errorf("Put(%q, %q) accepted", tt.id, tt.name)
+	forEachStore(t, func(t *testing.T, s Store) {
+		for _, tt := range []struct{ id, name string }{
+			{"../../etc", Document}, {"j_", Document}, {jobA, "../document"}, {jobA, "page-1"}, {jobA, "other"},
+		} {
+			if err := s.Put(t.Context(), tt.id, tt.name, strings.NewReader("x")); err == nil {
+				t.Errorf("Put(%q, %q) accepted", tt.id, tt.name)
+			}
+			if _, err := s.Get(t.Context(), tt.id, tt.name); err == nil || errors.Is(err, ErrNotFound) {
+				t.Errorf("Get(%q, %q) = %v, want a validation error", tt.id, tt.name, err)
+			}
 		}
-		if _, err := s.Get(t.Context(), tt.id, tt.name); err == nil || errors.Is(err, ErrNotFound) {
-			t.Errorf("Get(%q, %q) = %v, want a validation error", tt.id, tt.name, err)
+		if err := s.DeleteAll(t.Context(), "../x"); err == nil {
+			t.Error("DeleteAll accepted an unsafe id")
 		}
-	}
-	if err := s.DeleteAll(t.Context(), "../x"); err == nil {
-		t.Error("DeleteAll accepted an unsafe id")
-	}
+	})
 }
 
 type failingReader struct{}
@@ -102,37 +122,53 @@ type failingReader struct{}
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
 
 func TestPutFailureLeavesNothing(t *testing.T) {
-	s := newFS(t)
-	if err := s.Put(t.Context(), jobA, Document, io.MultiReader(strings.NewReader("partial"), failingReader{})); err == nil {
-		t.Fatal("Put succeeded on a failing reader")
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if err := s.Put(ctx, jobA, Page(1), bytes.NewReader([]byte("x"))); !errors.Is(err, context.Canceled) {
-		t.Errorf("Put with cancelled context: %v", err)
-	}
-	entries, _ := os.ReadDir(filepath.Join(s.root, "HB", jobA))
-	if len(entries) != 0 {
-		t.Errorf("%d files left after failed puts", len(entries))
-	}
+	forEachStore(t, func(t *testing.T, s Store) {
+		if err := s.Put(t.Context(), jobA, Document, io.MultiReader(strings.NewReader("partial"), failingReader{})); err == nil {
+			t.Fatal("Put succeeded on a failing reader")
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		if err := s.Put(ctx, jobA, Page(1), bytes.NewReader([]byte("x"))); !errors.Is(err, context.Canceled) {
+			t.Errorf("Put with cancelled context: %v", err)
+		}
+		for _, name := range []string{Document, Page(1)} {
+			if _, err := read(t, s, jobA, name); !errors.Is(err, ErrNotFound) {
+				t.Errorf("%s after a failed put: %v, want ErrNotFound", name, err)
+			}
+		}
+		if fsStore, ok := s.(*FS); ok {
+			entries, _ := os.ReadDir(filepath.Join(fsStore.root, "HB", jobA))
+			if len(entries) != 0 {
+				t.Errorf("%d files left after failed puts", len(entries))
+			}
+		}
+	})
 }
 
 func TestDeleteAll(t *testing.T) {
-	s := newFS(t)
-	put(t, s, jobA, Document, "a")
-	put(t, s, jobA, Page(1), "a1")
-	put(t, s, jobB, Document, "b")
-	for range 2 { // idempotent
-		if err := s.DeleteAll(t.Context(), jobA); err != nil {
-			t.Fatal(err)
+	forEachStore(t, func(t *testing.T, s Store) {
+		put(t, s, jobA, Document, "a")
+		put(t, s, jobA, Page(1), "a1")
+		put(t, s, jobB, Document, "b")
+		for range 2 { // idempotent
+			if err := s.DeleteAll(t.Context(), jobA); err != nil {
+				t.Fatal(err)
+			}
 		}
-	}
-	if _, err := os.Stat(filepath.Join(s.root, "HB")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("job directory or shard left behind: %v", err)
-	}
-	if got, _ := read(t, s, jobB, Document); got != "b" {
-		t.Error("another job's blob was deleted")
-	}
+		for _, name := range []string{Document, Page(1)} {
+			if _, err := read(t, s, jobA, name); !errors.Is(err, ErrNotFound) {
+				t.Errorf("%s after DeleteAll: %v, want ErrNotFound", name, err)
+			}
+		}
+		if fsStore, ok := s.(*FS); ok {
+			if _, err := os.Stat(filepath.Join(fsStore.root, "HB")); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("job directory or shard left behind: %v", err)
+			}
+		}
+		if got, _ := read(t, s, jobB, Document); got != "b" {
+			t.Error("another job's blob was deleted")
+		}
+	})
 }
 
 func TestSweepOrphans(t *testing.T) {

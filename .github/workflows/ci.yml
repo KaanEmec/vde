@@ -102,3 +102,47 @@ jobs:
           cache: true
       - name: Contract §14 items 1-9 against the binary and a fake provider
         run: make conformance
+
+  storage:
+    name: storage backends (PostgreSQL, S3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: vde
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+      s3:
+        # An S3-compatible store for the blob suite. MinIO no longer publishes images on
+        # Docker Hub; RustFS speaks the same API (path-style, SSE-S3 with a master key).
+        image: rustfs/rustfs:1.0.1
+        env:
+          RUSTFS_ACCESS_KEY: minio
+          RUSTFS_SECRET_KEY: minio123
+          RUSTFS_SSE_S3_MASTER_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY= # test-only key
+        ports: ["9000:9000"]
+    env:
+      VDE_TEST_POSTGRES: postgres://postgres:vde@127.0.0.1:5432/postgres?sslmode=disable
+      VDE_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+      VDE_TEST_S3_SSE: AES256
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Wait for the S3 endpoint
+        run: |
+          for i in $(seq 60); do
+            curl -s -o /dev/null "$VDE_TEST_S3_ENDPOINT" && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Store, blob and command suites on PostgreSQL and S3
+        run: go test -race -count=1 ./internal/job/... ./internal/blob/... ./cmd/vde/...

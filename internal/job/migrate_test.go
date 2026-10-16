@@ -31,7 +31,7 @@ func schemaOf(t *testing.T, db *sql.DB) string {
 }
 
 func TestMigrationsLoad(t *testing.T) {
-	ms, err := loadMigrations()
+	ms, err := loadMigrations(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestMigrateFromEachVersion(t *testing.T) {
 			t.Errorf("table %s missing from a fresh database", table)
 		}
 	}
-	ms, err := loadMigrations()
+	ms, err := loadMigrations(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestMigrateFromEachVersion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := migrate(t.Context(), db, v); err != nil {
+		if err := migrate(t.Context(), db, false, v); err != nil {
 			t.Fatalf("migrate to %d: %v", v, err)
 		}
 		var applied int

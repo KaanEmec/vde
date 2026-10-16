@@ -106,6 +106,9 @@ func TestParse_example(t *testing.T) {
 	if cfg.Limits != wantLimits {
 		t.Errorf("limits = %+v, want %+v", cfg.Limits, wantLimits)
 	}
+	if want := (Images{Enabled: true, MaxDimension: 2048, ConvertTo: "image/jpeg", Quality: 85}); cfg.Documents.Images != want {
+		t.Errorf("documents.images = %+v, want %+v", cfg.Documents.Images, want)
+	}
 	if cfg.Server.Listen != ":8090" || cfg.Documents.HTML != "raw_html" || cfg.Logging.Format != "json" {
 		t.Errorf("server/documents/logging = %+v %+v %+v", cfg.Server, cfg.Documents, cfg.Logging)
 	}
