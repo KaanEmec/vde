@@ -9,5 +9,5 @@ a configuration model to read from. Keep it minimal: no frameworks, no generated
 | --- | --- | --- |
 | 01 | [Repository scaffold](01-repository-scaffold.md) | done |
 | 02 | [Configuration model](02-configuration-model.md) | done |
-| 03 | [Configuration validation and `config check`](03-config-validation-and-check-command.md) | planned |
+| 03 | [Configuration validation and `config check`](03-config-validation-and-check-command.md) | done |
 | 04 | [CI pipeline](04-ci-pipeline.md) | planned |

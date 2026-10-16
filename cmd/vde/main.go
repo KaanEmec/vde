@@ -19,6 +19,7 @@ const (
 const usage = `Usage: vde <command> [arguments]
 
 Commands:
+  config     check the configuration file (vde config check -h)
   version    print version, commit and build date
   help       print this help
 
@@ -39,6 +40,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "version", "--version", "-version":
 		fmt.Fprintln(stdout, version.String())
 		return exitOK
+	case "config":
+		return runConfig(args[1:], stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usage)
 		return exitOK
