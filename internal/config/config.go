@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ type Config struct {
 	Limits       Limits               `yaml:"limits"`
 	Documents    Documents            `yaml:"documents"`
 	Applications []Application        `yaml:"applications"`
+	Auth         Auth                 `yaml:"auth"`
 	Logging      Logging              `yaml:"logging"`
 	Debug        Debug                `yaml:"debug"`
 }
@@ -33,8 +35,15 @@ type Server struct {
 	Listen       string `yaml:"listen"`
 	TLS          TLS    `yaml:"tls"`
 	TrustedProxy bool   `yaml:"trusted_proxy"` // require X-Forwarded-Proto: https
+	// InsecureHTTP allows plain HTTP from any peer on any listener, for development and
+	// containers on a trusted private network only. Never together with TLS.
+	InsecureHTTP bool   `yaml:"insecure_http"`
 	DataDir      string `yaml:"data_dir"`
 }
+
+// DatabasePath is the SQLite file inside DataDir that serve and the operator commands
+// share.
+func (s Server) DatabasePath() string { return filepath.Join(s.DataDir, "vde.db") }
 
 // TLS names the certificate and key the binary terminates TLS with.
 type TLS struct {
@@ -163,6 +172,11 @@ type AppDocuments struct {
 	HTML string `yaml:"html,omitempty"` // empty means documents.html
 }
 
+// Auth bounds the access tokens the operator issues.
+type Auth struct {
+	MaxTokenTTL time.Duration `yaml:"max_token_ttl"` // longest allowed token lifetime
+}
+
 // Logging configures log output.
 type Logging struct {
 	Level  string `yaml:"level"`  // debug, info, warn or error
@@ -176,7 +190,7 @@ type Debug struct {
 
 // Defaults. Contract §4 sets the document limits; contract §6 and ADR 0004 the loop bounds.
 const (
-	defaultListen            = ":8090"
+	defaultListen            = "127.0.0.1:8090"
 	defaultDataDir           = "/var/lib/vde"
 	defaultEndpointTimeout   = 90 * time.Second
 	defaultFailoverTries     = 3
@@ -193,6 +207,7 @@ const (
 	defaultSubmitsPerMinute  = 30
 	defaultMaxInProgress     = 20
 	defaultRetention         = "24h"
+	defaultMaxTokenTTL       = 730 * 24 * time.Hour // two years
 )
 
 // defaultBaseURLs are used when an endpoint leaves base_url empty.
@@ -218,6 +233,7 @@ func defaults() *Config {
 			Pages:             defaultPages,
 		},
 		Documents: Documents{HTML: "raw_html"},
+		Auth:      Auth{MaxTokenTTL: defaultMaxTokenTTL},
 		Logging:   Logging{Level: "info", Format: "json"},
 	}
 }

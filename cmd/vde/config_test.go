@@ -56,6 +56,7 @@ roles:
   judge: {group: review}
 limits:
   job_timeout: 10m
+server: {listen: ":8090"}
 debug:
   log_content: true
 `

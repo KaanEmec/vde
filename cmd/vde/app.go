@@ -1,0 +1,226 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/job"
+)
+
+// imageConfigPath is where the container image expects the configuration. The operator
+// commands (app, token, healthcheck) fall back to it when --config is not given and
+// vde.yaml does not exist, so `docker compose exec vde vde token …` and the image's
+// HEALTHCHECK work without flags.
+const imageConfigPath = "/etc/vde/vde.yaml"
+
+// Audit actors and kinds written by the commands.
+const (
+	actorCLI    = "cli"
+	actorConfig = "config"
+
+	auditAppEnabled   = "app.enabled"
+	auditAppDisabled  = "app.disabled"
+	auditTokenCreated = "token.created"
+	auditTokenRevoked = "token.revoked"
+)
+
+const flagsHeading = "\nFlags:\n"
+
+// operatorFlags registers --config on fs and returns a function giving the path to use
+// after parsing.
+func operatorFlags(set *flag.FlagSet) func() string {
+	path := set.String("config", defaultConfigPath, "configuration file (falls back to "+imageConfigPath+")")
+	return func() string {
+		explicit := false
+		set.Visit(func(f *flag.Flag) { explicit = explicit || f.Name == "config" })
+		if explicit {
+			return *path
+		}
+		if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
+			if _, err := os.Stat(imageConfigPath); err == nil {
+				return imageConfigPath
+			}
+		}
+		return *path
+	}
+}
+
+// loadOperatorConfig parses the configuration for the operator commands. They read only
+// server, auth and applications, so the configuration is decoded (unknown keys and bad
+// values are still errors) but not validated: provider keys need not be set.
+func loadOperatorConfig(path string) (*config.Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	return config.Parse(data, os.Getenv)
+}
+
+// openStore opens the database serve uses, server.data_dir/vde.db. SQLite in WAL mode
+// lets a command write while serve runs.
+func openStore(cfg *config.Config) (*job.SQLite, error) {
+	return job.Open(cfg.Server.DatabasePath())
+}
+
+// appendAudit writes one audit event with details marshalled from a fixed struct.
+func appendAudit(ctx context.Context, store job.Store, e job.AuditEvent, details any) error {
+	if details != nil {
+		raw, err := json.Marshal(details)
+		if err != nil {
+			return err
+		}
+		e.Details = raw
+	}
+	_, err := store.AppendAudit(ctx, e)
+	return err
+}
+
+// storeApplication is the store row of a configured application (defaults applied).
+func storeApplication(a config.Application) job.Application {
+	return job.Application{
+		ID:                a.ID,
+		Name:              a.Name,
+		MaxAttempts:       a.MaxAttempts,
+		QuotaLimit:        a.Quota.Limit,
+		QuotaWindow:       a.Quota.Window,
+		RequestsPerMinute: a.Rate.RequestsPerMinute,
+		SubmitsPerMinute:  a.Rate.SubmitsPerMinute,
+		MaxInProgress:     a.Rate.MaxInProgress,
+		RetentionDefault:  a.Retention.Default,
+		ForceNone:         a.Retention.ForceNone,
+		HTMLPolicy:        a.Documents.HTML,
+		Enabled:           true,
+	}
+}
+
+// syncApplications mirrors the configured applications into the store: each is
+// upserted and enabled, every other enabled one is disabled (its tokens stop working,
+// its jobs stay until they expire). Each change of state is audited.
+func syncApplications(ctx context.Context, store job.Store, apps []config.Application, now time.Time) error {
+	ids := make([]string, 0, len(apps))
+	for _, a := range apps {
+		prev, err := store.GetApplication(ctx, a.ID)
+		if err != nil && !errors.Is(err, job.ErrNotFound) {
+			return err
+		}
+		if err := store.UpsertApplication(ctx, storeApplication(a), now); err != nil {
+			return err
+		}
+		if !prev.Enabled {
+			if err := appendAudit(ctx, store, job.AuditEvent{At: now, Kind: auditAppEnabled, ApplicationID: a.ID, Actor: actorConfig}, nil); err != nil {
+				return err
+			}
+		}
+		ids = append(ids, a.ID)
+	}
+	disabled, err := store.DisableApplicationsNotIn(ctx, ids, now)
+	if err != nil {
+		return err
+	}
+	for _, id := range disabled {
+		if err := appendAudit(ctx, store, job.AuditEvent{At: now, Kind: auditAppDisabled, ApplicationID: id, Actor: actorConfig}, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const appUsage = `Usage: vde app list [--config path]
+
+Lists the applications in the database (mirrored from the configuration by vde serve):
+id, name, enabled, attempt limit, quota, rate limits, retention and active tokens.
+`
+
+func runApp(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || args[0] != "list" {
+		fmt.Fprint(stderr, appUsage)
+		return exitUsage
+	}
+	set := flag.NewFlagSet("vde app list", flag.ContinueOnError)
+	set.SetOutput(stderr)
+	set.Usage = func() {
+		fmt.Fprint(stderr, appUsage+flagsHeading)
+		set.PrintDefaults()
+	}
+	configPath := operatorFlags(set)
+	if code, done := parseFlags(set, args[1:]); done {
+		return code
+	}
+	if set.NArg() > 0 {
+		fmt.Fprintf(stderr, "vde app list: unexpected argument %q\n", set.Arg(0))
+		return exitUsage
+	}
+	cfg, err := loadOperatorConfig(configPath())
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitFailure
+	}
+	store, err := openStore(cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "vde app list: %v\n", err)
+		return exitFailure
+	}
+	defer store.Close()
+	if err := listApplications(context.Background(), stdout, store, time.Now()); err != nil {
+		fmt.Fprintf(stderr, "vde app list: %v\n", err)
+		return exitFailure
+	}
+	return exitOK
+}
+
+func listApplications(ctx context.Context, w io.Writer, store job.Store, now time.Time) error {
+	apps, err := store.ListApplications(ctx)
+	if err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tENABLED\tATTEMPTS\tQUOTA\tREQ/MIN\tSUBMITS/MIN\tIN PROGRESS\tRETENTION\tTOKENS")
+	for _, a := range apps {
+		tokens, err := store.ListTokens(ctx, a.ID)
+		if err != nil {
+			return err
+		}
+		active := 0
+		for _, t := range tokens {
+			if tokenStatus(t, now) == "active" {
+				active++
+			}
+		}
+		retention := a.RetentionDefault
+		if a.ForceNone {
+			retention = "none (forced)"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%t\t%d\t%d/%s\t%d\t%d\t%d\t%s\t%d\n", a.ID, dash(a.Name), a.Enabled, a.MaxAttempts,
+			a.QuotaLimit, a.QuotaWindow, a.RequestsPerMinute, a.SubmitsPerMinute, a.MaxInProgress, retention, active)
+	}
+	return tw.Flush()
+}
+
+func dash(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "-"
+	}
+	return s
+}
+
+// parseFlags parses args and reports whether the command is done (help or a usage
+// error) with its exit code.
+func parseFlags(set *flag.FlagSet, args []string) (int, bool) {
+	if err := set.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK, true
+		}
+		return exitUsage, true
+	}
+	return 0, false
+}

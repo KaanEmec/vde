@@ -13,3 +13,4 @@ testdata/user-docs/
 # local build output
 /vde
 /dist/
+/vde-data/

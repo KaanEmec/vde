@@ -18,15 +18,20 @@ import (
 	"github.com/kaanemec/vde/internal/api"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/extract"
+	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/version"
 )
 
 const serveUsage = `Usage: vde serve [--config path]
 
-Validates the configuration, then serves the /v1 API, /healthz and /metrics on
-server.listen. With server.tls the binary terminates TLS; otherwise it serves plain HTTP
-and refuses a non-loopback listen address unless server.trusted_proxy is true. SIGINT or
-SIGTERM stops accepting connections and drains in-flight requests for up to 30 s.
+Validates the configuration, opens the database (server.data_dir/vde.db), mirrors the
+configured applications into it (an application no longer configured is disabled and its
+tokens stop working), then serves the /v1 API, /healthz and /metrics on server.listen.
+With server.tls the binary terminates TLS; otherwise it serves plain HTTP and refuses a
+non-loopback listen address unless server.trusted_proxy (a reverse proxy terminates TLS)
+or server.insecure_http (trusted private networks only) is true. SIGINT or SIGTERM stops
+accepting connections and drains in-flight requests for up to 30 s.
 
 Flags:
 `
@@ -80,7 +85,7 @@ func runServe(args []string, _, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := serve(ctx, cfg, ln, newLogger(stderr, cfg.Logging)); err != nil {
+	if err := serve(ctx, cfg, ln, newLogger(stderr, cfg.Logging), newProvider); err != nil {
 		fmt.Fprintf(stderr, "vde serve: %v\n", err)
 		return exitFailure
 	}
@@ -88,9 +93,10 @@ func runServe(args []string, _, stderr io.Writer) int {
 }
 
 // checkListen refuses plain HTTP on a non-loopback address unless a trusted reverse
-// proxy terminates TLS in front of the service (contract §2).
+// proxy terminates TLS in front of the service (contract §2) or the operator declared
+// the network trusted with server.insecure_http.
 func checkListen(s config.Server) error {
-	if s.TLS.CertFile != "" || s.TrustedProxy {
+	if s.TLS.CertFile != "" || s.TrustedProxy || s.InsecureHTTP {
 		return nil
 	}
 	host, _, err := net.SplitHostPort(s.Listen)
@@ -106,21 +112,47 @@ func checkListen(s config.Server) error {
 	return fmt.Errorf("server.listen %q is not a loopback address: set server.tls, or server.trusted_proxy when a reverse proxy terminates TLS", s.Listen)
 }
 
-// serve runs the HTTP server on ln until ctx is done, then drains in-flight requests.
-// It returns nil after a clean shutdown.
-func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slog.Logger) error {
-	roles, err := extract.NewRoles(cfg, newProvider)
+// serve opens the store, mirrors the configured applications into it and runs the HTTP
+// server on ln until ctx is done, then drains in-flight requests. build makes each
+// endpoint's provider. It returns nil after a clean shutdown.
+func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slog.Logger,
+	build func(*config.Endpoint) (provider.Provider, error)) error {
+	roles, err := extract.NewRoles(cfg, build)
 	if err != nil {
 		ln.Close()
 		return err
 	}
+	store, err := job.Open(cfg.Server.DatabasePath())
+	if err != nil {
+		ln.Close()
+		return err
+	}
+	defer store.Close()
+	if err := syncApplications(ctx, store, cfg.Applications, time.Now()); err != nil {
+		ln.Close()
+		return err
+	}
+	if len(cfg.Applications) == 0 {
+		logger.Warn("no applications are configured: every /v1 request is refused")
+	}
+	if cfg.Server.InsecureHTTP {
+		logger.Warn("SERVER.INSECURE_HTTP IS ON: plain HTTP is accepted from any peer, so tokens and " +
+			"documents cross the network unencrypted; use it only on a trusted private network")
+	}
 	serviceVersion := extract.ServiceVersion(cfg, version.Version)
+	versions := make(map[string]string, len(cfg.Applications))
+	for _, a := range cfg.Applications {
+		versions[a.ID] = extract.ApplicationServiceVersion(cfg, a, version.Version)
+		logger.Info("application enabled", "app_id", a.ID, "service_version", versions[a.ID])
+	}
 	handler := api.New(api.Deps{
-		Config:         cfg,
-		ServiceVersion: serviceVersion,
-		Logger:         logger,
-		Extractor:      roles.Extractor,
-		Judge:          roles.Judge,
+		Config:          cfg,
+		Store:           store,
+		ServiceVersion:  serviceVersion,
+		ServiceVersions: versions,
+		Logger:          logger,
+		Extractor:       roles.Extractor,
+		Judge:           roles.Judge,
 	})
 	useTLS := cfg.Server.TLS.CertFile != ""
 	srv := &http.Server{
@@ -141,7 +173,8 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 		"service_version", serviceVersion,
 		"listen", ln.Addr().String(),
 		"tls", useTLS,
-		"trusted_proxy", cfg.Server.TrustedProxy)
+		"trusted_proxy", cfg.Server.TrustedProxy,
+		"insecure_http", cfg.Server.InsecureHTTP)
 	errc := make(chan error, 1)
 	go func() {
 		if useTLS {

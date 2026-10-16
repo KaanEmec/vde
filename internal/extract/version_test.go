@@ -71,6 +71,27 @@ func TestServiceVersion_form(t *testing.T) {
 	}
 }
 
+func TestApplicationServiceVersion(t *testing.T) {
+	cfg := parseVersionConfig(t, nil)
+	global := ServiceVersion(cfg, "v0.2.0")
+	app := cfg.Applications[0] // max_attempts defaults to limits.max_attempts
+	if got := ApplicationServiceVersion(cfg, app, "v0.2.0"); got != global {
+		t.Errorf("default application = %q, want the global %q", got, global)
+	}
+	app.MaxAttempts = 5
+	five := ApplicationServiceVersion(cfg, app, "v0.2.0")
+	if five == global {
+		t.Error("an application attempt limit of 5 did not change service_version")
+	}
+	app.MaxAttempts, app.Documents.HTML = 3, "visible_text"
+	if got := ApplicationServiceVersion(cfg, app, "v0.2.0"); got == global || got == five {
+		t.Errorf("an application HTML policy did not change service_version: %q", got)
+	}
+	if cfg.Limits.MaxAttempts != 3 || cfg.Documents.HTML != "raw_html" {
+		t.Error("ApplicationServiceVersion changed the configuration")
+	}
+}
+
 func TestServiceVersion_stability(t *testing.T) {
 	base := ServiceVersion(parseVersionConfig(t, nil), "v0.1.0")
 	if again := ServiceVersion(parseVersionConfig(t, nil), "v0.1.0"); again != base {

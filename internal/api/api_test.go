@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	spec "github.com/kaanemec/vde/api"
+	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/config"
 )
 
@@ -21,13 +22,15 @@ type fakeHealth bool
 
 func (f fakeHealth) Healthy() bool { return bool(f) }
 
-// newTestServer returns a server with healthy roles whose log goes to the returned buffer.
+// newTestServer returns a server with healthy roles and a store holding the enabled
+// application testApp, whose log goes to the returned buffer. testToken issues tokens.
 func newTestServer(t *testing.T, trustedProxy bool) (*server, *bytes.Buffer) {
 	t.Helper()
 	var logs bytes.Buffer
 	cfg := &config.Config{Server: config.Server{TrustedProxy: trustedProxy}}
 	return newServer(Deps{
 		Config:         cfg,
+		Store:          newTestStore(t, testApp),
 		ServiceVersion: testServiceVersion,
 		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
 		Extractor:      fakeHealth(true),
@@ -278,10 +281,11 @@ func TestPlaceholderRoutes(t *testing.T) {
 	}
 	s, _ := newTestServer(t, false)
 	h := handlerOf(s)
+	token := testToken(t, s, auth.ScopeJobs)
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.target, func(t *testing.T) {
 			t.Parallel()
-			w := serve(h, tt.method, tt.target, nil)
+			w := serve(h, tt.method, tt.target, func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+token) })
 			if w.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status = %d, want 503", w.Code)
 			}
@@ -353,9 +357,10 @@ func TestHealthz(t *testing.T) {
 func TestAccessLog(t *testing.T) {
 	t.Parallel()
 	s, logs := newTestServer(t, false)
+	token := testToken(t, s, auth.ScopeJobs)
 	w := serve(handlerOf(s), http.MethodGet, "/v1/jobs/j_secretid?token=hunter2", func(r *http.Request) {
 		r.Header.Set(headerRequestID, "trace-7")
-		r.Header.Set("Authorization", "Bearer vde_abc_secret")
+		r.Header.Set("Authorization", "Bearer "+token)
 	})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want the placeholder 503", w.Code)
@@ -366,7 +371,7 @@ func TestAccessLog(t *testing.T) {
 	}
 	want := map[string]any{
 		"msg": "request", "method": "GET", "route": "GET /v1/jobs/{id}",
-		"status": float64(503), "request_id": "trace-7",
+		"status": float64(503), "request_id": "trace-7", "app_id": testApp,
 	}
 	for k, v := range want {
 		if line[k] != v {
@@ -378,7 +383,7 @@ func TestAccessLog(t *testing.T) {
 			t.Errorf("log has key %q outside the fixed set", k)
 		}
 	}
-	for _, leak := range []string{"hunter2", "token", "secretid", "vde_abc"} {
+	for _, leak := range []string{"hunter2", "token", "secretid", token[len(auth.Prefix):]} {
 		if strings.Contains(logs.String(), leak) {
 			t.Errorf("log contains %q: %s", leak, logs)
 		}
@@ -388,7 +393,13 @@ func TestAccessLog(t *testing.T) {
 func TestOpenAPIRoute(t *testing.T) {
 	t.Parallel()
 	s, _ := newTestServer(t, false)
-	w := serve(handlerOf(s), http.MethodGet, "/v1/openapi.yaml", nil)
+	if w := serve(handlerOf(s), http.MethodGet, "/v1/openapi.yaml", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("without a token: status = %d, want 401", w.Code)
+	}
+	token := testToken(t, s, auth.ScopeJobsRead)
+	w := serve(handlerOf(s), http.MethodGet, "/v1/openapi.yaml", func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer "+token)
+	})
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/yaml" {
 		t.Fatalf("got %d %q, want 200 application/yaml", w.Code, w.Header().Get("Content-Type"))
 	}

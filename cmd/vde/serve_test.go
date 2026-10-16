@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,7 @@ func TestCheckListen(t *testing.T) {
 		{name: "public address refused", server: config.Server{Listen: "203.0.113.7:8090"}, wantErr: true},
 		{name: "trusted proxy", server: config.Server{Listen: ":8090", TrustedProxy: true}},
 		{name: "TLS", server: config.Server{Listen: ":8443", TLS: config.TLS{CertFile: "c.pem", KeyFile: "k.pem"}}},
+		{name: "insecure http", server: config.Server{Listen: ":8090", InsecureHTTP: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,7 +56,7 @@ func TestRunServeRefusesPlainNonLoopback(t *testing.T) {
 
 func TestServeAndShutdown(t *testing.T) {
 	t.Parallel()
-	path := writeConfig(t, noPDFConfig)
+	path := writeConfig(t, noPDFConfig+"server: {data_dir: "+strconv.Quote(t.TempDir())+"}\n")
 	cfg, _, err := loadConfigEnv(path, false, func(string) string { return "" })
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +68,7 @@ func TestServeAndShutdown(t *testing.T) {
 	var logs syncBuffer
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, cfg, ln, slog.New(slog.NewJSONHandler(&logs, nil))) }()
+	go func() { done <- serve(ctx, cfg, ln, slog.New(slog.NewJSONHandler(&logs, nil)), newProvider) }()
 
 	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
 	if err != nil {

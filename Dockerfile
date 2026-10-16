@@ -52,7 +52,7 @@ VOLUME /var/lib/vde
 EXPOSE 8090
 
 # `vde healthcheck` requests /healthz on the configured listener (distroless has no curl).
-# The subcommand ships with epic 02/07; until then the check reports unhealthy.
+# Exit 0 on HTTP 200, else 1.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["vde", "healthcheck"]
 

@@ -27,8 +27,7 @@ var semverRe = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // framing texts and separators; the answer parser's leniency and the schema library's
 // version. It excludes secrets, listen addresses, data paths and application settings.
 //
-// For an application (v0.2) pass a copy of cfg whose Limits.MaxAttempts and
-// Documents.HTML are the application's effective values, so each application's jobs
+// For an application (v0.2) use ApplicationServiceVersion, so each application's jobs
 // carry the hash of the configuration that runs them.
 func ServiceVersion(cfg *config.Config, buildVersion string) string {
 	semver := devVersion
@@ -37,6 +36,19 @@ func ServiceVersion(cfg *config.Config, buildVersion string) string {
 	}
 	sum := sha256.Sum256(canonicalConfig(cfg))
 	return "vde-" + semver + "+" + hex.EncodeToString(sum[:4])
+}
+
+// ApplicationServiceVersion is ServiceVersion with the application's attempt limit and
+// HTML policy in place of the global ones (zero values keep the global ones).
+func ApplicationServiceVersion(cfg *config.Config, app config.Application, buildVersion string) string {
+	c := *cfg
+	if app.MaxAttempts > 0 {
+		c.Limits.MaxAttempts = app.MaxAttempts
+	}
+	if app.Documents.HTML != "" {
+		c.Documents.HTML = app.Documents.HTML
+	}
+	return ServiceVersion(&c, buildVersion)
 }
 
 type versionedConfig struct {

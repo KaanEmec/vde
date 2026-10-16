@@ -13,19 +13,25 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+
+	"github.com/kaanemec/vde/internal/config"
 )
 
 const (
-	headerRequestID   = "X-Request-Id"
-	maxRequestIDChars = 128
+	headerRequestID      = "X-Request-Id"
+	headerServiceVersion = "X-Service-Version"
+	maxRequestIDChars    = 128
 )
 
 // wrap applies the middleware chain, outermost first: panic recovery, request id,
-// HTTPS enforcement, access log. The per-route steps, authentication (epic 02) and rate
+// HTTPS enforcement, access log. The per-route steps, authentication (auth.go) and rate
 // limit and quota (epic 05), run inside the mux (routes).
 func (s *server) wrap(h http.Handler) http.Handler {
-	trustedProxy := s.deps.Config != nil && s.deps.Config.Server.TrustedProxy
-	return s.recoverPanics(requestID(requireHTTPS(trustedProxy, s.accessLog(h))))
+	var srv config.Server
+	if s.deps.Config != nil {
+		srv = s.deps.Config.Server
+	}
+	return s.recoverPanics(requestID(requireHTTPS(srv.TrustedProxy, srv.InsecureHTTP, s.accessLog(h))))
 }
 
 // recoverPanics answers a panicking handler with a 500 internal error body (never the
@@ -102,10 +108,11 @@ func validRequestID(id string) bool {
 // TLS connection passes. Behind a trusted proxy every other request must carry
 // X-Forwarded-Proto: https, from loopback too, since the proxy itself usually connects
 // from loopback. Without a trusted proxy only loopback peers may use plain HTTP; vde
-// serve also refuses to bind such a listener to a non-loopback address.
-func requireHTTPS(trustedProxy bool, next http.Handler) http.Handler {
+// serve also refuses to bind such a listener to a non-loopback address. insecure lets
+// every request through (server.insecure_http, trusted private networks only).
+func requireHTTPS(trustedProxy, insecure bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.TLS != nil || (trustedProxy && forwardedHTTPS(r)) || (!trustedProxy && loopbackPeer(r)) {
+		if insecure || r.TLS != nil || (trustedProxy && forwardedHTTPS(r)) || (!trustedProxy && loopbackPeer(r)) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -128,12 +135,21 @@ func loopbackPeer(r *http.Request) bool {
 	return err == nil && addr.Unmap().IsLoopback()
 }
 
+// logFields carries what inner steps learn for the access log line: authenticate sets
+// the application id.
+type logFields struct{ appID string }
+
+type logFieldsKey struct{}
+
 // accessLog writes one line per request with a fixed set of keys. It never logs the
-// query string, headers other than the request id, or the body. Epic 02 adds app_id.
+// query string, headers other than the request id, or the body. app_id is "" when the
+// request did not authenticate.
 func (s *server) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w}
+		fields := &logFields{}
+		r = r.WithContext(context.WithValue(r.Context(), logFieldsKey{}, fields))
 		next.ServeHTTP(sw, r)
 		status := sw.status
 		if !sw.wroteHeader {
@@ -144,14 +160,10 @@ func (s *server) accessLog(next http.Handler) http.Handler {
 			slog.String("route", r.Pattern), // "" when no route matched
 			slog.Int("status", status),
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-			slog.String("request_id", requestIDFrom(r.Context())))
+			slog.String("request_id", requestIDFrom(r.Context())),
+			slog.String("app_id", fields.appID))
 	})
 }
-
-// authenticate is the per-route authentication step. Epic 02 replaces it: bearer token
-// lookup by hash, expiry and revocation, scope check, the application in the context;
-// 401 unauthorized and 403 forbidden through writeError.
-func (s *server) authenticate(next http.Handler) http.Handler { return next }
 
 // limit is the per-route rate limit and quota step, after authenticate. Epic 05 replaces
 // it: X-Quota-Remaining and X-Quota-Reset on every authenticated response, 429
