@@ -1,6 +1,6 @@
 # Job: Configuration model
 
-Version: v0.1 · Epic: 01 Project foundation · Status: planned · Depends on: 01
+Version: v0.1 · Epic: 01 Project foundation · Status: done · Depends on: 01
 
 ## Goal
 
@@ -80,15 +80,15 @@ debug: {log_content: false}
 
 ## Tasks
 
-- [ ] Define the structs with yaml tags; keep durations as `time.Duration` parsed from
+- [x] Define the structs with yaml tags; keep durations as `time.Duration` parsed from
       strings; keep media types as strings validated later.
-- [ ] Load: read file, expand `${VAR}` only inside values that explicitly reference env
+- [x] Load: read file, expand `${VAR}` only inside values that explicitly reference env
       (`api_key_env` pattern, no implicit interpolation elsewhere), apply defaults.
-- [ ] Resolve secrets at load into an unexported field so they never serialize; `String()`
+- [x] Resolve secrets at load into an unexported field so they never serialize; `String()`
       and any dump redact them.
-- [ ] Unit tests: full example parses; missing file, bad YAML and unknown keys fail with
+- [x] Unit tests: full example parses; missing file, bad YAML and unknown keys fail with
       a path to the offending key (`yaml.v3` `KnownFields(true)`).
-- [ ] Document every key in `docs/operator/configuration.md` (table: key, type, default,
+- [x] Document every key in `docs/operator/configuration.md` (table: key, type, default,
       meaning). Placeholder file created here, finished in v0.2 epic 10.
 
 ## Acceptance criteria
