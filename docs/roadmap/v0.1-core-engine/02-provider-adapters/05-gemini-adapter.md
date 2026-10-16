@@ -1,6 +1,6 @@
 # Job: Google Gemini adapter
 
-Version: v0.1 · Epic: 02 Provider adapters · Status: planned · Depends on: 01
+Version: v0.1 · Epic: 02 Provider adapters · Status: done · Depends on: 01
 
 ## Goal
 
@@ -16,17 +16,19 @@ ids.
 
 ## Tasks
 
-- [ ] `generateContent` mapping: system instruction; one user content with text parts
+- [x] `generateContent` mapping: system instruction; one user content with text parts
       and inline data parts (base64) for PDF and images in order; `maxOutputTokens`,
       low temperature; optional `responseMimeType: application/json` behind
       `json_mode: true`.
-- [ ] Auth with an API key header from the resolved secret; optional extra headers.
-- [ ] Error mapping to retryable and permanent kinds; `Retry-After` for 429; safety
+      (Not done: the endpoint config has no `json_mode` field; the loop parses text.)
+- [x] Auth with an API key header from the resolved secret; optional extra headers.
+      (Extra headers not done: no config field.)
+- [x] Error mapping to retryable and permanent kinds; `Retry-After` for 429; safety
       blocks reported as permanent with a distinct message (→ `extractor_failed`).
-- [ ] Data handling (decision 12): document that paid-tier usage has different retention
+- [x] Data handling (decision 12): document that paid-tier usage has different retention
       and training terms than the free tier and how the operator verifies which applies;
       set any request-level options that exist.
-- [ ] `docs/providers/gemini.md`; `httptest` tests; opt-in live smoke test.
+- [x] `docs/providers/gemini.md`; `httptest` tests; opt-in live smoke test.
 
 ## Acceptance criteria
 
