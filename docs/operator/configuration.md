@@ -13,6 +13,9 @@ at start: restart `vde serve` after editing it or after changing a key variable.
 the operator commands (`vde token`, `vde app`, `vde healthcheck`) read are `server`, `auth`
 and `applications`; they decode the file but do not validate it. Messages of the check are
 explained in [troubleshooting](troubleshooting.md#config-check-messages).
+`vde config check --probe` is accepted but not implemented yet: no provider has a probe, so it
+only warns "probe not available" for each endpoint and checks nothing more. Reachability
+probing is planned for v0.3; until then test an endpoint with `vde extract` and a small document.
 
 ## `server` (used from v0.2)
 

@@ -51,7 +51,18 @@ applications:
       default: 24h
       force_none: false
 
-# Planned (v0.2 epic 07, job 02): protect /metrics with a bearer token so Prometheus can
-# scrape it from another container. Uncomment together with the `prometheus` profile.
+# Protect /metrics with a bearer token so it can be scraped from another container or from
+# the host. token_env is the NAME of the variable; vde refuses to start if it is unset.
+# Uncomment together with the VDE_METRICS_TOKEN line of the vde service (docker-compose.yaml)
+# and the value in .env. Without it, /metrics answers only loopback peers, so not the host
+# through the published port and not Prometheus.
 # metrics:
 #   token_env: VDE_METRICS_TOKEN
+#
+# The admin API (/admin/v1, admin tokens only) listens on 127.0.0.1:8091 inside the
+# container by default. To publish it on the host's loopback, set the line below and
+# uncomment the 8091 port in docker-compose.yaml (a non-loopback address needs
+# insecure_http here, or server.tls). Without it, run the token commands with
+# `docker compose exec` (README.md, "Admin API").
+# admin:
+#   listen: ":8091"
