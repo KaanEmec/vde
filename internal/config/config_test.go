@@ -264,7 +264,15 @@ func TestSecretsNeverPrinted(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A configuration with problems, so error and issue output is exercised too.
+	broken := loadExample(t)
+	broken.Limits.JobTimeout = time.Hour
+	broken.Endpoints["anthropic"].Models = nil
+	broken.Endpoints["gemini"].APIKeyEnv = "${GEMINI_API_KEY}"
+
 	outputs := map[string]string{
+		"issues":          fmt.Sprintf("%v", broken.Validate()),
+		"issues error":    fmt.Sprint(broken.Validate().Err(true)),
 		"String":          cfg.String(),
 		"%v config":       fmt.Sprintf("%v", cfg),
 		"%+v config":      fmt.Sprintf("%+v", cfg),

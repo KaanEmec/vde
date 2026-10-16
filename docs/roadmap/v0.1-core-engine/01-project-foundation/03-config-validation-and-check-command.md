@@ -1,6 +1,6 @@
 # Job: Configuration validation and `vde config check`
 
-Version: v0.1 · Epic: 01 Project foundation · Status: planned · Depends on: 02
+Version: v0.1 · Epic: 01 Project foundation · Status: done · Depends on: 02
 
 ## Goal
 
@@ -17,7 +17,7 @@ group."
 
 ## Tasks
 
-- [ ] Validation rules, each with a test:
+- [x] Validation rules, each with a test:
   - every group entry references a defined endpoint and a model declared on it;
   - every endpoint-model pair has a non-empty `accepts` list of known media types;
   - both roles reference a defined group; a group may serve both roles;
@@ -31,13 +31,15 @@ group."
     allowed only for `openai_compatible` endpoints;
   - `debug.log_content: true` together with a non-loopback `server.listen` is an error;
   - application settings (v0.2) validated when present: unique ids, positive quotas.
-- [ ] `vde config check [--config path] [--probe] [--strict]`: prints a summary (endpoints,
+- [x] `vde config check [--config path] [--probe] [--strict]`: prints a summary (endpoints,
       groups, roles, which media types each role can read, computed `service_version`
       once that job exists) and exits 0, or lists all errors and exits 1. Never prints
       secrets.
 - [ ] `--probe` makes one cheap request per endpoint (a models list or a one-token
       completion) and reports reachability; failures are warnings, not errors.
+      (Flag and hook done: `probes` in `cmd/vde/config.go`; each adapter job adds its probe.)
 - [ ] `serve` and `extract` run the same validation at start and refuse to start on errors.
+      (Shared `loadConfig` in `cmd/vde/config.go`; used when those commands land.)
 
 ## Acceptance criteria
 
