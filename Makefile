@@ -11,7 +11,7 @@ LDFLAGS := -s -w \
 	-X $(MODULE)/internal/version.Date=$(DATE)
 GOBUILD := CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: build test lint check scenarios live cross clean image image-multiarch
+.PHONY: build test lint check scenarios live cross clean image image-multiarch conformance
 
 build:
 	$(GOBUILD) -o bin/vde ./cmd/vde
@@ -53,3 +53,8 @@ image:
 image-multiarch:
 	docker buildx build --platform linux/amd64,linux/arm64 $(IMAGEARGS) \
 		-t $(IMAGE):$(IMAGE_TAG) $(if $(PUSH),--push,) .
+
+# The black-box conformance suite for the TravelInbox contract (docs/conformance/travelinbox-v1.md):
+# builds vde, runs serve against a fake OpenAI-compatible provider, walks contract §14 items 1-9.
+conformance:
+	go test ./test/conformance/ -count=1
