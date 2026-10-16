@@ -1,0 +1,108 @@
+From: Harbour View Hotel <bookings@harbourview.example>
+To: Jane Example <jane@example.com>
+Subject: Your booking confirmation HV-48213
+Date: Fri, 20 Feb 2026 09:15:00 +0000
+Message-ID: <hv-48213@harbourview.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-48213"
+
+--mixed-48213
+Content-Type: multipart/alternative; boundary="alt-48213"
+
+--alt-48213
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+HARBOUR VIEW HOTEL - BOOKING CONFIRMATION
+
+Confirmation number: HV-48213
+Issued: 2026-02-20
+
+Guest: Jane Example
+Booked by: Example Travel Desk
+Address: 12 Quay Street, Exampleton
+
+Check-in: 2026-03-14 (from 15:00)
+Check-out: 2026-03-17 (until 11:00)
+Room: Double room, sea view, 3 nights
+
+  Room, 3 nights x EUR 120.00 = EUR 360.00
+  Breakfast, 3 x EUR 15.00 = EUR 45.00
+  City tax, 3 nights x EUR 2.50 = EUR 7.50
+
+Total: EUR 412.50
+Payment: pay at the hotel
+
+Free cancellation until 2026-03-10.
+
+--alt-48213
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Booking confirmation HV-48213</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #222; }
+    table { border-collapse: collapse; }
+    td, th { padding: 4px 12px; text-align: left; }
+    .total { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Harbour View Hotel - booking confirmation</h1>
+  <p>Confirmation number: <b>HV-48213</b><br>Issued: 2026-02-20</p>
+  <p>Guest: Jane Example<br>
+     Booked by: Example Travel Desk<br>
+     Address: 12 Quay Street, Exampleton</p>
+  <p>Check-in: 2026-03-14 (from 15:00)<br>
+     Check-out: 2026-03-17 (until 11:00)<br>
+     Room: Double room, sea view, 3 nights</p>
+  <table>
+    <tr><th>Item</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
+    <tr><td>Room (per night)</td><td>3</td><td>EUR 120.00</td><td>EUR 360.00</td></tr>
+    <tr><td>Breakfast</td><td>3</td><td>EUR 15.00</td><td>EUR 45.00</td></tr>
+    <tr><td>City tax (per night)</td><td>3</td><td>EUR 2.50</td><td>EUR 7.50</td></tr>
+    <tr class="total"><td colspan="3">Total</td><td>EUR 412.50</td></tr>
+  </table>
+  <p>Payment: pay at the hotel.</p>
+  <p>Free cancellation until 2026-03-10.</p>
+  <p style="color:#888;font-size:12px">This message is a synthetic example for the vde sample set.
+     Do not reply.</p>
+</body>
+</html>
+
+--alt-48213--
+
+--mixed-48213
+Content-Type: application/pdf; name="booking.pdf"
+Content-Disposition: attachment; filename="booking.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA1OTUg
+ODQyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4g
+Pj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA3MTUgPj4Kc3RyZWFtCkJUCi9GMSAxMiBU
+ZgoxNCBUTAo1NiA3ODAgVGQKL0YxIDE0IFRmCihIQVJCT1VSIFZJRVcgSE9URUwgLSBCT09LSU5H
+IENPTkZJUk1BVElPTikgVGogVCoKL0YxIDEyIFRmCigpIFRqIFQqCihDb25maXJtYXRpb24gbnVt
+YmVyOiBIVi00ODIxMykgVGogVCoKKElzc3VlZDogMjAyNi0wMi0yMCkgVGogVCoKKCkgVGogVCoK
+KEd1ZXN0OiBKYW5lIEV4YW1wbGUpIFRqIFQqCihCb29rZWQgYnk6IEV4YW1wbGUgVHJhdmVsIERl
+c2spIFRqIFQqCihBZGRyZXNzOiAxMiBRdWF5IFN0cmVldCwgRXhhbXBsZXRvbikgVGogVCoKKCkg
+VGogVCoKKENoZWNrLWluOiAyMDI2LTAzLTE0IFwoZnJvbSAxNTowMFwpKSBUaiBUKgooQ2hlY2st
+b3V0OiAyMDI2LTAzLTE3IFwodW50aWwgMTE6MDBcKSkgVGogVCoKKFJvb206IERvdWJsZSByb29t
+LCBzZWEgdmlldywgMyBuaWdodHMpIFRqIFQqCigpIFRqIFQqCihSb29tLCAzIG5pZ2h0cyB4IEVV
+UiAxMjAuMDAgPSBFVVIgMzYwLjAwKSBUaiBUKgooQnJlYWtmYXN0LCAzIHggRVVSIDE1LjAwID0g
+RVVSIDQ1LjAwKSBUaiBUKgooQ2l0eSB0YXgsIDMgbmlnaHRzIHggRVVSIDIuNTAgPSBFVVIgNy41
+MCkgVGogVCoKKCkgVGogVCoKKFRvdGFsOiBFVVIgNDEyLjUwKSBUaiBUKgooUGF5bWVudDogcGF5
+IGF0IHRoZSBob3RlbCkgVGogVCoKKCkgVGogVCoKKEZyZWUgY2FuY2VsbGF0aW9uIHVudGlsIDIw
+MjYtMDMtMTAuKSBUaiBUKgpFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0Zv
+bnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhIC9FbmNvZGluZyAvV2luQW5z
+aUVuY29kaW5nID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAw
+MDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAw
+MDAyNDEgMDAwMDAgbiAKMDAwMDAwMTAwNiAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jv
+b3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjExMDMKJSVFT0YK
+
+--mixed-48213--

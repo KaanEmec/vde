@@ -1,0 +1,60 @@
+# Primary and fallback per role, across different providers.
+#
+#   export ANTHROPIC_API_KEY=... GEMINI_API_KEY=... OPENROUTER_API_KEY=...
+#   vde config check --config examples/vde.failover.yaml
+#
+# Each group lists endpoint-model pairs in order: a call goes to the first pair and moves to
+# the next on a retryable failure (timeout, 429, 5xx), within failover.max_tries and
+# failover.max_total_time (which must stay below limits.job_timeout). Every endpoint in a
+# group may receive the document, so approve each one separately.
+#
+# The judge runs on different models than the extractor so that it does not share its
+# mistakes.
+# `accepts` is YOUR declaration of the media types a model reads natively; vde never
+# probes a model. Take the list from the provider's current documentation and keep it
+# conservative: a type you list that the model cannot read makes jobs fail.
+# Reference for every key: docs/operator/configuration.md
+
+endpoints:
+  anthropic:
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    models:
+      claude-sonnet-4-5:
+        accepts: [application/pdf, image/png, image/jpeg, text/plain, text/html]
+      claude-haiku-4-5:
+        accepts: [application/pdf, image/png, image/jpeg, text/plain, text/html]
+  gemini:
+    provider: gemini
+    api_key_env: GEMINI_API_KEY
+    models:
+      gemini-2.5-flash:
+        accepts: [application/pdf, image/png, image/jpeg, text/plain, text/html]
+  openrouter:
+    provider: openai_compatible
+    preset: openrouter
+    api_key_env: OPENROUTER_API_KEY
+    models:
+      anthropic/claude-sonnet-4.5:
+        accepts: [image/png, image/jpeg, text/plain, text/html]
+
+groups:
+  extraction:
+    endpoints:
+      - {endpoint: anthropic, model: claude-sonnet-4-5}   # primary
+      - {endpoint: gemini, model: gemini-2.5-flash}       # fallback on another provider
+    failover:
+      max_tries: 3
+      max_total_time: 3m
+  review:
+    endpoints:
+      - {endpoint: gemini, model: gemini-2.5-flash}       # primary
+      - {endpoint: anthropic, model: claude-haiku-4-5}    # fallback
+      - {endpoint: openrouter, model: anthropic/claude-sonnet-4.5}
+    failover:
+      max_tries: 3
+      max_total_time: 3m
+
+roles:
+  extractor: {group: extraction}
+  judge: {group: review}

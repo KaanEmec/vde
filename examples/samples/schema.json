@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Document summary",
+  "description": "A generic description of a business document: what it is, when, who is involved and what money it mentions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "date", "parties", "total", "line_items"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "What the document is, as stated in it (for example a heading)."
+    },
+    "reference": {
+      "type": ["string", "null"],
+      "description": "The reference or confirmation number printed on the document, or null."
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "The date the document was issued, as YYYY-MM-DD."
+    },
+    "parties": {
+      "type": "array",
+      "description": "The people and organisations the document names.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "role"],
+        "properties": {
+          "name": {"type": "string"},
+          "role": {"type": "string", "description": "How the document describes the party, for example issuer, customer or guest."}
+        }
+      }
+    },
+    "total": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": {"type": "number"},
+        "currency": {"type": "string", "pattern": "^[A-Z]{3}$", "description": "ISO 4217 code."}
+      }
+    },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "quantity", "unit_amount", "amount"],
+        "properties": {
+          "description": {"type": "string"},
+          "quantity": {"type": "number"},
+          "unit_amount": {"type": "number"},
+          "amount": {"type": "number", "description": "quantity times unit_amount, as printed."}
+        }
+      }
+    }
+  }
+}

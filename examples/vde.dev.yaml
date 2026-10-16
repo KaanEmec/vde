@@ -1,0 +1,28 @@
+# Development configuration: one provider, one model for both roles, one secret.
+#
+#   export ANTHROPIC_API_KEY=...
+#   vde config check --config examples/vde.dev.yaml
+#
+# `accepts` is YOUR declaration of the media types a model reads natively; vde never
+# probes a model. Take the list from the provider's current documentation and keep it
+# conservative: a type you list that the model cannot read makes jobs fail.
+# Reference for every key: docs/operator/configuration.md
+
+endpoints:
+  anthropic:
+    provider: anthropic            # base_url defaults to https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY # the NAME of the variable; the key itself never goes in this file
+    models:
+      claude-sonnet-4-5:
+        accepts: [application/pdf, image/png, image/jpeg, image/webp, text/plain, text/html]
+        # Conservative alternative if you only send page images and text:
+        # accepts: [image/png, image/jpeg, text/plain, text/html]
+
+groups:
+  main:
+    endpoints:
+      - {endpoint: anthropic, model: claude-sonnet-4-5}
+
+roles:
+  extractor: {group: main}
+  judge: {group: main}   # the same model checks its own work here; use two models for real use

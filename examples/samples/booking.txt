@@ -1,0 +1,21 @@
+HARBOUR VIEW HOTEL - BOOKING CONFIRMATION
+
+Confirmation number: HV-48213
+Issued: 2026-02-20
+
+Guest: Jane Example
+Booked by: Example Travel Desk
+Address: 12 Quay Street, Exampleton
+
+Check-in: 2026-03-14 (from 15:00)
+Check-out: 2026-03-17 (until 11:00)
+Room: Double room, sea view, 3 nights
+
+  Room, 3 nights x EUR 120.00 = EUR 360.00
+  Breakfast, 3 x EUR 15.00 = EUR 45.00
+  City tax, 3 nights x EUR 2.50 = EUR 7.50
+
+Total: EUR 412.50
+Payment: pay at the hotel
+
+Free cancellation until 2026-03-10.
