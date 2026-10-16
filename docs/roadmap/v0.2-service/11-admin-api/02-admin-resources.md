@@ -1,6 +1,6 @@
 # Job: Applications, tokens and jobs administration
 
-Version: v0.2 · Epic: 11 Admin API · Status: planned · Depends on: 01, 02-01, 02-02
+Version: v0.2 · Epic: 11 Admin API · Status: in progress · Depends on: 01, 02-01, 02-02
 
 ## Goal
 

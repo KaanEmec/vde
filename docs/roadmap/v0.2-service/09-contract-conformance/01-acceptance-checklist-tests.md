@@ -1,6 +1,6 @@
 # Job: Acceptance checklist as automated tests
 
-Version: v0.2 · Epic: 09 Contract conformance · Status: planned · Depends on: epics 01–08
+Version: v0.2 · Epic: 09 Contract conformance · Status: in progress · Depends on: epics 01–08
 
 ## Goal
 
