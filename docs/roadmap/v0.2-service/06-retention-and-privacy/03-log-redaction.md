@@ -1,6 +1,6 @@
 # Job: Log redaction and the debug content switch
 
-Version: v0.2 · Epic: 06 Retention and privacy · Status: in progress (logging package, redaction test and operator page done; wiring open) · Depends on: 01-01
+Version: v0.2 · Epic: 06 Retention and privacy · Status: in progress (wiring done; provider adapter bodies and content-log call sites open) · Depends on: 01-01
 
 ## Goal
 
@@ -22,8 +22,8 @@ model. Brief: "exclude credentials and document contents from routine logs."
       attribute whose key is not in the allow-list and truncates string values over 256
       characters, as a safety net against future mistakes. The list also holds the keys
       the existing code logs (`application_id`, `reason`, `error`, `panic`, `stack`, ...);
-      wiring `logging.New` into `serve` and `extract` in place of `newLogger` is open:
-      wired by epic 05/07 agent.
+      `newLogger` in `cmd/vde` (used by `serve` and `extract`) now returns `logging.New`;
+      the allow-list gained `audit`, `actor` and `details` for `audit.log` lines.
 - [ ] (not started) Provider adapters log status codes and provider error *codes*, never response
       bodies; the error type keeps the body in an unexported field available only when
       `debug.log_content` is on.
@@ -31,9 +31,9 @@ model. Brief: "exclude credentials and document contents from routine logs."
       listener is loopback (v0.1 job 01-03 rule); when on, a startup warning is logged
       and content goes to a separate log file, never stdout. Done: `logging.OpenContentLog`
       / `NewContentLogger` / `(*ContentLogger).Log` (nil-safe, 0600, refuses standard
-      streams). Open, wired by epic 05/07 agent: construct it in `serve` only when
-      `debug.log_content` is on, choose the file (`<data_dir>/content.log`), log the
-      startup warning, and call it from the worker and adapters.
+      streams). Wired: `serve` opens `<data_dir>/content.log` only when
+      `debug.log_content` is on and logs a startup warning. Still open: calling it from
+      the worker and the adapters (the worker has no content-log hook yet).
 - [x] Redaction test (`internal/logging/redaction_test.go`: nine extraction-loop
       scenarios with `internal/provider/fake` and sentinels in the document, both
       instructions, the schema and the answers; the `cmd/vde` scenario suite and metric

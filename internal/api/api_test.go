@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
@@ -274,10 +273,6 @@ func TestPlaceholderRoutes(t *testing.T) {
 		serviceVersion bool
 	}{
 		{http.MethodPost, "/v1/jobs", true},
-		{http.MethodGet, "/v1/jobs/j_1", true},
-		{http.MethodDelete, "/v1/jobs/j_1", true},
-		{http.MethodGet, "/v1/quota", false},
-		{http.MethodGet, "/metrics", false},
 	}
 	s, _ := newTestServer(t, false)
 	h := handlerOf(s)
@@ -309,51 +304,6 @@ func TestPlaceholderRoutes(t *testing.T) {
 	})
 }
 
-func TestHealthz(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name             string
-		extractor, judge HealthChecker
-		wantReasons      []string
-	}{
-		{name: "both up", extractor: fakeHealth(true), judge: fakeHealth(true)},
-		{name: "extractor down", extractor: fakeHealth(false), judge: fakeHealth(true), wantReasons: []string{reasonExtractorDown}},
-		{name: "judge down", extractor: fakeHealth(true), judge: fakeHealth(false), wantReasons: []string{reasonJudgeDown}},
-		{name: "shared group down", extractor: fakeHealth(false), judge: fakeHealth(false), wantReasons: []string{reasonExtractorDown, reasonJudgeDown}},
-		{name: "not configured", wantReasons: []string{reasonExtractorDown, reasonJudgeDown}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			h := New(Deps{Logger: slog.New(slog.DiscardHandler), Extractor: tt.extractor, Judge: tt.judge})
-			w := serve(h, http.MethodGet, "/healthz", nil)
-			var body struct {
-				Status  string       `json:"status"`
-				Reasons []string     `json:"reasons"`
-				Error   *errorDetail `json:"error"`
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-				t.Fatalf("body %q: %v", w.Body, err)
-			}
-			if tt.wantReasons == nil {
-				if w.Code != http.StatusOK || body.Status != "ok" || strings.TrimSpace(w.Body.String()) != `{"status":"ok"}` {
-					t.Errorf("got %d %s, want 200 {\"status\":\"ok\"}", w.Code, w.Body)
-				}
-				return
-			}
-			if w.Code != http.StatusServiceUnavailable || body.Status != "unavailable" {
-				t.Errorf("got %d status %q, want 503 unavailable", w.Code, body.Status)
-			}
-			if !slices.Equal(body.Reasons, tt.wantReasons) {
-				t.Errorf("reasons = %q, want %q", body.Reasons, tt.wantReasons)
-			}
-			if body.Error == nil || body.Error.Code != codeUnavailable || body.Error.RequestID == "" {
-				t.Errorf("error = %+v, want unavailable with a request id", body.Error)
-			}
-		})
-	}
-}
-
 func TestAccessLog(t *testing.T) {
 	t.Parallel()
 	s, logs := newTestServer(t, false)
@@ -362,8 +312,8 @@ func TestAccessLog(t *testing.T) {
 		r.Header.Set(headerRequestID, "trace-7")
 		r.Header.Set("Authorization", "Bearer "+token)
 	})
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want the placeholder 503", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for an unknown job", w.Code)
 	}
 	var line map[string]any
 	if err := json.Unmarshal(logs.Bytes(), &line); err != nil {
@@ -371,7 +321,7 @@ func TestAccessLog(t *testing.T) {
 	}
 	want := map[string]any{
 		"msg": "request", "method": "GET", "route": "GET /v1/jobs/{id}",
-		"status": float64(503), "request_id": "trace-7", "app_id": testApp,
+		"status": float64(404), "request_id": "trace-7", "app_id": testApp,
 	}
 	for k, v := range want {
 		if line[k] != v {

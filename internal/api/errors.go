@@ -61,7 +61,6 @@ const (
 	msgUnauthorized     = "A valid bearer token is required."
 	msgForbidden        = "The token's scopes do not allow this request."
 	msgInternal         = "The service failed to handle the request."
-	msgNotImplemented   = "This endpoint is not available in this build yet."
 	msgServiceUnhealthy = "The service cannot accept jobs right now."
 )
 

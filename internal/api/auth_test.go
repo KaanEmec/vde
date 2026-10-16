@@ -204,12 +204,12 @@ func TestAuthenticateScopes(t *testing.T) {
 	}{
 		{readOnly, http.MethodPost, "/v1/jobs", http.StatusForbidden},
 		{readOnly, http.MethodDelete, "/v1/jobs/j_1", http.StatusForbidden},
-		{readOnly, http.MethodGet, "/v1/jobs/j_1", http.StatusServiceUnavailable}, // placeholder handler
-		{readOnly, http.MethodGet, "/v1/quota", http.StatusServiceUnavailable},
+		{readOnly, http.MethodGet, "/v1/jobs/j_1", http.StatusNotFound}, // past auth: an unknown job
+		{readOnly, http.MethodGet, "/v1/quota", http.StatusOK},
 		{readOnly, http.MethodGet, "/v1/openapi.yaml", http.StatusOK},
 		{full, http.MethodPost, "/v1/jobs", http.StatusServiceUnavailable},
-		{full, http.MethodDelete, "/v1/jobs/j_1", http.StatusServiceUnavailable},
-		{full, http.MethodGet, "/v1/quota", http.StatusServiceUnavailable},
+		{full, http.MethodDelete, "/v1/jobs/j_1", http.StatusNotFound},
+		{full, http.MethodGet, "/v1/quota", http.StatusOK},
 	}
 	for _, tt := range tests {
 		w := serve(h, tt.method, tt.target, func(r *http.Request) {

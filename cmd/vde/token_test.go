@@ -161,8 +161,8 @@ func TestAuthEndToEnd(t *testing.T) {
 	store.Close()
 
 	jobs := base + "/v1/jobs"
-	if got := request(t, http.MethodGet, base+"/v1/quota", tokenA); got != http.StatusServiceUnavailable {
-		t.Errorf("valid token: GET /v1/quota = %d, want the authenticated placeholder 503", got)
+	if got := request(t, http.MethodGet, base+"/v1/quota", tokenA); got != http.StatusOK {
+		t.Errorf("valid token: GET /v1/quota = %d, want 200", got)
 	}
 	for _, tt := range []struct{ name, token string }{
 		{"missing", ""},
@@ -177,8 +177,8 @@ func TestAuthEndToEnd(t *testing.T) {
 	if got := request(t, http.MethodPost, jobs, tokenB); got != http.StatusForbidden {
 		t.Errorf("jobs:read token: POST /v1/jobs = %d, want 403", got)
 	}
-	if got := request(t, http.MethodGet, jobs+"/j_1", tokenB); got != http.StatusServiceUnavailable {
-		t.Errorf("jobs:read token: GET /v1/jobs/j_1 = %d, want the authenticated placeholder 503", got)
+	if got := request(t, http.MethodGet, jobs+"/j_1", tokenB); got != http.StatusNotFound {
+		t.Errorf("jobs:read token: GET /v1/jobs/j_1 = %d, want 404 for an unknown job", got)
 	}
 
 	code, out, _ := cli("token", "list", "--config", path, "--app", "app-a")
@@ -228,9 +228,9 @@ func TestAuthEndToEnd(t *testing.T) {
 	}
 
 	checkAudit(t, filepath.Join(dataDir, "vde.db"), []string{
-		"app.enabled app-a", "app.enabled app-b", "token.created app-a", "token.created app-b",
+		"app.enabled app-a", "app.enabled app-b", "config.loaded ", "token.created app-a", "token.created app-b",
 		"auth.failed ", "auth.failed ", "auth.failed app-a", "auth.failed app-a", "token.revoked app-a",
-		"auth.failed app-a", "app.disabled app-b", "auth.failed app-b",
+		"auth.failed app-a", "app.disabled app-b", "config.loaded ", "auth.failed app-b",
 	})
 
 	// The database never holds a token secret (job 02 acceptance).
@@ -241,6 +241,9 @@ func TestAuthEndToEnd(t *testing.T) {
 		t.Fatal("no database files")
 	}
 	for _, f := range files {
+		if fi, err := os.Stat(f); err == nil && fi.IsDir() {
+			continue // blobs: no job was stored
+		}
 		data, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)

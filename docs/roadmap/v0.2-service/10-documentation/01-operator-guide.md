@@ -1,6 +1,6 @@
 # Job: Operator guide
 
-Version: v0.2 · Epic: 10 Documentation · Status: planned · Depends on: epics 01–08
+Version: v0.2 · Epic: 10 Documentation · Status: in progress · Depends on: epics 01–08
 
 ## Goal
 
