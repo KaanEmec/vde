@@ -1,6 +1,6 @@
 # v0.2 Service
 
-Status: in progress · Depends on: v0.1
+Status: done (2026-10-16, see the exit criterion check below) · Depends on: v0.1
 
 ## Goal
 
@@ -49,3 +49,28 @@ Epics 01, 03 and 08 can start together. Epic 11 follows 02. Epic 09 is the relea
 
 Postgres, S3, Bedrock and Vertex, classifier judge, escalation, image conversion,
 webhooks, synchronous endpoint, multiple replicas (all v0.3).
+
+## Exit criterion check (2026-10-16)
+
+Checked against a local `vde serve` built from `main` with the fake provider
+(`test/conformance`, 58 tests, `make conformance`) and against a real model
+(Nous Research, `google/gemini-3.8-flash`, via the OpenAI-compatible adapter):
+
+| # | Item | Result |
+| --- | --- | --- |
+| 1 | MUSTs of §2–§12; TravelInbox live test | Conformance suite green (traceability in `docs/conformance/travelinbox-v1.md`); `TestServiceLive` PASS (`one_document`; `corpus_end_to_end` skipped: needs TravelInbox's own DB and S3) |
+| 2 | No token, revoked, foreign → 401, 401, 404, no provider call | `TestItem02` |
+| 3 | Text, PDF with pages, JPEG, HTML terminal with `service_version` and `attempts` | `TestItem03` (plus `.eml`) |
+| 4 | Schema violation → no judge call, `rejected` with candidate kept | `TestItem04` |
+| 5 | Judge group unreachable → `failed/provider_unavailable`, never `accepted` | `TestItem05` |
+| 6 | Primary extractor unreachable → fallback serves | `TestItem06` |
+| 7 | Spent quota → 429 with the three headers; polls work | `TestItem07` |
+| 8 | `retention: none` → content gone at terminal, 404 after first read | `TestItem08` (+ WAL checkpoint fix) |
+| 9 | Repeated `Idempotency-Key` → same job, no model call | `TestItem09` |
+| 10 | TravelInbox evaluation reports a number | `make eval EXTRACTOR=service`: 50 documents, no-correction share flights 33.3 %, lodging 5.9 %; 56 jobs all accepted first attempt, median 23.4 s, p95 61.1 s |
+
+Open after v0.2: the `debug.log_content` sink is opened but not written (06-03), the
+"reviewer tries the docs" acceptance items (10-01, 10-03), container-mode conformance
+(local Docker lacks buildx), provider token usage not exposed (09-02 D1; v0.3 follow-up).
+The low no-correction share is a judge leniency and prompt matter for the evaluation
+harness (v0.3 epic 06), not a contract failure.

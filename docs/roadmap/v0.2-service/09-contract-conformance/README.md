@@ -9,5 +9,5 @@ against a deployment, and deviations and decisions are fed back as a contract re
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [Acceptance checklist as automated tests](01-acceptance-checklist-tests.md) | done |
-| 02 | [TravelInbox live test and evaluation run](02-travelinbox-live-test.md) | in progress |
+| 02 | [TravelInbox live test and evaluation run](02-travelinbox-live-test.md) | done |
 | 03 | [Contract review and feedback](03-contract-review.md) | in progress |

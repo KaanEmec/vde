@@ -207,3 +207,76 @@ their tests no longer skip; their history and resolution are in the
   accepts an empty `feedback` then and checks that any entry is the judge's.
 - Section 5 says `feedback` is empty on `accepted`, section 7 that an accept's advisory
   entries are forwarded. The suite does not assert either for an accept carrying entries.
+
+## Live test and evaluation run
+
+Roadmap job `v0.2-service/09-contract-conformance/02-travelinbox-live-test`, contract
+section 14 (the live check and item 10).
+
+| | |
+| --- | --- |
+| Date | 2026-10-16 (13:26 to 13:37 UTC) |
+| `service_version` | `vde-0.0.0-dev+60342a37` (from `X-Service-Version`, the job body and TravelInbox's report) |
+| Build | `go build -o bin/vde ./cmd/vde` (go1.27.1, darwin/arm64), so the release part is `0.0.0-dev`, not a tagged release candidate |
+| Deployment | Local binary, `vde serve` on `127.0.0.1:8090` (loopback, plain HTTP), SQLite data directory, worker size 4 (default), admin listener off; not the compose example |
+| Provider and models | Nous Research inference API (`openai_compatible`), `google/gemini-3.8-flash` for both roles (extractor group `extraction`, judge group `review`, one endpoint each); `max_attempts: 3`, `job_timeout: 5m` |
+| Application | `travelinbox-dev`, quota 200 per `P1D`, retention default; one `jobs` token, 30 days |
+| TravelInbox | `backend/` at commit `aa818b8` (prompt v1, schema v1), `EXTRACTION_URL=http://127.0.0.1:8090` (base URL without `/v1`; the client appends `/v1/...`) |
+
+### Live test
+
+`EXTRACTION_URL=… EXTRACTION_TOKEN=… go test ./internal/extract -run TestServiceLive -count=1 -v`:
+**PASS** (30.6 s).
+
+| Test | Result |
+| --- | --- |
+| `TestServiceLive/one_document` | PASS (30.0 s; `service_version` and `attempts` set) |
+| `TestServiceLive/corpus_end_to_end` | SKIP: needs TravelInbox's test database and object store (`DATABASE_URL`, `S3_ENDPOINT`), which the contract's command does not set. The same corpus goes through the same client in the evaluation below. |
+
+### Evaluation
+
+`EXTRACTION_URL=… EXTRACTION_TOKEN=… make eval EXTRACTOR=service`, as TravelInbox's tool
+reports it (report `backend/eval-runs/20261016T133702Z.json` in the TravelInbox checkout,
+gitignored there):
+
+50 documents, 13 need no correction, 0 failed to extract.
+
+| Kind | Docs | Truth | Matched | Missing | Extra | Precision | Recall | No correction |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| car_rental | 3 | 3 | 3 | 0 | 0 | 100.0% | 100.0% | 0.0% (0/3) |
+| dining | 5 | 5 | 5 | 0 | 0 | 100.0% | 100.0% | 80.0% (4/5) |
+| ferry | 1 | 1 | 1 | 0 | 0 | 100.0% | 100.0% | 0.0% (0/1) |
+| flight | 18 | 21 | 21 | 0 | 2 | 91.3% | 100.0% | 33.3% (6/18) |
+| lodging | 17 | 17 | 17 | 0 | 1 | 94.4% | 100.0% | 5.9% (1/17) |
+| rail | 5 | 5 | 5 | 0 | 2 | 71.4% | 100.0% | 40.0% (2/5) |
+| transfer | 2 | 2 | 2 | 0 | 0 | 100.0% | 100.0% | 0.0% (0/2) |
+
+Field accuracy over matched reservations: title 88.9%, provider 72.2%, booking_ref 100.0%,
+status 100.0%, starts_at_local 100.0%, ends_at_local 100.0%, start_place 98.1%, end_place
+94.4%, travellers 66.7%, price 100.0%, cancellation 94.4%, details 66.7%.
+
+Targets of TravelInbox's `docs/PRODUCT.md` (documents needing no correction): flight at
+least 90%, got **33.3% (6/18)**; lodging at least 90%, got **5.9% (1/17)**. The tool prints
+`RESULT: FAIL` and exits 1 because of these targets. Item 10 asks only that a number is
+reported, and the targets are TravelInbox's prompt problem, so item 10 holds.
+
+### Service side
+
+Totals for the whole run (1 job from the live test, 55 from the evaluation: 50 documents
+and 5 email attachments), from `/metrics` and the job store:
+
+| | |
+| --- | --- |
+| Jobs by status | accepted 56, rejected 0, failed 0; every job `attempts: 1` |
+| Provider calls | extractor 56, judge 56, all `outcome="ok"`; no failover, no retries |
+| Documents | `text/plain`, `text/html`, `application/pdf`, `image/jpeg`; representations `text` and `native`; at most 2 pages |
+| Requests | `POST /v1/jobs` 202 × 56, `GET /v1/jobs/{id}` 200 × 248; no 4xx or 5xx; every job sent an `Idempotency-Key` and `retention: none`, and every job's content was deleted at the first terminal read |
+| Job duration (created to terminal, queue included) | median 23.4 s, p95 61.1 s, min 14.8 s, max 90.3 s, mean 29.5 s; queue time median 6 ms. The `vde_job_duration_seconds` histogram agrees: 18 jobs ≤ 20 s, 36 ≤ 30 s, 53 ≤ 60 s, 56 ≤ 120 s |
+| Provider latency | extractor mean 21.4 s (1199 s over 56 calls), judge mean 8.0 s (450 s over 56 calls) |
+| Token usage and cost | Not observable: `vde serve` records no token usage (no metric, log field or stored column). See the job file, defect D1. |
+| Logs | 372 lines, 0 `WARN`, 0 `ERROR`, no content |
+
+The judge accepted every first candidate (56 of 56) while TravelInbox's ground truth needs a
+correction in 37 of 50 documents. With one model in both roles and TravelInbox's judge
+instructions, the judge adds little here. That is a matter of model choice and prompts
+(out of scope for the job), not a service defect.
