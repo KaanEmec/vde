@@ -1,0 +1,5 @@
+# Script format: see the doc comment of package internal/provider/fake.
+description: the extractor answers once and the judge accepts
+steps:
+  - answer: '{"name": "Ada Lovelace", "born": 1815}'
+  - answer: '{"verdict": "accept", "feedback": {}}'

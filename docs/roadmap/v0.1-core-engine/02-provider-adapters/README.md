@@ -9,7 +9,7 @@ provider exposes and documents what it sends.
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [Provider interface and request types](01-provider-interface-and-types.md) | done |
-| 02 | [Fake provider for tests](02-fake-provider.md) | planned |
+| 02 | [Fake provider for tests](02-fake-provider.md) | done |
 | 03 | [Anthropic adapter](03-anthropic-adapter.md) | done |
 | 04 | [OpenAI-compatible adapter with OpenRouter preset](04-openai-compatible-adapter.md) | done |
 | 05 | [Google Gemini adapter](05-gemini-adapter.md) | done |
