@@ -1,0 +1,10 @@
+# Script format: see the doc comment of package internal/provider/fake.
+description: the primary extractor model is down; the fallback serves, then the judge accepts
+steps:
+  - model: primary-model
+    repeat: true
+    delay: 10ms
+    error: {kind: retryable, status: 503}
+  - model: fallback-model
+    answer: '{"name": "Ada Lovelace", "born": 1815}'
+  - answer: '{"verdict": "accept", "feedback": {}}'

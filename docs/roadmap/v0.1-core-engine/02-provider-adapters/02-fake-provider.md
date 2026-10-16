@@ -1,6 +1,6 @@
 # Job: Fake provider for tests
 
-Version: v0.1 · Epic: 02 Provider adapters · Status: planned · Depends on: 01
+Version: v0.1 · Epic: 02 Provider adapters · Status: done · Depends on: 01
 
 ## Goal
 
@@ -14,15 +14,15 @@ are only hit by an opt-in suite.
 
 ## Tasks
 
-- [ ] `internal/provider/fake`: a provider constructed from a script, a slice of steps
+- [x] `internal/provider/fake`: a provider constructed from a script, a slice of steps
       consumed in order (or matched by role, by inspecting the system framing). Each step
       is one of: answer text, error of a given kind and status, delay, then one of those.
-- [ ] Record every request (model, parts with media types and sizes, never asserting on
+- [x] Record every request (model, parts with media types and sizes, never asserting on
       full document bytes unless the test wants to) so tests can assert the extractor and
       judge saw the same representation.
-- [ ] A YAML or JSON script format so `vde extract --provider fake --script file` can
+- [x] A YAML or JSON script format so `vde extract --provider fake --script file` can
       replay scenarios from `testdata/scenarios/` without writing Go (used by epic 06).
-- [ ] Helpers for common scripts: accept first try, schema-invalid then valid, reject then
+- [x] Helpers for common scripts: accept first try, schema-invalid then valid, reject then
       accept, always fail retryable, always fail permanent.
 
 ## Acceptance criteria
