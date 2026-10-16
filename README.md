@@ -32,6 +32,7 @@ bin/vde config check --config vde.yaml
 - [Roadmap](docs/roadmap/README.md)
 - [Configuration reference](docs/operator/configuration.md)
 - [Provider adapters](docs/providers/README.md): comparison, what each sends, retention notes
+- [Security and privacy](docs/security.md): threat model, controls, limits, operator checklist
 - [Examples](examples/README.md): development configurations and sample documents
 - [TravelInbox contract](FromTravelApp/EXTRACTION-SERVICE-CONTRACT.md), the acceptance test of the first deployable release
 
