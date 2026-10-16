@@ -10,31 +10,45 @@ vLLM) and Google Gemini, with ordered failover per role.
 
 ## Status
 
-Early implementation of v0.1 (core engine). Nothing here is ready for production use yet;
-the [roadmap](docs/roadmap/README.md) says what is done.
+v0.2 (the service) is implemented: engine, CLI, HTTP API, jobs, retention, operations, admin
+API, container image and compose example. It is pending live verification: it has not yet been
+run against real providers or the TravelInbox contract's live evaluation, so do not treat it as
+production-ready. The [roadmap](docs/roadmap/README.md) says what is done and what is next.
 
-## Build
+## Quick start
 
-Requires Go 1.25 or newer (developed with 1.27). The binary is pure Go (`CGO_ENABLED=0`).
+Requires Go 1.26 or newer; the binary is pure Go (`CGO_ENABLED=0`).
 
 ```
-make build      # bin/vde
-make check      # vet, golangci-lint, go test -race, build
-make cross      # static linux/amd64 and linux/arm64 binaries
-bin/vde version
-bin/vde config check --config vde.yaml
+make build                                       # bin/vde (or: docker build -t vde .)
+export ANTHROPIC_API_KEY=...                     # any value is enough for the check below
+bin/vde config check --config examples/vde.dev.yaml
+bin/vde extract --config examples/vde.dev.yaml --document examples/samples/booking.txt \
+  --extractor-instructions examples/samples/extractor.md --judge-instructions examples/samples/judge.md \
+  --provider-script testdata/scenarios/accept-first-try.yaml     # offline, scripted fake provider
+# To serve: copy the file to vde.yaml and add an `applications:` entry, then
+bin/vde serve --config vde.yaml                  # real provider key required
+bin/vde token create --config vde.yaml --app <app id> --scope jobs --expires 30d   # prints the token once
 ```
+
+Declaring an application is described in
+[applications and tokens](docs/operator/applications-and-tokens.md); submit a document with
+`curl` as shown in the [API guide](docs/api/guide.md). For Docker, follow the
+[compose example](examples/compose/README.md). Other commands: `make check` (vet, lint, race
+tests), `make cross`, `bin/vde version`.
 
 ## Documentation
 
-- [Project brief](verified-document-extraction.md)
-- [Architecture overview](docs/architecture/overview.md) and [decisions](docs/architecture/decisions/)
-- [Roadmap](docs/roadmap/README.md)
-- [Configuration reference](docs/operator/configuration.md)
-- [Provider adapters](docs/providers/README.md): comparison, what each sends, retention notes
+- [Operator guide](docs/operator/README.md): install, configuration, tokens, retention, operations, troubleshooting
+- [API guide](docs/api/guide.md) and the [admin API](docs/api/admin.md)
 - [Security and privacy](docs/security.md): threat model, controls, limits, operator checklist
+- [Provider adapters](docs/providers/README.md): comparison, what each sends, retention notes
+- [TravelInbox conformance review](docs/conformance/travelinbox-v1-review.md) and the
+  [contract](FromTravelApp/EXTRACTION-SERVICE-CONTRACT.md), the acceptance test of the first deployable release
+- [Roadmap](docs/roadmap/README.md)
+- [Project brief](verified-document-extraction.md), [architecture overview](docs/architecture/overview.md) and [decisions](docs/architecture/decisions/)
 - [Examples](examples/README.md): development configurations and sample documents
-- [TravelInbox contract](FromTravelApp/EXTRACTION-SERVICE-CONTRACT.md), the acceptance test of the first deployable release
+- [Changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md), [security policy](SECURITY.md)
 
 ## License
 

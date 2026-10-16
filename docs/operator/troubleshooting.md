@@ -87,8 +87,8 @@ never the body) and as the job errors above.
 | A model does not accept PDF | If no model of a role lists `application/pdf` in `accepts` (because it cannot read PDFs), a PDF is refused at submission as `unsupported_document` (`415`) unless the caller sends page images; add a PDF-capable pair, or have callers send pages. The reverse mistake, listing `application/pdf` for a model that cannot read it, is accepted at submission and then the provider refuses the document: jobs end `extractor_failed`. Remove the type from `accepts`. |
 | Answers with prose or code fences | The extractor model does not follow the format; the loop gives feedback and retries; persistent cases end `rejected` or `extractor_failed`. Use a stronger model. |
 
-`vde config check --probe` is meant to test reachability but has no probe for any provider
-yet and says so as a warning. To test an endpoint, run `vde extract` with a small document.
+`vde config check --probe` is not implemented yet: no provider has a probe, so it only warns
+"probe not available" for every endpoint and tests nothing (probing is planned for v0.3). To test an endpoint, run `vde extract` with a small document.
 
 ## Worker not picking up jobs
 

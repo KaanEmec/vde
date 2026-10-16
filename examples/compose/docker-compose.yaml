@@ -15,6 +15,7 @@ services:
       context: ../..           # `docker compose up --build` builds this checkout instead
       dockerfile: Dockerfile
     restart: unless-stopped
+    stop_grace_period: 40s          # vde drains requests and running jobs for up to 30 s; Docker's default is 10 s
     command: ["serve", "--config", "/etc/vde/vde.yaml"]
     environment:
       # The variable named by api_key_env in vde.yaml. Compose refuses to start without it.
@@ -25,6 +26,10 @@ services:
       - vde-data:/var/lib/vde       # SQLite database and document blobs
     ports:
       - "127.0.0.1:8090:8090"       # loopback only; the reverse proxy below replaces this in production
+      # The admin API listens on 127.0.0.1:8091 inside the container, which a published port
+      # cannot reach. To use it from the host, set `admin.listen: ":8091"` in vde.yaml and
+      # uncomment this line; otherwise use `docker compose exec` (README.md, "Admin API").
+      # - "127.0.0.1:8091:8091"
     # The image's HEALTHCHECK (`vde healthcheck`, /healthz on the listener) applies.
 
   # Production-like TLS termination. Uncomment this service and the volumes below, set
@@ -46,8 +51,8 @@ services:
   #     - caddy-config:/config
 
   # Optional: `docker compose --profile prometheus up -d`, then open http://localhost:9090.
-  # Needs `metrics.token_env: VDE_METRICS_TOKEN` in vde.yaml (planned, v0.2 epic 07) and
-  # the VDE_METRICS_TOKEN variable passed to vde (the commented line above).
+  # Needs `metrics.token_env: VDE_METRICS_TOKEN` in vde.yaml (commented there) and the
+  # VDE_METRICS_TOKEN variable passed to vde (the commented line above).
   prometheus:
     profiles: [prometheus]
     image: prom/prometheus:v3.5.0

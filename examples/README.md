@@ -44,8 +44,8 @@ roles
 ```
 
 It exits 0 when the file is valid (warnings are printed to stderr), and 1 with every
-problem listed when it is not. `--strict` turns warnings into errors; `--probe` also checks
-that each endpoint answers.
+problem listed when it is not. `--strict` turns warnings into errors; `--probe` is accepted but not
+implemented yet (it only warns "probe not available"; probing is planned for v0.3).
 
 ### Extract a document
 
