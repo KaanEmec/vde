@@ -162,6 +162,14 @@ type AuditEvent struct {
 	Details       json.RawMessage // nil means {}
 }
 
+// AuditFilter selects audit events for ListAudit; zero fields match everything.
+type AuditFilter struct {
+	ApplicationID string
+	Kind          string
+	JobID         string
+	Since         time.Time // events at or after Since
+}
+
 // Store is the persistence the service needs, and nothing more (ADR 0002). Times passed
 // in are the caller's clock so tests can control it.
 type Store interface {
@@ -183,15 +191,25 @@ type Store interface {
 	// TouchTokenLastUsed sets last_used_at to now when it is unset or older than a
 	// minute, to keep polls from writing on every request.
 	TouchTokenLastUsed(ctx context.Context, id string, now time.Time) error
+	// DeleteTokensBefore removes tokens revoked or expired before before and returns
+	// how many.
+	DeleteTokensBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// IncrementQuota charges one submission to the window and returns the new count, or
 	// ErrQuotaExhausted when the count already reached limit.
 	IncrementQuota(ctx context.Context, applicationID string, windowStart time.Time, limit int) (int, error)
 	// GetQuota returns the window's count, 0 when nothing was charged.
 	GetQuota(ctx context.Context, applicationID string, windowStart time.Time) (int, error)
+	// DeleteQuotaBefore removes the application's quota windows that started before
+	// before and returns how many rows it removed.
+	DeleteQuotaBefore(ctx context.Context, applicationID string, before time.Time) (int64, error)
 
 	// AppendAudit appends e and returns its id.
 	AppendAudit(ctx context.Context, e AuditEvent) (int64, error)
+	// ListAudit returns up to limit events matching f, oldest first; limit <= 0 means no limit.
+	ListAudit(ctx context.Context, f AuditFilter, limit int) ([]AuditEvent, error)
+	// DeleteAuditBefore removes audit events older than before and returns how many.
+	DeleteAuditBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// CreateJob inserts j as queued. It assigns ID (when empty), Status, Attempts and
 	// CreatedAt (when zero), resolves Retention against the application (force_none, or
@@ -229,6 +247,9 @@ type Store interface {
 	// ListExpired returns up to limit jobs whose expires_at is not after now, oldest
 	// first.
 	ListExpired(ctx context.Context, now time.Time, limit int) ([]Job, error)
+	// ListStaleRunning returns up to limit running jobs created at or before createdBefore
+	// (their time limit and grace are over: a lost worker), oldest first.
+	ListStaleRunning(ctx context.Context, createdBefore time.Time, limit int) ([]Job, error)
 	// CountRunning returns the number of the application's running jobs.
 	CountRunning(ctx context.Context, applicationID string) (int, error)
 }

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/extract"
@@ -46,6 +47,7 @@ applications:
   - {id: app, name: App, retention: {default: 24h}}
   - {id: tight, name: Tight, rate: {max_in_progress: 1}}
   - {id: forced, name: Forced, retention: {force_none: true}}
+  - {id: lean, name: Lean, retention: {default: 24h, delete_blobs_at_terminal: true}}
 `
 
 // Content sentinels: none may appear in the logs.
@@ -143,6 +145,7 @@ func newRig(t *testing.T, ext, judge fake.Script, opts worker.Options) *rig {
 	}
 	opts.Observer = r.obs
 	opts.Logger = slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	opts.Audit = audit.New(store, audit.Options{Logger: opts.Logger})
 	r.pool = worker.New(store, blobs, cfg, roles, opts)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -299,6 +302,48 @@ func TestRetentionDefaultKeepsInputs(t *testing.T) {
 		t.Errorf("force_none row = %+v", got)
 	}
 	r.assertBlobs(t, forced.ID, false)
+}
+
+func TestDeleteBlobsAtTerminalForRetentionDefault(t *testing.T) {
+	ext, judge := accepting()
+	r := newRig(t, ext, judge, worker.Options{})
+	lean := r.submit(t, "lean", func(j *job.Job) { j.Retention = job.RetentionDefault })
+	r.start(t)
+
+	deadline := time.Now().Add(10 * time.Second)
+	var got job.Job
+	for got.InputsDeletedAt.IsZero() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+		got, _ = r.store.GetJobAny(t.Context(), lean.ID)
+	}
+	// The result stays readable until expiry; only the inputs are gone.
+	if got.Status != job.StatusAccepted || got.InputsDeletedAt.IsZero() || got.Schema != "" || got.ExtractorInstructions != "" ||
+		string(got.Result) != candidate || !got.ContentDeletedAt.IsZero() || got.Retention != job.RetentionDefault {
+		t.Errorf("delete_blobs_at_terminal row = %+v", got)
+	}
+	r.assertBlobs(t, lean.ID, false)
+}
+
+func TestJobFinishedIsAudited(t *testing.T) {
+	ext, judge := accepting()
+	r := newRig(t, ext, judge, worker.Options{})
+	j := r.submit(t, "app", nil)
+	r.start(t)
+	r.waitTerminal(t, j.ID)
+
+	events, err := r.store.ListAudit(t.Context(), job.AuditFilter{JobID: j.ID}, 0)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("audit events = %d, %v", len(events), err)
+	}
+	e := events[0]
+	d, err := audit.Decode(e)
+	want := audit.JobFinished{Status: "accepted", Attempts: 1, ServiceVersion: "vde-test"}
+	if e.Kind != "job.finished" || e.Actor != audit.ActorWorker || e.ApplicationID != "app" || err != nil || d != want {
+		t.Errorf("event = %+v, details %+v (%v), want %+v", e, d, err, want)
+	}
+	if strings.Contains(string(e.Details), sentinel) {
+		t.Errorf("content in the audit details: %s", e.Details)
+	}
 }
 
 func TestPagesRepresentation(t *testing.T) {

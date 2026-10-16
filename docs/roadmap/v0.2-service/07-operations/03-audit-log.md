@@ -1,6 +1,6 @@
 # Job: Audit log
 
-Version: v0.2 · Epic: 07 Operations · Status: planned · Depends on: 03-01, 02-02
+Version: v0.2 · Epic: 07 Operations · Status: in progress · Depends on: 03-01, 02-02
 
 ## Goal
 
@@ -16,18 +16,31 @@ events without exposing secrets."
 
 ## Tasks
 
-- [ ] `audit_events(id, at, kind, application_id, actor, job_id, details JSON)` with a
+- [x] `audit_events(id, at, kind, application_id, actor, job_id, details JSON)` with a
       fixed set of kinds: `token.created`, `token.revoked`, `app.enabled`,
       `app.disabled`, `job.created`, `job.finished`, `job.deleted`, `job.expired`,
       `auth.failed` (with reason code, no token), `config.loaded` (with
       `service_version`).
-- [ ] `details` schema per kind defined as Go structs so no free-form data is written.
-- [ ] Also emitted to `slog` at `info` with `audit=true` when `audit.log: true`.
+- [x] `details` schema per kind defined as Go structs so no free-form data is written.
+- [x] Also emitted to `slog` at `info` with `audit=true` when `audit.log: true`. (`audit.Options.Logger`; the config key is still to add.)
 - [ ] `vde audit list --app id --since …` CLI for operators without a database client.
-- [ ] Retention of audit rows is separate (`audit.retention`, default 365 days), swept
-      by the sweeper.
+- [x] Retention of audit rows is separate (`audit.retention`, default 365 days), swept
+      by the sweeper (`sweeper.Options.AuditRetention`; the config key is still to add).
 - [ ] Tests: every kind written by the code path that owns it; the redaction sentinel
       test (epic 06) covers the audit table too.
+
+## Notes
+
+Done: package `internal/audit` (`Kind` set, one details struct per kind, `Recorder`,
+`Decode`), `job.Store.ListAudit` and `DeleteAuditBefore`, `job.finished` from the worker and
+`job.expired`/`job.finished` from the sweeper. Remaining call sites, for the api/cmd step:
+`job.created` (submit handler, `Recorder.JobCreated`), `job.deleted` (`DELETE` and first
+read, `Recorder.JobDeleted`), `token.created`/`token.revoked`/`app.enabled`/`app.disabled`
+(cmd, now written with ad-hoc structs; switch to `Recorder.Record` with the audit structs),
+`auth.failed`, `config.loaded` at startup, the `audit.log` and `audit.retention` config
+keys, the `vde audit list` command (`ListAudit` with `job.AuditFilter`, `audit.Decode`),
+and adding `audit`, `actor` and `details` to the logging allowed keys (the redacting
+handler drops them today). Status stays `in progress`.
 
 ## Acceptance criteria
 
