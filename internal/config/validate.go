@@ -195,8 +195,12 @@ func (v *validator) groups(c *Config) {
 		if g.Failover.MaxTries < 1 {
 			v.errorf(key+".failover.max_tries", "must be at least 1")
 		}
-		if g.Failover.MaxTotalTime <= 0 {
+		switch {
+		case g.Failover.MaxTotalTime <= 0:
 			v.errorf(key+".failover.max_total_time", "must be positive")
+		case g.Failover.MaxTotalTime >= c.Limits.JobTimeout && c.Limits.JobTimeout > 0:
+			v.errorf(key+".failover.max_total_time", "%s must be less than limits.job_timeout %s",
+				g.Failover.MaxTotalTime, c.Limits.JobTimeout)
 		}
 	}
 }

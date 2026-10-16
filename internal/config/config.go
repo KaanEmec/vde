@@ -93,7 +93,10 @@ type GroupEntry struct {
 // Failover bounds the tries of one role call across a group's endpoints.
 type Failover struct {
 	MaxTries     int           `yaml:"max_tries"`
-	MaxTotalTime time.Duration `yaml:"max_total_time"`
+	MaxTotalTime time.Duration `yaml:"max_total_time"` // must be less than limits.job_timeout
+	// FailoverOnPermanent moves on to the next pair after a permanent failure (a refusal,
+	// a bad request) instead of returning it at once.
+	FailoverOnPermanent bool `yaml:"failover_on_permanent"`
 }
 
 // Roles assigns a group to each role. One group may serve both.
