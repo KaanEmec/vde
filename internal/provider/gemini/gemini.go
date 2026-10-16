@@ -203,6 +203,7 @@ func toResponse(gr *generateResponse, model string, status int) (provider.Respon
 		InputTokens:  gr.UsageMetadata.PromptTokenCount,
 		OutputTokens: gr.UsageMetadata.CandidatesTokenCount,
 		Model:        model,
+		Truncated:    cand.FinishReason == "MAX_TOKENS",
 	}, nil
 }
 

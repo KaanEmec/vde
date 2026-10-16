@@ -30,6 +30,8 @@ type Step struct {
 	Answer string          // the answer text, used when Err is nil
 	Err    *provider.Error // the failure to return instead of an answer
 	Repeat bool            // the step is never consumed
+	// Truncated marks the answer as cut off at the output-token limit.
+	Truncated bool
 }
 
 // Script is an ordered list of steps.
@@ -101,6 +103,7 @@ func (p *Provider) Complete(ctx context.Context, req provider.Request) (provider
 		InputTokens:  InputTokens,
 		OutputTokens: OutputTokens,
 		Model:        req.Model,
+		Truncated:    step.Truncated,
 	}, nil
 }
 

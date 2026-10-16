@@ -19,6 +19,7 @@
 //	  - role: extractor                           # optional: substring of Request.System
 //	    delay: 50ms                               # optional: wait first (honours ctx)
 //	    answer: '{"name": "Ada"}'
+//	    truncated: true                           # optional: the answer was cut off at the token limit
 //
 // Every step has exactly one of answer (may be "") or error. error.kind is retryable or
 // permanent; status and retry_after are optional. Unknown keys are rejected.

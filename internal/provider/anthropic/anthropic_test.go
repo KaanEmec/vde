@@ -272,6 +272,21 @@ func TestCompleteSuccess(t *testing.T) {
 	}
 }
 
+func TestCompleteTruncated(t *testing.T) {
+	t.Parallel()
+	for reason, want := range map[string]bool{"max_tokens": true, "end_turn": false} {
+		body := `{"model":"m","stop_reason":"` + reason + `","content":[{"type":"text","text":"{\"a\":"}],"usage":{"input_tokens":1,"output_tokens":4096}}`
+		srv, _ := serve(t, reply(200, body))
+		got, err := complete(t, srv, request())
+		if err != nil {
+			t.Fatalf("stop_reason %q: %v", reason, err)
+		}
+		if got.Text != `{"a":` || got.Truncated != want {
+			t.Errorf("stop_reason %q: text %q truncated %v, want truncated %v", reason, got.Text, got.Truncated, want)
+		}
+	}
+}
+
 func TestCompleteStatusErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

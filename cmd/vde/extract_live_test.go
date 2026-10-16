@@ -29,7 +29,9 @@ var liveProviders = []liveProvider{
 	},
 	{
 		name: "openai", keyEnv: "OPENAI_API_KEY", modelEnv: "VDE_LIVE_OPENAI_MODEL", model: "gpt-4.1-mini",
-		endpoint: "provider: openai_compatible\n    base_url: https://api.openai.com/v1\n    api_key_env: OPENAI_API_KEY",
+		// VDE_LIVE_OPENAI_BASE_URL points the OpenAI-compatible adapter at another host
+		// (Nous Research, vLLM, Ollama); the default is OpenAI itself.
+		endpoint: "provider: openai_compatible\n    base_url: " + liveOpenAIBaseURL() + "\n    api_key_env: OPENAI_API_KEY",
 		accepts:  "[application/pdf, image/png, image/jpeg, text/plain, text/html]",
 	},
 	{
@@ -42,6 +44,13 @@ var liveProviders = []liveProvider{
 		endpoint: "provider: gemini\n    api_key_env: GEMINI_API_KEY",
 		accepts:  "[application/pdf, image/png, image/jpeg, text/plain, text/html]",
 	},
+}
+
+func liveOpenAIBaseURL() string {
+	if u := os.Getenv("VDE_LIVE_OPENAI_BASE_URL"); u != "" {
+		return u
+	}
+	return "https://api.openai.com/v1"
 }
 
 func (p liveProvider) config(t *testing.T) string {

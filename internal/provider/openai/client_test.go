@@ -224,6 +224,21 @@ func TestSuccessParsing(t *testing.T) {
 	}
 }
 
+func TestTruncatedAnswer(t *testing.T) {
+	t.Parallel()
+	for reason, want := range map[string]bool{"length": true, "stop": false} {
+		reply := `{"choices":[{"message":{"content":"{\"a\":"},"finish_reason":"` + reason + `"}]}`
+		srv, _ := serve(t, 200, reply, nil)
+		resp, err := New(endpoint(t, srv.URL, "", "")).Complete(t.Context(), request())
+		if err != nil {
+			t.Fatalf("finish_reason %q: %v", reason, err)
+		}
+		if resp.Text != `{"a":` || resp.Truncated != want {
+			t.Errorf("finish_reason %q: text %q truncated %v, want truncated %v", reason, resp.Text, resp.Truncated, want)
+		}
+	}
+}
+
 func TestErrors(t *testing.T) {
 	t.Parallel()
 	leaky := `{"error":{"message":"` + docText + ` ` + answer + `","type":"invalid_request_error"}}`

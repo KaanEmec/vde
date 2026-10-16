@@ -210,6 +210,7 @@ func parseResponse(raw []byte, requestedModel string) (provider.Response, error)
 		InputTokens:  cr.Usage.PromptTokens,
 		OutputTokens: cr.Usage.CompletionTokens,
 		Model:        model,
+		Truncated:    choice.FinishReason == "length",
 	}, nil
 }
 

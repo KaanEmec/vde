@@ -502,6 +502,47 @@ func TestRun_extractorFailed(t *testing.T) {
 	}
 }
 
+// cutOff is an answer the model stopped writing at its output-token limit.
+func cutOff(text string) fake.Step {
+	s := fake.Answer(text)
+	s.Truncated = true
+	return s
+}
+
+func TestRun_extractorTruncated(t *testing.T) {
+	r := newRig(t, fake.Script{cutOff(`{"name": "Ada Love`), fake.Answer(valid)}, nil, fake.Script{fake.Answer(accept)})
+	in := input(t, "")
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 2, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 2, 1)
+	calls := r.primary.Calls()
+	if got, want := calls[0].Request.MaxTokens, config.DefaultMaxOutputTokens; got != want {
+		t.Errorf("max tokens = %d, want the configured default %d", got, want)
+	}
+	if !hasText(calls[1], "cut off at the output-token limit") || !hasText(calls[1], "no prose, no repetition") {
+		t.Errorf("retry = %+v, want feedback about the cut-off answer", calls[1].Request.Parts)
+	}
+	// An answer that is not JSON but not cut off keeps the plain parse feedback.
+	r = newRig(t, fake.Script{fake.Answer(notJSON), fake.Answer(valid)}, nil, fake.Script{fake.Answer(accept)})
+	Run(t.Context(), in, r.roles)
+	if hasText(r.primary.Calls()[1], "cut off") {
+		t.Error("feedback on an answer that was not truncated mentions a cut-off")
+	}
+}
+
+func TestRun_judgeTruncated(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil,
+		fake.Script{cutOff(`{"verdict": "reject", "feedback": {"/name": "The docu`), fake.Answer(accept)})
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 1, "")
+	calls := r.judge.Calls()
+	checkCalls(t, in, r.extractorCalls(), calls, 1, 2)
+	if !hasText(calls[1], reaskReminder) {
+		t.Error("the re-ask after a truncated verdict must carry the reminder")
+	}
+}
+
 func TestRun_schemaless(t *testing.T) {
 	list := `[{"name": "Ada Lovelace"}, {"name": "Charles Babbage"}]`
 	r := newRig(t, fake.Script{fake.Answer("Here you go:\n" + list)}, nil, fake.Script{fake.Answer(accept)})

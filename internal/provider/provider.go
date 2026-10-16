@@ -39,6 +39,8 @@ type Response struct {
 	InputTokens  int
 	OutputTokens int
 	Model        string // the model that answered, as reported by the provider
+	// Truncated: the model stopped at the output-token limit, so Text may be cut off.
+	Truncated bool
 }
 
 // Provider is the one interface every model call goes through. Implementations return

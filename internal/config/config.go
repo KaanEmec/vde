@@ -91,6 +91,20 @@ func (e Endpoint) GoString() string { return "config.Endpoint{" + e.String() + "
 // Model is one endpoint-model pair's capability declaration.
 type Model struct {
 	Accepts []string `yaml:"accepts"` // media types the model reads natively
+	// MaxOutputTokens caps the tokens of one answer; 0 means DefaultMaxOutputTokens.
+	MaxOutputTokens int `yaml:"max_output_tokens"`
+}
+
+// DefaultMaxOutputTokens is the output limit requested from a model that sets no
+// max_output_tokens. Large documents in schema-less mode produce long JSON.
+const DefaultMaxOutputTokens = 16384
+
+// OutputTokens returns the output-token limit to request from the model.
+func (m Model) OutputTokens() int {
+	if m.MaxOutputTokens > 0 {
+		return m.MaxOutputTokens
+	}
+	return DefaultMaxOutputTokens
 }
 
 // Group is an ordered list of endpoint-model pairs serving a role, with failover bounds.
