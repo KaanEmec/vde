@@ -1,6 +1,6 @@
 # Epic 01: HTTP API foundation
 
-Version: v0.2 · Status: done · Depends on: v0.1
+Version: v0.2 · Status: done· Depends on: v0.1
 
 The `serve` command, the standard-library server with its middleware chain, the single
 error body shape and the OpenAPI document that is a superset of TravelInbox's.

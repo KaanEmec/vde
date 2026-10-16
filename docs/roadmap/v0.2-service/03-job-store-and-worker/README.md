@@ -1,6 +1,6 @@
 # Epic 03: Job store and worker
 
-Version: v0.2 · Status: done · Depends on: v0.1
+Version: v0.2 · Status: done· Depends on: v0.1
 
 Persistent jobs in SQLite, blobs on disk, a state machine with leases, and the in-process
 worker pool that runs the v0.1 loop under the job deadline.
