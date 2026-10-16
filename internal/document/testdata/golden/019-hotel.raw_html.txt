@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ihre Buchungsbestätigung</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif;color:#202020;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;">
+<tr><td align="center" style="padding:20px 8px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;background:#ffffff;">
+  <tr>
+    <td style="background:#d32f2f;padding:16px 24px;">
+      <span style="color:#ffffff;font-size:24px;font-weight:bold;font-style:italic;">Hotels.com</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:28px 24px 12px 24px;">
+      <p style="font-size:15px;line-height:22px;margin:0 0 10px 0;">Hallo Lena,</p>
+      <h1 style="font-size:24px;line-height:30px;margin:0 0 10px 0;color:#202020;">Ihre Buchung ist bestätigt</h1>
+      <p style="font-size:15px;line-height:22px;margin:0;">Vielen Dank, dass Sie über Hotels.com gebucht haben. Wir haben Ihre Buchung an die Unterkunft übermittelt. Bitte bewahren Sie diese E-Mail für Ihre Unterlagen auf.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:12px 24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:2px solid #d32f2f;">
+        <tr>
+          <td style="padding:12px 16px;font-size:14px;">Bestätigungsnummer</td>
+          <td align="right" style="padding:12px 16px;font-size:20px;font-weight:bold;letter-spacing:1px;">9624613121712</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:16px 24px 0 24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td width="120" style="vertical-align:top;">
+            <div style="width:110px;height:82px;background:linear-gradient(135deg,#c9b79c,#8a7558);"></div>
+          </td>
+          <td style="vertical-align:top;padding-left:12px;">
+            <a href="https://de.hotels.com/ho584112/hotel-am-naschmarkt-wien-osterreich/" style="font-size:18px;font-weight:bold;color:#d32f2f;text-decoration:none;">Hotel Am Naschmarkt</a> <span style="color:#f2a900;font-size:13px;">&#9733;&#9733;&#9733;&#9733;</span><br>
+            <span style="font-size:13px;line-height:20px;">Linke Wienzeile 34, 1060 Wien, Österreich</span><br>
+            <span style="font-size:13px;line-height:20px;">Tel.: +43 1 586 2210</span><br>
+            <span style="font-size:12px;line-height:20px;color:#6b6b6b;">Gästebewertung 9,0/10 · Hervorragend</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:20px 24px 0 24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:21px;background:#faf6f6;">
+        <tr>
+          <td width="50%" style="padding:14px 16px;vertical-align:top;border-right:1px solid #ead7d7;">
+            <span style="color:#6b6b6b;font-size:12px;text-transform:uppercase;">Anreise</span><br>
+            <b>Mittwoch, 3. März 2027</b><br>
+            Check-in ab 14:00 Uhr
+          </td>
+          <td width="50%" style="padding:14px 16px;vertical-align:top;">
+            <span style="color:#6b6b6b;font-size:12px;text-transform:uppercase;">Abreise</span><br>
+            <b>Samstag, 6. März 2027</b><br>
+            Check-out bis 12:00 Uhr
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 24px 0 24px;">
+      <h2 style="font-size:17px;margin:0 0 8px 0;padding-bottom:6px;border-bottom:1px solid #e0e0e0;">Ihre Zimmerdetails</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:22px;">
+        <tr><td width="38%" style="color:#6b6b6b;">Aufenthalt</td><td>3 Nächte, 1 Zimmer</td></tr>
+        <tr><td style="color:#6b6b6b;">Zimmertyp</td><td>Doppelzimmer Superior, 1 Doppelbett</td></tr>
+        <tr><td style="color:#6b6b6b;">Gast</td><td>Lena Weissmann</td></tr>
+        <tr><td style="color:#6b6b6b;">Belegung</td><td>2 Erwachsene</td></tr>
+        <tr><td style="color:#6b6b6b;">Verpflegung</td><td>Frühstück inklusive</td></tr>
+        <tr><td style="color:#6b6b6b;">Ausstattung</td><td>Kostenloses WLAN · Klimaanlage · Minibar</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 24px 0 24px;">
+      <h2 style="font-size:17px;margin:0 0 8px 0;padding-bottom:6px;border-bottom:1px solid #e0e0e0;">Preisdetails</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:22px;">
+        <tr><td style="color:#6b6b6b;">Mi., 03.03.2027</td><td align="right">139,00 €</td></tr>
+        <tr><td style="color:#6b6b6b;">Do., 04.03.2027</td><td align="right">139,00 €</td></tr>
+        <tr><td style="color:#6b6b6b;">Fr., 05.03.2027</td><td align="right">159,00 €</td></tr>
+        <tr><td style="padding-top:6px;">Zimmerpreis (3 Nächte)</td><td align="right" style="padding-top:6px;">437,00 €</td></tr>
+        <tr><td>Steuern und Gebühren</td><td align="right">13,98 €</td></tr>
+        <tr><td style="font-weight:bold;font-size:18px;padding-top:8px;border-top:2px solid #202020;">Gesamtpreis</td><td align="right" style="font-weight:bold;font-size:18px;padding-top:8px;border-top:2px solid #202020;">450,98 €</td></tr>
+        <tr><td colspan="2" style="font-size:12px;color:#6b6b6b;line-height:18px;">Am 19.01.2027 mit Mastercard •••• 4242 bezahlt. Der Zimmerpreis enthält die gesetzliche Mehrwertsteuer.</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:20px 24px 0 24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#191e3b;">
+        <tr><td style="padding:12px 16px;font-size:14px;line-height:20px;color:#ffffff;">
+          <b>OneKey</b> · Mit dieser Buchung sammeln Sie <b>9,02 € in OneKeyCash</b>. Das Guthaben steht Ihnen nach Ihrem Aufenthalt zur Verfügung.
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 24px 0 24px;">
+      <h2 style="font-size:17px;margin:0 0 8px 0;padding-bottom:6px;border-bottom:1px solid #e0e0e0;">Stornierungsbedingungen</h2>
+      <p style="font-size:14px;line-height:21px;margin:0 0 6px 0;">Kostenlose Stornierung bis So., 28.02.2027, 23:59 Uhr (Ortszeit der Unterkunft).</p>
+      <p style="font-size:14px;line-height:21px;margin:0;">Bei Stornierungen oder Änderungen nach 23:59 Uhr (Mitteleuropäische Zeit) am 28. Februar 2027 oder bei Nichtanreise berechnet die Unterkunft eine Gebühr in Höhe von 100 % des Gesamtbetrags der Buchung.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 24px 0 24px;">
+      <h2 style="font-size:17px;margin:0 0 8px 0;padding-bottom:6px;border-bottom:1px solid #e0e0e0;">Wichtige Hinweise der Unterkunft</h2>
+      <ul style="font-size:13px;line-height:20px;margin:0;padding-left:18px;">
+        <li>Bei der Anreise sind ein amtlicher Lichtbildausweis und eine Kreditkarte vorzulegen.</li>
+        <li>Die Rezeption ist von 07:00 bis 23:00 Uhr besetzt. Bei späterer Anreise bitte die Unterkunft vorab kontaktieren.</li>
+        <li>Parken in der Garage gegenüber: 28 € pro Tag.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:#d32f2f;border-radius:3px;padding:11px 22px;"><a href="https://de.hotels.com/trips" style="color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;">Buchung verwalten</a></td>
+      </tr></table>
+      <p style="font-size:13px;line-height:20px;margin:16px 0 0 0;">Fragen zu Ihrer Buchung? Besuchen Sie unser <a href="https://de.hotels.com/service/" style="color:#d32f2f;">Service-Center</a> und halten Sie Ihre Bestätigungsnummer bereit.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:18px 24px;background:#ececec;font-size:11px;line-height:17px;color:#6b6b6b;">
+      Laden Sie die Hotels.com App herunter und verwalten Sie Ihre Reisen unterwegs.<br><br>
+      Hotels.com ist ein Unternehmen der Expedia Group. Hotels.com, L.P., 1111 Expedia Group Way W, Seattle, WA 98119, USA.<br>
+      <a href="https://de.hotels.com/customer_care/privacy.html" style="color:#6b6b6b;">Datenschutz</a> · <a href="https://de.hotels.com/customer_care/terms_conditions.html" style="color:#6b6b6b;">AGB</a><br>
+      © 2027 Hotels.com, L.P. Alle Rechte vorbehalten.
+    </td>
+  </tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

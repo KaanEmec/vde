@@ -1,0 +1,15 @@
+Flight confirmation
+
+SkyAir	Booking reference QX7PLM
+
+Your trip to Lisbon
+
+Dear Ana,
+your booking is confirmed.
+
+Flight	From	To
+SA 123	Berlin BER 08:15	Lisbon LIS 10:40
+
+Total paid: 312,40 €
+
+Manage booking (https://skyair.example/manage?ref=QX7PLM) | help@skyair.example | Terms

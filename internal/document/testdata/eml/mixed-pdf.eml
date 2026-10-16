@@ -1,0 +1,54 @@
+Received: from mx.example.com by mail.example.com; Mon, 01 Mar 2027 08:59:59 +0100
+X-Tracking-Id: trk-12345
+From: =?UTF-8?Q?Jos=C3=A9_Garc=C3=ADa?= <jose@example.com>
+To: Ana <ana@example.com>, bob@example.com
+Cc: travel@example.com
+Date: Mon, 01 Mar 2027 09:00:00 +0100
+Subject: =?UTF-8?B?SWhyZSBSZWlzZSBuYWNoIFrDvHJpY2g=?=
+Message-ID: <abc@example.com>
+In-Reply-To: <prev@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix"
+
+This is a multi-part message in MIME format.
+--mix
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+
+Plain body ABC123
+--alt
+Content-Type: multipart/related; boundary="rel"
+
+--rel
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<html><head><title>Booking</title><style>p{color:red}</style></head><body>=
+<p>Booking <b>ABC123</b> confirmed.</p><img src=3D"cid:logo" alt=3D"Logo"></b=
+ody></html>
+--rel
+Content-Type: image/png
+Content-ID: <logo>
+Content-Disposition: inline
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--rel--
+--alt--
+--mix
+Content-Type: application/pdf; name="ticket.pdf"
+Content-Disposition: attachment; filename="=?UTF-8?Q?Fahrkarte_Z=C3=BCrich.pdf?="
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjcK
+--mix
+Content-Type: message/rfc822
+Content-Disposition: attachment; filename="forwarded.eml"
+
+From: a@example.com
+Subject: inner
+
+inner body
+--mix--

@@ -1,0 +1,19 @@
+From: Shop <shop@example.com>
+To: you@example.com
+Date: Wed, 03 Mar 2027 11:00:00 +0000
+Subject: Your order
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=us-ascii
+
+Total 120 EUR
+--b1
+Content-Type: text/html; charset=windows-1252
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGJvZHk+PHRhYmxlPjx0cj48dGQ+VG90YWw8L3RkPjx0ZD4xMjAggDwvdGQ+PC90cj48
+L3RhYmxlPjxwPlRoYW5rcywgPGEgaHJlZj0iaHR0cHM6Ly9leGFtcGxlLmNvbS9iLzEiPm1hbmFn
+ZSBib29raW5nPC9hPjwvcD48L2JvZHk+PC9odG1sPg==
+--b1--

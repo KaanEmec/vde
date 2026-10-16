@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ihre Buchungsbestätigung</title>
+</head>
+<body style="margin:0;padding:0;background:#f2f2f2;font-family:Helvetica,Arial,sans-serif;color:#05164d;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f2f2;">
+<tr><td align="center" style="padding:24px 8px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;width:600px;">
+  <tr>
+    <td style="background:#05164d;padding:20px 32px;">
+      <span style="color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">Lufthansa</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:32px 32px 8px 32px;">
+      <h1 style="font-size:26px;font-weight:normal;margin:0 0 16px 0;">Ihre Buchung ist bestätigt</h1>
+      <p style="font-size:15px;line-height:22px;margin:0 0 12px 0;">Sehr geehrte Frau Brenner,</p>
+      <p style="font-size:15px;line-height:22px;margin:0 0 12px 0;">vielen Dank für Ihre Buchung bei Lufthansa. Nachfolgend finden Sie alle Details zu Ihrer Reise. Ihren Reiseplan mit Rechnung finden Sie zusätzlich im Anhang dieser E-Mail.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:8px 32px 24px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffad00;">
+        <tr>
+          <td style="padding:14px 20px;font-size:14px;">Buchungscode</td>
+          <td style="padding:14px 20px;font-size:22px;font-weight:bold;text-align:right;letter-spacing:2px;">VT6Y7Y</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 32px;">
+      <h2 style="font-size:18px;margin:0 0 12px 0;border-bottom:1px solid #d6d6d6;padding-bottom:8px;">Hinflug · Montag, 14. Juni 2027</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:20px;">
+        <tr>
+          <td width="45%" style="vertical-align:top;padding:4px 0;">
+            <span style="font-size:24px;font-weight:bold;">10:35</span><br>
+            Frankfurt/Main (FRA)<br>
+            Terminal 1
+          </td>
+          <td width="10%" style="vertical-align:middle;text-align:center;font-size:18px;">&rarr;</td>
+          <td width="45%" style="vertical-align:top;padding:4px 0;text-align:right;">
+            <span style="font-size:24px;font-weight:bold;">13:20</span><br>
+            New York (JFK)<br>
+            Terminal 1
+          </td>
+        </tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;line-height:20px;margin-top:12px;color:#4a4a4a;">
+        <tr><td width="40%">Flug</td><td>LH 400</td></tr>
+        <tr><td>Durchgeführt von</td><td>Lufthansa</td></tr>
+        <tr><td>Flugzeug</td><td>Boeing 747-8</td></tr>
+        <tr><td>Reiseklasse</td><td>Economy (Tarif: Classic)</td></tr>
+        <tr><td>Flugdauer</td><td>8 Std. 45 Min.</td></tr>
+        <tr><td>Freigepäck</td><td>1 x 23 kg pro Person</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px 0 32px;">
+      <h2 style="font-size:18px;margin:0 0 12px 0;border-bottom:1px solid #d6d6d6;padding-bottom:8px;">Reisende</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:22px;">
+        <tr style="color:#4a4a4a;font-size:12px;">
+          <td>Name</td><td>Typ</td><td>Sitzplatz</td><td>Ticketnummer</td>
+        </tr>
+        <tr>
+          <td>Frau Jana Brenner</td><td>Erwachsener</td><td>32A</td><td>509-2488235083</td>
+        </tr>
+        <tr>
+          <td>Herr Lukas Albrecht</td><td>Erwachsener</td><td>32B</td><td>359-8435446679</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px 0 32px;">
+      <h2 style="font-size:18px;margin:0 0 12px 0;border-bottom:1px solid #d6d6d6;padding-bottom:8px;">Preisübersicht</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:22px;">
+        <tr><td>Flugpreis (2 Erwachsene)</td><td style="text-align:right;">776,00 EUR</td></tr>
+        <tr><td>Steuern, Gebühren und Entgelte</td><td style="text-align:right;">412,52 EUR</td></tr>
+        <tr><td>Internationaler Zuschlag</td><td style="text-align:right;">96,00 EUR</td></tr>
+        <tr style="font-weight:bold;font-size:16px;"><td style="padding-top:8px;border-top:1px solid #05164d;">Gesamtpreis für alle Reisenden</td><td style="text-align:right;padding-top:8px;border-top:1px solid #05164d;">1.284,52 EUR</td></tr>
+        <tr style="color:#4a4a4a;font-size:12px;"><td colspan="2">Bezahlt mit Kreditkarte (Visa) xxxx xxxx xxxx 4242 am 20.04.2027</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px 0 32px;">
+      <h2 style="font-size:18px;margin:0 0 12px 0;border-bottom:1px solid #d6d6d6;padding-bottom:8px;">Tarifbedingungen</h2>
+      <p style="font-size:13px;line-height:19px;margin:0 0 6px 0;"><b>Umbuchung:</b> gegen eine Gebühr von 70,00 EUR pro Person zzgl. einer eventuellen Tarifdifferenz möglich.</p>
+      <p style="font-size:13px;line-height:19px;margin:0 0 6px 0;"><b>Erstattung:</b> nicht möglich. Nicht verbrauchte Steuern und Gebühren werden auf Antrag erstattet.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:#05164d;padding:12px 24px;"><a href="https://www.lufthansa.com/de/de/meine-buchungen" style="color:#ffffff;text-decoration:none;font-size:14px;">Buchung verwalten</a></td>
+        <td style="width:12px;"></td>
+        <td style="border:1px solid #05164d;padding:11px 23px;"><a href="https://www.lufthansa.com/de/de/online-check-in" style="color:#05164d;text-decoration:none;font-size:14px;">Online Check-in</a></td>
+      </tr></table>
+      <p style="font-size:13px;line-height:19px;margin:16px 0 0 0;color:#4a4a4a;">Der Online Check-in ist ab 23 Stunden vor Abflug möglich. Bitte beachten Sie die Einreisebestimmungen der USA (ESTA).</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="background:#eef0f5;padding:20px 32px;font-size:11px;line-height:16px;color:#4a4a4a;">
+      Mit freundlichen Grüßen<br>Ihr Lufthansa Team<br><br>
+      Deutsche Lufthansa AG · Venloer Straße 151-153 · 50672 Köln<br>
+      Diese E-Mail wurde automatisch erstellt. Bitte antworten Sie nicht auf diese E-Mail.
+    </td>
+  </tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>
