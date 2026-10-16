@@ -4,9 +4,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	spec "github.com/kaanemec/vde/api"
+	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/job"
 )
 
 // HealthChecker reports whether a role's group has a pair not marked down;
@@ -15,15 +18,21 @@ type HealthChecker interface {
 	Healthy() bool
 }
 
-// Deps is what the handlers need. Later epics add their fields here: the job store and
-// blob store (epic 03), the token store (epic 02), the quota and rate limiter (epic 05)
-// and the worker's submit side (epics 03 and 04).
+// Deps is what the handlers need. Later epics add their fields here: the blob store
+// (epic 03), the quota and rate limiter (epic 05) and the worker's submit side (epics 03
+// and 04).
 type Deps struct {
 	Config *config.Config // validated; the handlers never change it
+	// Store holds applications, tokens, jobs and the audit trail. Every /v1 request
+	// reads its token from it; nil refuses every /v1 request with 500.
+	Store job.Store
 	// ServiceVersion is sent as X-Service-Version on every /v1/jobs response
-	// (contract §11). Epic 02 may make it per application (see extract.ServiceVersion).
-	ServiceVersion string
-	Logger         *slog.Logger // nil means slog.Default()
+	// (contract §11). ServiceVersions overrides it per application id for authenticated
+	// requests (extract.ApplicationServiceVersion).
+	ServiceVersion  string
+	ServiceVersions map[string]string
+	Logger          *slog.Logger     // nil means slog.Default()
+	Now             func() time.Time // nil means time.Now; tests set it
 	// Extractor and Judge are the role groups checked by /healthz. They may be the
 	// same group.
 	Extractor, Judge HealthChecker
@@ -60,18 +69,18 @@ func newServer(deps Deps) *server {
 }
 
 // routes is the complete route table; the OpenAPI test checks it against
-// api/openapi.yaml. Each /v1 route passes through authenticate then limit, the per-route
-// steps of the chain.
+// api/openapi.yaml. Each /v1 route passes through authenticate, with the scope it needs,
+// then limit: the per-route steps of the chain. jobs:read may poll and read the quota.
 func (s *server) routes() []route {
-	v1 := func(h http.HandlerFunc) http.Handler { return s.authenticate(s.limit(h)) }
+	v1 := func(need string, h http.HandlerFunc) http.Handler { return s.authenticate(need, s.limit(h)) }
 	return []route{
-		{"POST /v1/jobs", v1(s.notImplemented)},              // epic 04: submission
-		{"GET /v1/jobs/{id}", v1(s.notImplemented)},          // epics 03, 06: poll, retention
-		{"DELETE /v1/jobs/{id}", v1(s.notImplemented)},       // epic 06: early delete
-		{"GET /v1/quota", v1(s.notImplemented)},              // epic 05: quota body
-		{"GET /v1/openapi.yaml", v1(s.openAPI)},              // authenticated once epic 02 lands
-		{"GET /healthz", http.HandlerFunc(s.healthz)},        // unauthenticated (contract §12)
-		{"GET /metrics", http.HandlerFunc(s.notImplemented)}, // epic 07: Prometheus, own protection
+		{"POST /v1/jobs", v1(auth.ScopeJobs, s.notImplemented)},         // epic 04: submission
+		{"GET /v1/jobs/{id}", v1(auth.ScopeJobsRead, s.notImplemented)}, // epics 03, 06: poll, retention
+		{"DELETE /v1/jobs/{id}", v1(auth.ScopeJobs, s.notImplemented)},  // epic 06: early delete
+		{"GET /v1/quota", v1(auth.ScopeJobsRead, s.notImplemented)},     // epic 05: quota body
+		{"GET /v1/openapi.yaml", v1("", s.openAPI)},                     // any valid token
+		{"GET /healthz", http.HandlerFunc(s.healthz)},                   // unauthenticated (contract §12)
+		{"GET /metrics", http.HandlerFunc(s.notImplemented)},            // epic 07: Prometheus, own protection
 	}
 }
 
@@ -80,7 +89,7 @@ func (s *server) routes() []route {
 // X-Service-Version.
 func (s *server) dispatch(w http.ResponseWriter, r *http.Request) {
 	if p := r.URL.Path; p == "/v1/jobs" || strings.HasPrefix(p, "/v1/jobs/") {
-		w.Header().Set("X-Service-Version", s.deps.ServiceVersion)
+		w.Header().Set(headerServiceVersion, s.deps.ServiceVersion)
 	}
 	h, pattern := s.mux.Handler(r)
 	if pattern != "" {

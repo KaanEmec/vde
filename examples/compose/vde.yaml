@@ -9,9 +9,13 @@
 
 server:
   # Inside the container the service must listen on every interface; compose publishes the
-  # port on the host's loopback only (see docker-compose.yaml). With a reverse proxy in
-  # front (the commented caddy service), set trusted_proxy: true and drop the published port.
+  # port on the host's loopback only (see docker-compose.yaml). Requests then arrive over
+  # the compose network, not loopback, so plain HTTP needs insecure_http (development
+  # only: vde warns at start). For TLS, use the commented caddy service instead: set
+  # insecure_http: false and trusted_proxy: true, and drop the published port (README.md,
+  # "Reverse proxy with TLS").
   listen: ":8090"
+  insecure_http: true
   trusted_proxy: false
   data_dir: /var/lib/vde   # the named volume `vde-data`: database and blobs
 

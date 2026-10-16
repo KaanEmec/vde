@@ -178,7 +178,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "max attempts one",
-			edit: func(c *Config) { c.Limits.MaxAttempts = 1 },
+			edit: func(c *Config) { c.Limits.MaxAttempts = 1; c.Applications[0].MaxAttempts = 1 },
 		},
 		{
 			name:        "failover tries negative",
@@ -392,6 +392,53 @@ func TestValidate(t *testing.T) {
 			edit:        func(c *Config) { c.Applications[0].Documents.HTML = "pdf" },
 			wantKey:     "applications[0].documents.html",
 			wantMessage: `"pdf" is not one of`,
+		},
+		{
+			name:        "quota window in months",
+			edit:        func(c *Config) { c.Applications[0].Quota.Window = "P1M" },
+			wantKey:     "applications[0].quota.window",
+			wantMessage: "not an ISO 8601 duration",
+		},
+		{
+			name:        "quota window as a Go duration",
+			edit:        func(c *Config) { c.Applications[0].Quota.Window = "24h" },
+			wantKey:     "applications[0].quota.window",
+			wantMessage: "not an ISO 8601 duration",
+		},
+		{
+			name: "weekly quota window",
+			edit: func(c *Config) { c.Applications[0].Quota.Window = "P7D" },
+		},
+		{
+			name:        "application attempts above the global limit",
+			edit:        func(c *Config) { c.Applications[0].MaxAttempts = 5 },
+			wantKey:     "applications[0].max_attempts",
+			wantMessage: "above limits.max_attempts 3",
+			wantWarning: true,
+		},
+
+		// Plain HTTP and token lifetime.
+		{
+			name:        "insecure http warns",
+			edit:        func(c *Config) { c.Server.InsecureHTTP = true },
+			wantKey:     "server.insecure_http",
+			wantMessage: "plain HTTP is accepted",
+			wantWarning: true,
+		},
+		{
+			name: "insecure http with tls",
+			edit: func(c *Config) {
+				c.Server.InsecureHTTP = true
+				c.Server.TLS = TLS{CertFile: "/etc/vde/cert.pem", KeyFile: "/etc/vde/key.pem"}
+			},
+			wantKey:     "server.insecure_http",
+			wantMessage: "together with server.tls",
+		},
+		{
+			name:        "zero token lifetime",
+			edit:        func(c *Config) { c.Auth.MaxTokenTTL = 0 },
+			wantKey:     "auth.max_token_ttl",
+			wantMessage: "must be positive",
 		},
 		{
 			name: "two applications with retention none",

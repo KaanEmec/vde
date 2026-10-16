@@ -32,7 +32,7 @@ published image with the documented minimal configuration:
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
 | 01 | [HTTP API foundation](01-http-api-foundation/README.md) | v0.1 | done |
-| 02 | [Applications and tokens](02-applications-and-tokens/README.md) | 01, 03-01 | in progress |
+| 02 | [Applications and tokens](02-applications-and-tokens/README.md) | 01, 03-01 | done |
 | 03 | [Job store and worker](03-job-store-and-worker/README.md) | v0.1 | done |
 | 04 | [Job submission and retrieval](04-job-submission/README.md) | 01, 02, 03 | planned |
 | 05 | [Quota and rate limits](05-quota-and-rate-limits/README.md) | 02, 04 | planned |

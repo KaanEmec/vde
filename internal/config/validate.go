@@ -96,6 +96,17 @@ func (v *validator) server(c *Config) {
 	if c.Debug.LogContent && (err != nil || !isLoopback(host)) {
 		v.errorf("debug.log_content", "must not be true while server.listen %q is not a loopback address", c.Server.Listen)
 	}
+	if c.Server.InsecureHTTP {
+		if c.Server.TLS.CertFile != "" || c.Server.TLS.KeyFile != "" {
+			v.errorf("server.insecure_http", "must not be true together with server.tls")
+		} else {
+			v.warnf("server.insecure_http", "plain HTTP is accepted from any peer: tokens and documents cross the network "+
+				"unencrypted; use it only on a trusted private network (development, containers)")
+		}
+	}
+	if c.Auth.MaxTokenTTL <= 0 {
+		v.errorf("auth.max_token_ttl", "must be positive")
+	}
 }
 
 func isLoopback(host string) bool {
@@ -303,6 +314,13 @@ func (v *validator) applications(c *Config) {
 			if n.value < 1 {
 				v.errorf(key+n.key, "must be positive")
 			}
+		}
+		if _, err := ParseWindow(a.Quota.Window); err != nil {
+			v.errorf(key+".quota.window", "%v", err)
+		}
+		if a.MaxAttempts > c.Limits.MaxAttempts && c.Limits.MaxAttempts > 0 {
+			v.warnf(key+".max_attempts", "%d is above limits.max_attempts %d; each attempt costs model calls",
+				a.MaxAttempts, c.Limits.MaxAttempts)
 		}
 		if a.Retention.Default != "none" {
 			if d, err := time.ParseDuration(a.Retention.Default); err != nil || d <= 0 {

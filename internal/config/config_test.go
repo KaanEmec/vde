@@ -163,6 +163,43 @@ applications:
 	if cfg.Limits.JobTimeout != 5*time.Minute || cfg.Limits.Pages != 20 {
 		t.Errorf("limit defaults = %+v", cfg.Limits)
 	}
+	if cfg.Server.Listen != "127.0.0.1:8090" || cfg.Server.InsecureHTTP {
+		t.Errorf("server defaults = %+v, want loopback 127.0.0.1:8090 and no insecure_http", cfg.Server)
+	}
+	if cfg.Auth.MaxTokenTTL != 730*24*time.Hour {
+		t.Errorf("auth.max_token_ttl default = %s, want 730 days", cfg.Auth.MaxTokenTTL)
+	}
+	if got := cfg.Server.DatabasePath(); got != "/var/lib/vde/vde.db" {
+		t.Errorf("DatabasePath() = %q", got)
+	}
+}
+
+func TestParseWindow(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		in   string
+		want time.Duration
+	}{
+		{"P1D", 24 * time.Hour},
+		{"PT1H", time.Hour},
+		{"P7D", 7 * 24 * time.Hour},
+		{"P1W", 7 * 24 * time.Hour},
+		{"P1DT12H", 36 * time.Hour},
+		{"PT30M", 30 * time.Minute},
+		{"P1M", 0}, {"P1Y", 0}, {"P", 0}, {"PT", 0}, {"P0D", 0}, {"1D", 0}, {"24h", 0}, {"P1DT", 0}, {"p1d", 0}, {"", 0},
+	}
+	for _, tt := range tests {
+		got, err := ParseWindow(tt.in)
+		if tt.want == 0 {
+			if err == nil {
+				t.Errorf("ParseWindow(%q) = %s, want an error", tt.in, got)
+			}
+			continue
+		}
+		if err != nil || got != tt.want {
+			t.Errorf("ParseWindow(%q) = %s, %v, want %s", tt.in, got, err, tt.want)
+		}
+	}
 }
 
 func TestParse_errors(t *testing.T) {

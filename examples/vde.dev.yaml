@@ -7,6 +7,12 @@
 # probes a model. Take the list from the provider's current documentation and keep it
 # conservative: a type you list that the model cannot read makes jobs fail.
 # Reference for every key: docs/operator/configuration.md
+#
+# `vde serve --config examples/vde.dev.yaml` listens on the default 127.0.0.1:8090 over
+# plain HTTP (loopback only) and keeps its database under ./vde-data.
+
+server:
+  data_dir: ./vde-data   # the default /var/lib/vde needs root on most machines
 
 endpoints:
   anthropic:
