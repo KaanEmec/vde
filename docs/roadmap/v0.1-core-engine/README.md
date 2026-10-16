@@ -1,6 +1,6 @@
 # v0.1 Core engine
 
-Status: in progress
+Status: done (2026-10-16)
 
 ## Goal
 

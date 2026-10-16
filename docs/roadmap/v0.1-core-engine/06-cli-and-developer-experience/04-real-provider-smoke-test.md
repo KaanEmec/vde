@@ -1,6 +1,6 @@
 # Job: Real-provider smoke test
 
-Version: v0.1 · Epic: 06 CLI and developer experience · Status: in progress · Depends on: 01, 02
+Version: v0.1 · Epic: 06 CLI and developer experience · Status: done · Depends on: 01, 02
 
 ## Goal
 
@@ -49,3 +49,16 @@ examples and change with `VDE_LIVE_<PROVIDER>_MODEL`.
 - Verified: skips cleanly without `VDE_LIVE` and with `VDE_LIVE=1` but no key. Not yet
   verified: a passing run with a key (none is set in the development environment); run
   `make live` with one key before tagging v0.1, then mark this job done.
+
+## Outcome (2026-10-16)
+
+Run with the OpenAI-compatible adapter against Nous Research (`google/gemini-3.8-flash`,
+`VDE_LIVE_OPENAI_BASE_URL` override added for non-OpenAI hosts). Sample suite: text, HTML,
+email, PDF and JPEG, with and without schema, all `accepted` (schema-less email first
+failed three attempts because the 4096 default output-token cap truncated the answer; fixed
+by `max_output_tokens`, default 16384, and truncation feedback; re-run `accepted` in one
+attempt). Ten operator-supplied real documents (5 multi-page PDFs read natively, 5 emails):
+all `accepted`, judge confidence 0.75 to 1.0. Typical cost per document: 2 to 3 model
+calls, 4k to 10k input tokens for PDFs, 30k to 165k for raw-HTML emails (`visible_text`
+policy cuts email input roughly 20 to 40 times). Anthropic, OpenAI and Gemini direct keys
+were not available; those adapters are covered by httptest only.

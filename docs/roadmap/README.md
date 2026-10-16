@@ -16,7 +16,7 @@ Ideas deliberately kept out of the first releases are in [`backlog.md`](backlog.
 
 | Version | Theme | Exit criterion |
 | --- | --- | --- |
-| [v0.1 Core engine](v0.1-core-engine/README.md) | Configuration, provider adapters (Anthropic, OpenAI-compatible, Gemini), failover, document representation including email, the extraction loop, a CLI to run it | `vde extract` turns a PDF, an image, an HTML and a text document into accepted or rejected JSON against the fake and one real provider, with failover demonstrated per role |
+| [v0.1 Core engine](v0.1-core-engine/README.md) (done) | Configuration, provider adapters (Anthropic, OpenAI-compatible, Gemini), failover, document representation including email, the extraction loop, a CLI to run it | `vde extract` turns a PDF, an image, an HTML and a text document into accepted or rejected JSON against the fake and one real provider, with failover demonstrated per role |
 | [v0.2 Service](v0.2-service/README.md) | The authenticated HTTP service: applications, tokens, jobs, quota, retention, operations, admin API, packaging | TravelInbox contract v1 acceptance checklist passes against a container deployment |
 | [v0.3 Hardening and extensions](v0.3-hardening-and-extensions/README.md) | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, evaluation harness, multi-replica | A second consumer can use the service without contract changes; the service runs with more than one replica |
 | [v1.0 Stable](v1.0-stable/README.md) | API and configuration freeze, security review, performance baseline, release engineering | `/v1` and the configuration schema are frozen with a 12-month compatibility promise |
