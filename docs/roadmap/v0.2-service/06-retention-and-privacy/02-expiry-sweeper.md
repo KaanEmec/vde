@@ -1,6 +1,6 @@
 # Job: Expiry sweeper
 
-Version: v0.2 · Epic: 06 Retention and privacy · Status: in progress · Depends on: 01
+Version: v0.2 · Epic: 06 Retention and privacy · Status: done · Depends on: 01
 
 ## Goal
 
@@ -29,13 +29,17 @@ part of the single process).
 
 ## Notes
 
-The package is done and tested; it is not started by `serve` yet. Remaining for the wiring
-step: build it in `serve` (`sweeper.New(store, blobs, Options{Interval:
+The package is done and tested. Wiring done (epic 05/07 agent): `vde serve` builds it
+with `retention.sweep_interval` (new config key, default `1m`), `limits.job_timeout`,
+`audit.retention`, the metrics registry as Observer, an audit recorder and
+`DeleteInputsAtTerminal`, runs it on a context cancelled after the HTTP drain and the
+worker stop, and waits for it to return. A job past `expires_at` answers `404` from the
+GET handler before any sweep (`TestGetJobNotFound`). Original plan for the wiring step: build it in `serve` (`sweeper.New(store, blobs, Options{Interval:
 cfg.Retention.SweepInterval, JobTimeout: cfg.Limits.JobTimeout, AuditRetention, Observer,
 Audit, DeleteInputsAtTerminal: ids of applications with `delete_blobs_at_terminal` or
 `force_none`})`, `go Run(ctx)`, stop it with the context at shutdown), the Prometheus
 counter behind `Observer`, and the HTTP check that a job past `expires_at` is `404` even
-before the sweep. Status stays `in progress` until then.
+before the sweep.
 
 ## Acceptance criteria
 

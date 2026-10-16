@@ -22,10 +22,10 @@ events without exposing secrets."
       `auth.failed` (with reason code, no token), `config.loaded` (with
       `service_version`).
 - [x] `details` schema per kind defined as Go structs so no free-form data is written.
-- [x] Also emitted to `slog` at `info` with `audit=true` when `audit.log: true`. (`audit.Options.Logger`; the config key is still to add.)
+- [x] Also emitted to `slog` at `info` with `audit=true` when `audit.log: true`. (`audit.Options.Logger`; config key `audit.log`, wired in `serve`.)
 - [ ] `vde audit list --app id --since …` CLI for operators without a database client.
 - [x] Retention of audit rows is separate (`audit.retention`, default 365 days), swept
-      by the sweeper (`sweeper.Options.AuditRetention`; the config key is still to add).
+      by the sweeper (`sweeper.Options.AuditRetention`; config key `audit.retention`, wired in `serve`).
 - [ ] Tests: every kind written by the code path that owns it; the redaction sentinel
       test (epic 06) covers the audit table too.
 
@@ -49,3 +49,8 @@ handler drops them today). Status stays `in progress`.
 ## Out of scope
 
 Tamper evidence (hash chains), shipping to external SIEMs (use the log stream).
+
+Update (epic 05/07 wiring): `config.loaded` is written at `serve` start; `job.deleted` by
+`DELETE` (`request`) and the first terminal read (`first_read`); `auth.failed` now goes
+through `audit.Recorder` with `audit.AuthFailed`; `serve` passes recorders to the API,
+the worker and the sweeper. Still ad hoc: the token and app events in `cmd/vde`.

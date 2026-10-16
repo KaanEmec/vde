@@ -210,9 +210,11 @@ paths:
       operationId: healthz
       summary: Liveness
       description: |
-        200 when the service can accept jobs, else 503 with the reasons:
-        `role_extractor_down` or `role_judge_down` when every endpoint-model pair of
-        that role's group is marked down. Served at the root, not under `/v1`.
+        200 when the service can accept jobs, else 503 with the reasons: `db` when the
+        database (and so the job queue) does not answer within 1 s, `blobs` when the data
+        directory is not writable (checked at most every 30 s), `role_extractor_down` or
+        `role_judge_down` when every endpoint-model pair of that role's group is marked
+        down. Served at the root, not under `/v1`.
       security: []
       servers:
         - url: http://localhost:8090
@@ -245,9 +247,10 @@ paths:
       operationId: metrics
       summary: Prometheus metrics
       description: |
-        Prometheus text format, at the root. Not authenticated with application tokens;
-        protect it by network or the separate metrics protection of the operator guide.
-        Answers `503 unavailable` until the metrics release (v0.2 epic 07).
+        Prometheus text format, at the root. Not authenticated with application tokens:
+        with `metrics.token_env` it requires that separate bearer token; with
+        `metrics.listen` it is served on that listener and answers 404 here; otherwise it
+        answers only loopback peers that did not come through a proxy (404 to others).
       security: []
       servers:
         - url: http://localhost:8090
@@ -262,6 +265,10 @@ paths:
           content:
             text/plain:
               schema: { type: string }
+        "401":
+          description: The metrics token (`metrics.token_env`) is missing or wrong.
+        "404":
+          description: Not served to this peer, or served on `metrics.listen` instead.
         "5XX": { $ref: "#/components/responses/ServerError" }
 
 components:
@@ -442,7 +449,7 @@ components:
       properties:
         status: { type: string, const: unavailable }
         reasons:
-          description: role_extractor_down, role_judge_down, or a reason added later.
+          description: db, blobs, role_extractor_down, role_judge_down, or a reason added later.
           type: array
           items: { type: string }
         error:

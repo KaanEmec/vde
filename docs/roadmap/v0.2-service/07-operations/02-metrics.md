@@ -1,6 +1,6 @@
 # Job: Prometheus metrics
 
-Version: v0.2 · Epic: 07 Operations · Status: in progress (`internal/metrics` done; wiring open) · Depends on: 01-01, 03-04
+Version: v0.2 · Epic: 07 Operations · Status: done · Depends on: 01-01, 03-04
 
 ## Goal
 
@@ -25,7 +25,7 @@ quota remaining per application.
       `vde_swept_jobs_total`.
 - [x] Labels only from configuration ids (app, endpoint, model, route pattern), never
       from request data.
-- [ ] Protection: `metrics.token_env` (a separate bearer token) or `metrics.listen` (a
+- [x] Protection: `metrics.token_env` (a separate bearer token) or `metrics.listen` (a
       second loopback or internal listener); when neither is set, `/metrics` is served on
       the main listener only to loopback. Building blocks are done in `internal/metrics`
       (`RequireToken(h, token)`, `LoopbackOnly(h)`); reading the config keys and mounting
@@ -68,3 +68,23 @@ listed in the OpenAPI document and its requests are counted under the route `GET
 ## Out of scope
 
 OpenTelemetry, dashboards (an example Grafana JSON may be added later).
+
+## Notes and deviations
+
+- Wiring (epic 05/07 agent): config keys `metrics.token_env`, `metrics.listen`,
+  `metrics.go_runtime` (`internal/config/service.go`, validated, documented). Main
+  listener route in `internal/api/metrics.go`: token → `RequireToken`; `listen` set →
+  `404` here and a second `http.Server` in `vde serve` serving only `GET /metrics`
+  (with the token when set, its requests counted under `GET /metrics`); neither →
+  `LoopbackOnly`, plus a refusal of requests carrying forwarding headers so a reverse
+  proxy on the same host does not publish the metrics.
+- `ObserveHTTP(r.Pattern, status)` from the access log; provider calls observed by a
+  wrapper around each endpoint's provider in `vde serve` (`meteredFactory`); the pool
+  gets `*Metrics` as its Observer and the sweeper as its Observer. `ObserveFailover` is
+  not wired: the router has no failover hook yet.
+- `vde_jobs_in_progress` is set at startup from `CountRunning` (running only: the store
+  interface has no queued count); submit/finish updates belong to the submit and worker
+  owners.
+- Tests: `internal/api/metrics_test.go` (protection modes, route labels are patterns
+  never paths) and the scrape after a full scenario run in
+  `cmd/vde/serve_e2e_test.go`.

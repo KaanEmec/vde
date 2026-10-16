@@ -12,26 +12,36 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/kaanemec/vde/internal/api"
+	"github.com/kaanemec/vde/internal/audit"
+	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/logging"
+	"github.com/kaanemec/vde/internal/metrics"
 	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/sweeper"
 	"github.com/kaanemec/vde/internal/version"
+	"github.com/kaanemec/vde/internal/worker"
 )
 
 const serveUsage = `Usage: vde serve [--config path]
 
 Validates the configuration, opens the database (server.data_dir/vde.db), mirrors the
 configured applications into it (an application no longer configured is disabled and its
-tokens stop working), then serves the /v1 API, /healthz and /metrics on server.listen.
+tokens stop working), starts worker.size job workers and the expiry sweeper, then serves
+the /v1 API, /healthz and /metrics on server.listen (/metrics on metrics.listen instead
+when set).
 With server.tls the binary terminates TLS; otherwise it serves plain HTTP and refuses a
 non-loopback listen address unless server.trusted_proxy (a reverse proxy terminates TLS)
 or server.insecure_http (trusted private networks only) is true. SIGINT or SIGTERM stops
-accepting connections and drains in-flight requests for up to 30 s.
+accepting connections, drains in-flight requests and running jobs for up to 30 s (a job
+still running then resumes after the next start), and stops the sweeper.
 
 Flags:
 `
@@ -112,24 +122,38 @@ func checkListen(s config.Server) error {
 	return fmt.Errorf("server.listen %q is not a loopback address: set server.tls, or server.trusted_proxy when a reverse proxy terminates TLS", s.Listen)
 }
 
-// serve opens the store, mirrors the configured applications into it and runs the HTTP
-// server on ln until ctx is done, then drains in-flight requests. build makes each
-// endpoint's provider. It returns nil after a clean shutdown.
+// serve opens the store, mirrors the configured applications into it, starts the worker
+// pool and the expiry sweeper, and runs the HTTP server on ln (and the metrics listener
+// of metrics.listen) until ctx is done. Then it drains in-flight requests, stops the
+// pool (running jobs get the rest of the drain time to finish, or keep their lease and
+// persisted attempts for the next start) and the sweeper. build makes each endpoint's
+// provider. It returns nil after a clean shutdown.
 func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slog.Logger,
-	build func(*config.Endpoint) (provider.Provider, error)) error {
-	roles, err := extract.NewRoles(cfg, build)
+	build func(*config.Endpoint) (provider.Provider, error)) (err error) {
+	defer func() {
+		if err != nil {
+			ln.Close()
+		}
+	}()
+	var metricOpts []metrics.Option
+	if cfg.Metrics.GoRuntime {
+		metricOpts = append(metricOpts, metrics.WithGoRuntime())
+	}
+	m := metrics.New(metricOpts...)
+	roles, err := extract.NewRoles(cfg, meteredFactory(cfg, build, m))
 	if err != nil {
-		ln.Close()
 		return err
 	}
 	store, err := job.Open(cfg.Server.DatabasePath())
 	if err != nil {
-		ln.Close()
 		return err
 	}
 	defer store.Close()
+	blobs, err := blob.NewFS(filepath.Join(cfg.Server.DataDir, "blobs"))
+	if err != nil {
+		return err
+	}
 	if err := syncApplications(ctx, store, cfg.Applications, time.Now()); err != nil {
-		ln.Close()
 		return err
 	}
 	if len(cfg.Applications) == 0 {
@@ -139,12 +163,53 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 		logger.Warn("SERVER.INSECURE_HTTP IS ON: plain HTTP is accepted from any peer, so tokens and " +
 			"documents cross the network unencrypted; use it only on a trusted private network")
 	}
+	if cfg.Debug.LogContent { // config validation refuses it with a non-loopback listener
+		contentLog, err := logging.OpenContentLog(filepath.Join(cfg.Server.DataDir, "content.log"))
+		if err != nil {
+			return err
+		}
+		defer contentLog.Close()
+		logger.Warn("DEBUG.LOG_CONTENT IS ON: document content, instructions and model answers are " +
+			"written to content.log in server.data_dir; never use it in production")
+	}
+	var auditLogger *slog.Logger
+	if cfg.Audit.Log {
+		auditLogger = logger
+	}
+	rec := audit.New(store, audit.Options{Logger: auditLogger})
 	serviceVersion := extract.ServiceVersion(cfg, version.Version)
+	if err := rec.Record(ctx, audit.ActorConfig, "", "", audit.ConfigLoaded{ServiceVersion: serviceVersion}); err != nil {
+		logger.Warn("audit event not written", "kind", string(audit.ConfigLoadedKind), "error", err)
+	}
 	versions := make(map[string]string, len(cfg.Applications))
+	inputsAtTerminal := map[string]bool{}
 	for _, a := range cfg.Applications {
 		versions[a.ID] = extract.ApplicationServiceVersion(cfg, a, version.Version)
 		logger.Info("application enabled", "app_id", a.ID, "service_version", versions[a.ID])
+		if a.Retention.ForceNone || a.Retention.DeleteBlobsAtTerminal {
+			inputsAtTerminal[a.ID] = true
+		}
+		if n, err := store.CountRunning(ctx, a.ID); err == nil {
+			m.SetJobsInProgress(a.ID, n) // jobs left running by a previous process
+		}
 	}
+
+	pool := worker.New(store, blobs, cfg, roles, worker.Options{
+		Size:         cfg.Worker.Size,
+		PollInterval: cfg.Worker.PollInterval,
+		Observer:     m,
+		Logger:       logger,
+		Audit:        rec.WithActor(audit.ActorWorker),
+	})
+	sweep := sweeper.New(store, blobs, sweeper.Options{
+		Interval:               cfg.Retention.SweepInterval,
+		JobTimeout:             cfg.Limits.JobTimeout,
+		AuditRetention:         cfg.Audit.Retention,
+		Logger:                 logger,
+		Observer:               m,
+		Audit:                  rec.WithActor(audit.ActorSweeper),
+		DeleteInputsAtTerminal: inputsAtTerminal,
+	})
 	handler := api.New(api.Deps{
 		Config:          cfg,
 		Store:           store,
@@ -153,21 +218,34 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 		Logger:          logger,
 		Extractor:       roles.Extractor,
 		Judge:           roles.Judge,
+		Blobs:           blobs,
+		Wake:            pool.Wake,
+		Metrics:         m,
+		Audit:           rec.WithActor(audit.ActorAPI),
 	})
 	useTLS := cfg.Server.TLS.CertFile != ""
-	srv := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: readHeaderTimeout,
-		ReadTimeout:       readTimeout,
-		WriteTimeout:      writeTimeout,
-		IdleTimeout:       idleTimeout,
-		MaxHeaderBytes:    maxHeaderBytes,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
-	}
+	srv := newHTTPServer(handler, logger)
 	if useTLS {
 		srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} // Go's default suites otherwise
 	}
-	// Epic 03: start the worker pool here, before accepting requests.
+	var metricsSrv *http.Server
+	var metricsLn net.Listener
+	if cfg.Metrics.Listen != "" {
+		if metricsLn, err = net.Listen("tcp", cfg.Metrics.Listen); err != nil {
+			return fmt.Errorf("metrics.listen: %w", err)
+		}
+		metricsSrv = newHTTPServer(metricsHandler(m, cfg.Metrics), logger)
+	}
+
+	// The pool and the sweeper outlive the signal: they stop after the HTTP drain.
+	bgCtx, stopBackground := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopBackground()
+	pool.Start(bgCtx)
+	sweepDone := make(chan struct{})
+	go func() {
+		defer close(sweepDone)
+		sweep.Run(bgCtx)
+	}()
 
 	logger.Info("vde serve starting",
 		"service_version", serviceVersion,
@@ -175,7 +253,7 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 		"tls", useTLS,
 		"trusted_proxy", cfg.Server.TrustedProxy,
 		"insecure_http", cfg.Server.InsecureHTTP)
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
 	go func() {
 		if useTLS {
 			errc <- srv.ServeTLS(ln, cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile)
@@ -183,27 +261,125 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 		}
 		errc <- srv.Serve(ln)
 	}()
+	servers := 1
+	if metricsSrv != nil {
+		servers++
+		logger.Info("metrics listener starting", "listen", metricsLn.Addr().String())
+		go func() { errc <- metricsSrv.Serve(metricsLn) }()
+	}
 
+	var serveErr error
 	select {
-	case err := <-errc:
-		return err // the listener failed; nothing is in flight to drain
+	case serveErr = <-errc: // a listener failed: stop everything
+		servers--
 	case <-ctx.Done():
 	}
 	logger.Info("vde serve stopping", "drain_timeout", drainTimeout.String())
 	drainCtx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
-	err = srv.Shutdown(drainCtx)
-	if err != nil {
-		srv.Close() // drain timed out: cut the remaining connections
-		err = fmt.Errorf("drain: %w", err)
+	err = shutdown(drainCtx, srv)
+	if metricsSrv != nil {
+		err = errors.Join(err, shutdown(drainCtx, metricsSrv))
 	}
-	// Epic 03: stop the worker here, after the HTTP drain, so no new job is submitted
-	// while running jobs finish or give their lease back (drainCtx bounds it).
-	if serr := <-errc; !errors.Is(serr, http.ErrServerClosed) {
-		err = errors.Join(err, serr)
+	// After the HTTP drain no job is submitted any more; running jobs finish within the
+	// rest of the drain time or keep their lease for the next start.
+	if perr := pool.Stop(drainCtx); perr != nil {
+		logger.Warn("worker pool stopped before its jobs finished; they resume after a restart", "error", perr)
+	}
+	stopBackground()
+	<-sweepDone
+	for range servers {
+		if serr := <-errc; !errors.Is(serr, http.ErrServerClosed) {
+			err = errors.Join(err, serr)
+		}
+	}
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		err = errors.Join(serveErr, err)
 	}
 	if err == nil {
 		logger.Info("vde serve stopped")
 	}
 	return err
+}
+
+// newHTTPServer returns a server with the service's timeouts and its error log on logger.
+func newHTTPServer(h http.Handler, logger *slog.Logger) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+	}
+}
+
+// shutdown drains srv until ctx is done, then cuts the remaining connections.
+func shutdown(ctx context.Context, srv *http.Server) error {
+	if err := srv.Shutdown(ctx); err != nil {
+		srv.Close()
+		return fmt.Errorf("drain: %w", err)
+	}
+	return nil
+}
+
+// metricsHandler serves GET /metrics alone on the metrics.listen listener, behind the
+// metrics token when metrics.token_env is set. Its requests are counted under the route
+// GET /metrics.
+func metricsHandler(m *metrics.Metrics, c config.Metrics) http.Handler {
+	h := m.Handler()
+	if c.TokenEnv != "" {
+		h = metrics.RequireToken(h, c.Token())
+	}
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", h)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		mux.ServeHTTP(sw, r)
+		m.ObserveHTTP(r.Pattern, sw.status)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusRecorder) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+// meteredFactory wraps build so every provider call is counted and timed in m by role,
+// endpoint id, model id and outcome; nothing from the request or the answer is used.
+func meteredFactory(cfg *config.Config, build func(*config.Endpoint) (provider.Provider, error), m *metrics.Metrics) func(*config.Endpoint) (provider.Provider, error) {
+	names := make(map[*config.Endpoint]string, len(cfg.Endpoints))
+	for name, e := range cfg.Endpoints {
+		names[e] = name
+	}
+	return func(e *config.Endpoint) (provider.Provider, error) {
+		p, err := build(e)
+		if err != nil {
+			return nil, err
+		}
+		return metered{endpoint: names[e], p: p, m: m}, nil
+	}
+}
+
+type metered struct {
+	endpoint string
+	p        provider.Provider
+	m        *metrics.Metrics
+}
+
+func (p metered) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
+	start := time.Now()
+	resp, err := p.p.Complete(ctx, req)
+	outcome := "ok"
+	if err != nil {
+		outcome = provider.Classify(err).String()
+	}
+	p.m.ObserveProviderCall(roleOf(req.System), p.endpoint, req.Model, outcome, time.Since(start))
+	return resp, err
 }

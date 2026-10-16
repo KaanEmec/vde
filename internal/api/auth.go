@@ -2,19 +2,19 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/job"
 )
 
 // Audit event kinds written by the HTTP layer.
-const auditAuthFailed = "auth.failed"
+const auditAuthFailed = string(audit.AuthFailedKind)
 
 // lastUsedInterval bounds how often a token's last_used_at is written, so polls do not
 // write on every request.
@@ -60,10 +60,7 @@ func (s *server) authenticate(need string, next http.Handler) http.Handler {
 		var refused *auth.RefusedError
 		switch {
 		case errors.As(err, &refused):
-			s.audit(ctx, job.AuditEvent{At: now, Kind: auditAuthFailed, ApplicationID: refused.ApplicationID},
-				struct {
-					Reason auth.Reason `json:"reason"`
-				}{refused.Reason})
+			s.recordAudit(ctx, refused.ApplicationID, "", audit.AuthFailed{Reason: string(refused.Reason)})
 			closeIfBodyPending(w, r)
 			w.Header().Set("WWW-Authenticate", `Bearer realm="vde"`)
 			writeError(w, r, newError(codeUnauthorized, msgUnauthorized))
@@ -123,18 +120,18 @@ func closeIfBodyPending(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// audit appends e with details marshalled from a fixed struct. A failure is logged and
-// does not change the response.
-func (s *server) audit(ctx context.Context, e job.AuditEvent, details any) {
-	if details != nil {
-		raw, err := json.Marshal(details)
-		if err == nil {
-			e.Details = raw
-		}
+// recordAudit appends one audit event through the audit package's typed details (never
+// content), tagged with the API actor, with Deps.Audit or, when that is nil, a recorder
+// on the store (authentication failures and deletions are always audited). A failure is
+// logged and does not change the response.
+func (s *server) recordAudit(ctx context.Context, applicationID, jobID string, d audit.Details) {
+	rec := s.deps.Audit
+	if rec == nil {
+		rec = audit.New(s.deps.Store, audit.Options{Clock: s.now})
 	}
-	if _, err := s.deps.Store.AppendAudit(context.WithoutCancel(ctx), e); err != nil {
+	if err := rec.Record(context.WithoutCancel(ctx), audit.ActorAPI, applicationID, jobID, d); err != nil {
 		s.log.LogAttrs(ctx, slog.LevelWarn, "audit event not written",
-			slog.String("kind", e.Kind), slog.String("error", err.Error()))
+			slog.String("kind", string(d.AuditKind())), slog.String("job_id", jobID), slog.String("error", err.Error()))
 	}
 }
 

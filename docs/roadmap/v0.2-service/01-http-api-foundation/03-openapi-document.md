@@ -45,3 +45,6 @@ Generating server code or clients from the document.
 - The `Job` json-tag check is deferred to epic 04, which adds the handler's job struct;
   this job checks routes, error codes and the TravelInbox superset (paths, methods,
   response codes, required fields; `SubmitJob.schema` is the one deliberate relaxation).
+- Deferred check done (epic 04): `TestJobResponseMatchesOpenAPI` in
+  `internal/api/jobs_get_test.go` compares `jobResponse`'s json tags with the `Job`
+  schema's properties, and `TestGetJobBodies` validates real bodies against the schema.

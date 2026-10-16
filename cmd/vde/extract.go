@@ -17,6 +17,7 @@ import (
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
+	"github.com/kaanemec/vde/internal/logging"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 	"github.com/kaanemec/vde/internal/version"
@@ -330,15 +331,12 @@ func describeProgress(p extract.Progress) string {
 	return "no usable answer"
 }
 
-// newLogger returns a logger on w at the configured level and format.
+// newLogger returns the redacting logger (internal/logging: a fixed key allow-list and
+// value truncation) on w at the configured level and format.
 func newLogger(w io.Writer, l config.Logging) *slog.Logger {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(l.Level)); err != nil {
 		level = slog.LevelInfo
 	}
-	opts := &slog.HandlerOptions{Level: level}
-	if l.Format == "json" {
-		return slog.New(slog.NewJSONHandler(w, opts))
-	}
-	return slog.New(slog.NewTextHandler(w, opts))
+	return logging.New(w, level, l.Format)
 }

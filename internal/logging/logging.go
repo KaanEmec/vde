@@ -37,6 +37,9 @@ var allowed = []string{
 	// Diagnostics. "error" and "reason" carry messages the code controls (provider
 	// errors never quote content, contract §2); "panic" and "stack" name code.
 	"error", "reason", "panic", "stack",
+	// Audit lines (audit.log): details is JSON built from the audit package's fixed
+	// structs, never content.
+	"audit", "actor", "details",
 	// The standard slog keys.
 	slog.TimeKey, slog.LevelKey, slog.MessageKey, slog.SourceKey,
 }

@@ -1,0 +1,107 @@
+package api
+
+import (
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/metrics"
+)
+
+func metricsConfig(t *testing.T, yaml string) *config.Config {
+	t.Helper()
+	cfg, err := config.Parse([]byte("server: {insecure_http: true, data_dir: "+strconv.Quote(t.TempDir())+"}\n"+yaml), func(k string) string {
+		if k == "VDE_METRICS_TOKEN" {
+			return "scrape-secret"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+func TestMetricsRoute(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		yaml    string
+		nilReg  bool
+		remote  string
+		header  [2]string
+		want    int
+		wantVDE bool // body is the Prometheus text
+	}{
+		{name: "loopback peer", want: http.StatusOK, wantVDE: true},
+		{name: "remote peer refused", remote: "203.0.113.7:4000", want: http.StatusNotFound},
+		{name: "proxied loopback refused", header: [2]string{"X-Forwarded-For", "203.0.113.7"}, want: http.StatusNotFound},
+		{name: "token required", yaml: "metrics: {token_env: VDE_METRICS_TOKEN}", remote: "203.0.113.7:4000", want: http.StatusUnauthorized},
+		{name: "token accepted", yaml: "metrics: {token_env: VDE_METRICS_TOKEN}", remote: "203.0.113.7:4000",
+			header: [2]string{"Authorization", "Bearer scrape-secret"}, want: http.StatusOK, wantVDE: true},
+		{name: "token unset refuses all", yaml: "metrics: {token_env: VDE_UNSET}",
+			header: [2]string{"Authorization", "Bearer "}, want: http.StatusUnauthorized},
+		{name: "second listener: not on the main one", yaml: "metrics: {listen: \"127.0.0.1:9090\"}", want: http.StatusNotFound},
+		{name: "no registry", nilReg: true, want: http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := metrics.New()
+			if tt.nilReg {
+				m = nil
+			}
+			h := New(Deps{Config: metricsConfig(t, tt.yaml), Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler),
+				Extractor: fakeHealth(true), Judge: fakeHealth(true), Metrics: m})
+			serve(h, http.MethodGet, "/healthz", nil) // one observed request
+			w := serve(h, http.MethodGet, "/metrics", func(r *http.Request) {
+				if tt.remote != "" {
+					r.RemoteAddr = tt.remote
+				}
+				if tt.header[0] != "" {
+					r.Header.Set(tt.header[0], tt.header[1])
+				}
+			})
+			if w.Code != tt.want {
+				t.Fatalf("status = %d, want %d; body %s", w.Code, tt.want, w.Body)
+			}
+			if !tt.wantVDE {
+				if strings.Contains(w.Body.String(), "vde_") {
+					t.Errorf("refused request got metrics: %s", w.Body)
+				}
+				return
+			}
+			if want := `vde_http_requests_total{route="GET /healthz",status="200"} 1`; !strings.Contains(w.Body.String(), want) {
+				t.Errorf("metrics lack %s:\n%s", want, w.Body)
+			}
+		})
+	}
+}
+
+// TestMetricsHTTPLabels: the route label is the mux pattern, never the request path,
+// so job ids and unmatched paths cannot reach a label.
+func TestMetricsHTTPLabels(t *testing.T) {
+	t.Parallel()
+	f := newJobFixture(t)
+	deps := f.s.deps
+	deps.Metrics = metrics.New()
+	h := handlerOf(newServer(deps))
+	serve(h, http.MethodGet, "/v1/jobs/j_secretid", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+f.token) })
+	serve(h, http.MethodGet, "/no/such/path-secret", nil)
+	w := serve(h, http.MethodGet, "/metrics", nil)
+	body := w.Body.String()
+	for _, want := range []string{
+		`vde_http_requests_total{route="GET /v1/jobs/{id}",status="404"} 1`,
+		`vde_http_requests_total{route="none",status="404"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics lack %s", want)
+		}
+	}
+	if strings.Contains(body, "secret") {
+		t.Errorf("metrics carry request data:\n%s", body)
+	}
+}
