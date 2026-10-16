@@ -1,6 +1,6 @@
 # Job: Anthropic adapter
 
-Version: v0.1 · Epic: 02 Provider adapters · Status: planned · Depends on: 01
+Version: v0.1 · Epic: 02 Provider adapters · Status: done · Depends on: 01
 
 ## Goal
 
@@ -16,24 +16,25 @@ or model ids.
 
 ## Tasks
 
-- [ ] Request mapping: `System` → system prompt; `Parts` → one user message with text,
+- [x] Request mapping: `System` → system prompt; `Parts` → one user message with text,
       image (base64) and document (base64 PDF) content blocks in order; `MaxTokens`,
       `Temperature` (default low, 0 or 0.1, for extraction).
-- [ ] Headers: API key from the resolved secret, API version header, user agent.
-      Optional extra headers from endpoint config (for proxies and gateways).
-- [ ] Error mapping: 429 and 5xx and overloaded → retryable with `Retry-After` when
+- [x] Headers: API key from the resolved secret, API version header, user agent.
+      Optional extra headers from endpoint config (for proxies and gateways): not done,
+      `config.Endpoint` has no header setting in v0.1; noted in the adapter doc.
+- [x] Error mapping: 429 and 5xx and overloaded → retryable with `Retry-After` when
       present; 400 invalid request, 401, 403, 413 → permanent; refusal stop reason →
       permanent with a distinct message so the loop reports `extractor_failed`.
-- [ ] Respect per-call timeout from the endpoint config via context.
-- [ ] Data handling (decision 12): set every retention or no-training option the API
+- [x] Respect per-call timeout from the endpoint config via context.
+- [x] Data handling (decision 12): set every retention or no-training option the API
       exposes to its strictest value by default; document the account-level settings
       (zero data retention agreements) that cannot be set per request.
-- [ ] Prompt caching for the fixed framing and the document on retries is an optional
+- [x] Prompt caching for the fixed framing and the document on retries is an optional
       follow-up; note it in the adapter doc, do not implement in v0.1.
-- [ ] `docs/providers/anthropic.md`: what is sent (framing, instructions, schema, document
+- [x] `docs/providers/anthropic.md`: what is sent (framing, instructions, schema, document
       bytes, candidate, feedback), which headers, data retention and training settings
       the operator should know about and where to set them (contract §10).
-- [ ] Tests with `httptest.Server`: successful call with PDF part, 429 with Retry-After,
+- [x] Tests with `httptest.Server`: successful call with PDF part, 429 with Retry-After,
       500, refusal; assert the JSON body shape.
 
 ## Acceptance criteria
