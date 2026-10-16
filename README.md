@@ -31,6 +31,8 @@ bin/vde config check --config vde.yaml
 - [Architecture overview](docs/architecture/overview.md) and [decisions](docs/architecture/decisions/)
 - [Roadmap](docs/roadmap/README.md)
 - [Configuration reference](docs/operator/configuration.md)
+- [Provider adapters](docs/providers/README.md): comparison, what each sends, retention notes
+- [Examples](examples/README.md): development configurations and sample documents
 - [TravelInbox contract](FromTravelApp/EXTRACTION-SERVICE-CONTRACT.md), the acceptance test of the first deployable release
 
 ## License
