@@ -12,6 +12,7 @@ import (
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/anthropic"
 	"github.com/kaanemec/vde/internal/provider/bedrock"
+	"github.com/kaanemec/vde/internal/provider/classifier"
 	"github.com/kaanemec/vde/internal/provider/gemini"
 	"github.com/kaanemec/vde/internal/provider/openai"
 	"github.com/kaanemec/vde/internal/provider/vertex"
@@ -39,6 +40,8 @@ func newProvider(e *config.Endpoint) (provider.Provider, error) {
 			return nil, err
 		}
 		return c, nil
+	case config.ProviderClassifier:
+		return classifier.New(e), nil
 	case "fake":
 		return nil, errors.New("provider fake needs --provider-script")
 	}
