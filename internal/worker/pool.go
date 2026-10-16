@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/document"
@@ -56,6 +57,8 @@ type Options struct {
 	WorkerID string // prefix of the worker ids written to leases; "vde-<pid>"
 	Observer Observer
 	Logger   *slog.Logger
+	// Audit receives job.finished events; nil records none.
+	Audit *audit.Recorder
 }
 
 // Pool is a fixed set of workers leasing jobs from the store and running the
@@ -101,6 +104,7 @@ func New(store job.Store, blobs blob.Store, cfg *config.Config, roles extract.Ro
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
+	opts.Audit = opts.Audit.WithActor(audit.ActorWorker)
 	p := &Pool{
 		store: store, blobs: blobs, cfg: cfg, roles: roles, opts: opts,
 		apps:          map[string]config.Application{},
@@ -232,6 +236,8 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	}
 	log.Info("worker: job finished", "status", string(out.Status), "attempts", out.Attempts, "error_code", errorCode(out))
 	p.opts.Observer.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
+	j.Status, j.Attempts, j.Error, j.FinishedAt = out.Status, out.Attempts, out.Error, time.Now()
+	p.opts.Audit.JobFinished(fctx, j)
 	p.applyRetention(fctx, log, j)
 }
 
@@ -364,10 +370,13 @@ func (p *Pool) maxAttempts(j job.Job) int {
 	return limit
 }
 
-// applyRetention deletes the inputs of a retention: none job at its terminal state
-// (contract §10): blobs first, then the instruction and schema columns.
+// applyRetention deletes the inputs of a job at its terminal state (contract §10): blobs
+// first, then the instruction and schema columns. That is every retention: none job, and
+// a retention: default job of an application with delete_blobs_at_terminal; the other
+// default jobs keep their inputs until the sweeper removes them at expires_at.
 func (p *Pool) applyRetention(ctx context.Context, log *slog.Logger, j job.Job) {
-	if j.Retention != job.RetentionNone && !p.apps[j.ApplicationID].Retention.ForceNone {
+	r := p.apps[j.ApplicationID].Retention
+	if j.Retention != job.RetentionNone && !r.ForceNone && !r.DeleteBlobsAtTerminal {
 		return
 	}
 	if err := p.blobs.DeleteAll(ctx, j.ID); err != nil {

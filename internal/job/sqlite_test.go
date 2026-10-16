@@ -500,3 +500,163 @@ func TestLeaseMaxInProgress(t *testing.T) {
 		t.Errorf("lease order = %q, want %q (busy capped at 2)", got, want)
 	}
 }
+
+func TestListStaleRunning(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedApp(t, s, testApp("app"))
+	var ids []string
+	for i := range 3 {
+		j := newJob("app")
+		j.CreatedAt = t0.Add(time.Duration(i) * time.Minute)
+		ids = append(ids, createJob(t, s, j).ID)
+	}
+	oldest := newJob("app")
+	oldest.CreatedAt = t0.Add(-time.Hour)
+	createJob(t, s, oldest)
+	// Leasing takes the oldest first: oldest, ids[0] and ids[1] run; ids[2] stays queued.
+	for range 3 {
+		if _, err := s.LeaseNextQueued(ctx, "w", t0.Add(time.Hour), t0.Add(2*time.Hour), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ListStaleRunning(ctx, t0.Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotIDs []string
+	for _, j := range got {
+		gotIDs = append(gotIDs, j.ID)
+	}
+	if want := []string{oldest.ID, ids[0], ids[1]}; !slices.Equal(gotIDs, want) {
+		t.Errorf("ListStaleRunning = %v, want %v", gotIDs, want)
+	}
+	if got, _ := s.ListStaleRunning(ctx, t0.Add(time.Minute), 1); len(got) != 1 {
+		t.Errorf("limit 1 = %d jobs", len(got))
+	}
+	if got, _ := s.ListStaleRunning(ctx, t0.Add(-2*time.Hour), 10); len(got) != 0 {
+		t.Errorf("nothing is that old, got %d jobs", len(got))
+	}
+	// A queued job is never stale.
+	fresh := createJob(t, s, newJob("app"))
+	got, _ = s.ListStaleRunning(ctx, t0.Add(24*time.Hour), 10)
+	for _, j := range got {
+		if j.ID == fresh.ID {
+			t.Error("a queued job was listed as stale running")
+		}
+	}
+}
+
+func TestDeleteQuotaBefore(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	for i := range 4 {
+		for _, app := range []string{"a", "b"} {
+			if _, err := s.IncrementQuota(ctx, app, t0.Add(time.Duration(i)*24*time.Hour), 10); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	n, err := s.DeleteQuotaBefore(ctx, "a", t0.Add(48*time.Hour))
+	if err != nil || n != 2 {
+		t.Fatalf("DeleteQuotaBefore = %d, %v; want 2", n, err)
+	}
+	for i, want := range map[int][2]int{0: {0, 1}, 1: {0, 1}, 2: {1, 1}, 3: {1, 1}} {
+		w := t0.Add(time.Duration(i) * 24 * time.Hour)
+		a, _ := s.GetQuota(ctx, "a", w)
+		b, _ := s.GetQuota(ctx, "b", w)
+		if a != want[0] || b != want[1] {
+			t.Errorf("window %d: a=%d b=%d, want %v", i, a, b, want)
+		}
+	}
+}
+
+func TestDeleteTokensBefore(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedApp(t, s, testApp("app"))
+	mk := func(id string, expires time.Time) {
+		t.Helper()
+		if err := s.CreateToken(ctx, Token{ID: id, ApplicationID: "app", Hash: []byte("h"), ExpiresAt: expires, CreatedAt: t0.Add(-1000 * time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cutoff := t0
+	mk("expired-old", cutoff.Add(-time.Hour))
+	mk("expired-recent", cutoff.Add(time.Hour))
+	mk("live", cutoff.Add(24*time.Hour))
+	mk("revoked-old", cutoff.Add(24*time.Hour))
+	mk("revoked-recent", cutoff.Add(24*time.Hour))
+	if err := s.RevokeToken(ctx, "revoked-old", cutoff.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RevokeToken(ctx, "revoked-recent", cutoff.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.DeleteTokensBefore(ctx, cutoff)
+	if err != nil || n != 2 {
+		t.Fatalf("DeleteTokensBefore = %d, %v; want 2", n, err)
+	}
+	left, _ := s.ListTokens(ctx, "app")
+	var ids []string
+	for _, tok := range left {
+		ids = append(ids, tok.ID)
+	}
+	slices.Sort(ids)
+	if want := []string{"expired-recent", "live", "revoked-recent"}; !slices.Equal(ids, want) {
+		t.Errorf("tokens left = %v, want %v", ids, want)
+	}
+}
+
+func TestListAndDeleteAudit(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	events := []AuditEvent{
+		{At: t0, Kind: "token.created", ApplicationID: "a", Actor: "cli", Details: json.RawMessage(`{"token_id":"x"}`)},
+		{At: t0.Add(time.Hour), Kind: "job.finished", ApplicationID: "a", JobID: "j_1"},
+		{At: t0.Add(2 * time.Hour), Kind: "job.finished", ApplicationID: "b", JobID: "j_2"},
+	}
+	for _, e := range events {
+		if _, err := s.AppendAudit(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := func(f AuditFilter, limit int) []AuditEvent {
+		t.Helper()
+		got, err := s.ListAudit(ctx, f, limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	all := list(AuditFilter{}, 0)
+	if len(all) != 3 || all[0].Kind != "token.created" || all[0].Actor != "cli" || !all[0].At.Equal(t0) ||
+		string(all[0].Details) != `{"token_id":"x"}` || string(all[1].Details) != `{}` || all[0].ID == 0 {
+		t.Errorf("ListAudit all = %+v", all)
+	}
+	for name, tt := range map[string]struct {
+		f    AuditFilter
+		want int
+	}{
+		"application": {AuditFilter{ApplicationID: "a"}, 2},
+		"kind":        {AuditFilter{Kind: "job.finished"}, 2},
+		"job":         {AuditFilter{JobID: "j_2"}, 1},
+		"since":       {AuditFilter{Since: t0.Add(time.Hour)}, 2},
+		"combined":    {AuditFilter{ApplicationID: "a", Kind: "job.finished", Since: t0.Add(time.Hour)}, 1},
+		"none":        {AuditFilter{ApplicationID: "zzz"}, 0},
+	} {
+		if got := list(tt.f, 0); len(got) != tt.want {
+			t.Errorf("%s: %d events, want %d", name, len(got), tt.want)
+		}
+	}
+	if got := list(AuditFilter{}, 2); len(got) != 2 {
+		t.Errorf("limit 2 = %d events", len(got))
+	}
+	n, err := s.DeleteAuditBefore(ctx, t0.Add(time.Hour))
+	if err != nil || n != 1 {
+		t.Fatalf("DeleteAuditBefore = %d, %v; want 1", n, err)
+	}
+	if got := list(AuditFilter{}, 0); len(got) != 2 {
+		t.Errorf("%d events left, want 2", len(got))
+	}
+}

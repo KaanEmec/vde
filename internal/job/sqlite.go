@@ -690,3 +690,86 @@ func (s *SQLite) oneRow(ctx context.Context, res sql.Result, id string) error {
 	}
 	return ErrConflict
 }
+
+// ListStaleRunning implements Store.
+func (s *SQLite) ListStaleRunning(ctx context.Context, createdBefore time.Time, limit int) ([]Job, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+jobColumns+` FROM jobs WHERE status = 'running' AND created_at <= ? ORDER BY created_at, id LIMIT ?`,
+		createdBefore.UnixMilli(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("job: list stale running: %w", err)
+	}
+	defer rows.Close()
+	var out []Job
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, fmt.Errorf("job: list stale running: %w", err)
+		}
+		out = append(out, j)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("job: list stale running: %w", err)
+	}
+	return out, nil
+}
+
+// DeleteQuotaBefore implements Store.
+func (s *SQLite) DeleteQuotaBefore(ctx context.Context, applicationID string, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM quota_usage WHERE application_id = ? AND window_start < ?`, applicationID, before.UnixMilli())
+	if err != nil {
+		return 0, fmt.Errorf("job: delete quota: %w", err)
+	}
+	return affected(res)
+}
+
+// DeleteTokensBefore implements Store.
+func (s *SQLite) DeleteTokensBefore(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM tokens WHERE expires_at < ?1 OR (revoked_at IS NOT NULL AND revoked_at < ?1)`, before.UnixMilli())
+	if err != nil {
+		return 0, fmt.Errorf("job: delete tokens: %w", err)
+	}
+	return affected(res)
+}
+
+// ListAudit implements Store.
+func (s *SQLite) ListAudit(ctx context.Context, f AuditFilter, limit int) ([]AuditEvent, error) {
+	if limit <= 0 {
+		limit = -1 // SQLite: no limit
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, at, kind, application_id, actor, job_id, details FROM audit_events
+		WHERE (?1 = '' OR application_id = ?1) AND (?2 = '' OR kind = ?2) AND (?3 = '' OR job_id = ?3) AND at >= ?4
+		ORDER BY at, id LIMIT ?5`,
+		f.ApplicationID, f.Kind, f.JobID, f.Since.UnixMilli(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("job: list audit: %w", err)
+	}
+	defer rows.Close()
+	var out []AuditEvent
+	for rows.Next() {
+		var e AuditEvent
+		var at int64
+		var details string
+		if err := rows.Scan(&e.ID, &at, &e.Kind, &e.ApplicationID, &e.Actor, &e.JobID, &details); err != nil {
+			return nil, fmt.Errorf("job: list audit: %w", err)
+		}
+		e.At, e.Details = time.UnixMilli(at).UTC(), json.RawMessage(details)
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("job: list audit: %w", err)
+	}
+	return out, nil
+}
+
+// DeleteAuditBefore implements Store.
+func (s *SQLite) DeleteAuditBefore(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM audit_events WHERE at < ?`, before.UnixMilli())
+	if err != nil {
+		return 0, fmt.Errorf("job: delete audit: %w", err)
+	}
+	return affected(res)
+}
