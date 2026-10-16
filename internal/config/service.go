@@ -22,6 +22,15 @@ type Metrics struct {
 // Token returns the metrics token resolved from TokenEnv, or "".
 func (m Metrics) Token() string { return m.token }
 
+// Admin configures the admin API (epic 11): /admin/v1 on its own listener, reached with
+// admin tokens (vde token create --admin).
+type Admin struct {
+	// Listen is the admin listener (host:port); empty disables the admin API. A
+	// non-loopback address needs server.tls (the admin listener serves the same
+	// certificate) or server.insecure_http.
+	Listen string `yaml:"listen"`
+}
+
 // Worker sizes the job worker pool of serve.
 type Worker struct {
 	Size         int           `yaml:"size"`          // concurrent jobs
@@ -41,6 +50,7 @@ type Audit struct {
 }
 
 const (
+	defaultAdminListen    = "127.0.0.1:8091"
 	defaultAuditRetention = 365 * 24 * time.Hour
 	minAuditRetention     = 24 * time.Hour
 	defaultWorkerSize     = 4
@@ -51,7 +61,7 @@ const (
 	minSweepInterval      = time.Second
 )
 
-// service checks the metrics, worker, retention and audit keys. Only names are printed, never
+// service checks the metrics, admin, worker, retention and audit keys. Only names are printed, never
 // the token.
 func (v *validator) service(c *Config) {
 	m := c.Metrics
@@ -72,6 +82,18 @@ func (v *validator) service(c *Config) {
 		case !isLoopback(host) && m.TokenEnv == "":
 			v.warnf("metrics.listen", "%q is not a loopback address and metrics.token_env is not set: "+
 				"anyone who reaches it can read the metrics", m.Listen)
+		}
+	}
+	if a := c.Admin.Listen; a != "" {
+		host, _, err := net.SplitHostPort(a)
+		switch {
+		case err != nil:
+			v.errorf("admin.listen", "%q is not host:port", a)
+		case a == c.Server.Listen || a == m.Listen:
+			v.errorf("admin.listen", "must differ from server.listen and metrics.listen")
+		case !isLoopback(host) && c.Server.TLS.CertFile == "" && !c.Server.InsecureHTTP:
+			v.errorf("admin.listen", "%q is not a loopback address: set server.tls (the admin listener "+
+				"serves the same certificate), or server.insecure_http on a trusted private network", a)
 		}
 	}
 	if c.Worker.Size < 1 || c.Worker.Size > maxWorkerSize {

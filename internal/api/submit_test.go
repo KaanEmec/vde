@@ -470,13 +470,15 @@ func TestSubmitQueuedJob(t *testing.T) {
 	}
 }
 
+// email is a message/rfc822 document with one PDF attachment, ticket.pdf.
+const email = "From: a@example.com\r\nTo: b@example.com\r\nSubject: Booking\r\nMIME-Version: 1.0\r\n" +
+	"Content-Type: multipart/mixed; boundary=\"b1\"\r\n\r\n" +
+	"--b1\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + submitDocText + "\r\n" +
+	"--b1\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"ticket.pdf\"\r\n" +
+	"Content-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjcK\r\n--b1--\r\n"
+
 func TestSubmitAccepted(t *testing.T) {
 	t.Parallel()
-	email := "From: a@example.com\r\nTo: b@example.com\r\nSubject: Booking\r\nMIME-Version: 1.0\r\n" +
-		"Content-Type: multipart/mixed; boundary=\"b1\"\r\n\r\n" +
-		"--b1\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + submitDocText + "\r\n" +
-		"--b1\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"ticket.pdf\"\r\n" +
-		"Content-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjcK\r\n--b1--\r\n"
 	png := pngBytes(t)
 	tests := []struct {
 		name  string
@@ -1030,5 +1032,46 @@ func TestJobToResponse(t *testing.T) {
 	if !strings.Contains(string(raw), `"feedback":[]`) || !strings.Contains(string(raw), `"error":{"code":"timeout"`) ||
 		!strings.Contains(string(raw), `"result":null`) || strings.Contains(string(raw), "attachments") {
 		t.Errorf("failed job = %s", raw)
+	}
+}
+
+// TestAttachmentsPersisted: an email's attachment list is stored with the job, so the
+// submit answer, a poll and an idempotent replay list it alike.
+func TestAttachmentsPersisted(t *testing.T) {
+	t.Parallel()
+	rg := newSubmitRig(t, submitRigOptions{})
+	parts := withPart(validParts(), mpart{name: partDocument, ctype: "message/rfc822", data: []byte(email)})
+	key := idempotencyKey("mail-1")
+	created := decodeJob(t, rg.submit(t, parts, key))
+	var polled map[string]any
+	if w := rg.get("/v1/jobs/" + created["id"].(string)); w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &polled) != nil {
+		t.Fatalf("poll = %d %s", w.Code, w.Body)
+	}
+	replayed := rg.submit(t, parts, key)
+	if replayed.Header().Get(headerIdempotencyReplayed) != "true" {
+		t.Fatalf("second submission was not a replay: %d", replayed.Code)
+	}
+	for name, body := range map[string]map[string]any{"submit": created, "poll": polled, "replay": decodeJob(t, replayed)} {
+		atts, _ := body["attachments"].([]any)
+		if len(atts) != 1 || atts[0].(map[string]any)["name"] != "ticket.pdf" {
+			t.Errorf("%s: attachments = %v, want ticket.pdf", name, body["attachments"])
+		}
+	}
+	j, err := rg.db.GetJob(t.Context(), testApp, created["id"].(string))
+	if err != nil || len(j.Attachments) != 1 || j.Attachments[0].MediaType != "application/pdf" {
+		t.Errorf("stored attachments = %+v, %v", j.Attachments, err)
+	}
+}
+
+// TestForbiddenCarriesQuotaHeaders: a scope refusal is an authenticated response, so it
+// carries X-Quota-Remaining and X-Quota-Reset (contract §8).
+func TestForbiddenCarriesQuotaHeaders(t *testing.T) {
+	t.Parallel()
+	rg := newSubmitRig(t, submitRigOptions{})
+	rg.token = issueToken(t, rg.db, testApp, []string{auth.ScopeJobsRead}, time.Now().Add(time.Hour))
+	w := rg.submit(t, validParts(), nil)
+	if w.Code != http.StatusForbidden || w.Header().Get(headerQuotaRemaining) != "100" || w.Header().Get(headerQuotaReset) == "" {
+		t.Errorf("403 = %d, quota headers %q %q; want 403 with both", w.Code,
+			w.Header().Get(headerQuotaRemaining), w.Header().Get(headerQuotaReset))
 	}
 }

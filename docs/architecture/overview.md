@@ -83,12 +83,11 @@ internal/provider/fake/     scripted provider for tests
 internal/router/         endpoint groups, ordered failover, per-endpoint health
 internal/document/       document model, media types, representation selection, HTML to text, email parsing
 internal/extract/        prompt framings, JSON answer parsing, schema validation, judge verdict, loop
-internal/api/            handlers, middleware (auth, request id, limits, quota headers), errors, admin routes
+internal/api/            handlers, middleware (auth, request id, limits), quota windows and rate limiting, errors, admin routes
 internal/auth/           applications, tokens (hashing, expiry, revocation, scopes)
 internal/job/            job model, state machine, JobStore interface, SQLite implementation
 internal/blob/           BlobStore interface, filesystem implementation
 internal/worker/         pool, leasing, job deadline, retention actions
-internal/quota/          quota windows and rate limiting
 internal/audit/          audit events (never content)
 internal/version/        build info
 docs/                    architecture, roadmap, operator and API docs
@@ -149,13 +148,15 @@ representation from the same bytes. The policy is part of `service_version`.
 ## Data model (v0.2)
 
 - `applications`: id, name, attempt limit, quota limit and window, rate limits, retention
-  policy, forced retention flag, created_at.
-- `tokens`: id, application_id, sha256 hash, prefix (for display), scopes, expires_at,
-  revoked_at, created_at, last_used_at.
+  policy, forced retention flag, HTML policy, enabled, source (`config` or `admin`),
+  created_at, updated_at.
+- `tokens`: id, application_id (NULL for admin tokens, whose only scope is `admin`),
+  sha256 hash, prefix (for display), scopes, expires_at, revoked_at, created_at,
+  last_used_at.
 - `jobs`: id (ULID, `j_` prefix), application_id, status, attempts, result (JSON),
   feedback (JSON), error (JSON), service_version, representation, media type, size, page
-  count, retention, idempotency key and body hash, created_at, started_at, finished_at,
-  expires_at, lease_until, content_deleted_at.
+  count, retention, idempotency key and body hash, attachment list (JSON, email only),
+  created_at, started_at, finished_at, expires_at, lease_until, content_deleted_at.
 - `quota_usage`: application_id, window_start, count.
 - Blobs: `document` and `page-N` per job, keyed by job id, in the blob store.
 - Audit: append-only table or structured log stream; never content.

@@ -45,7 +45,8 @@ func Open(path string) (*SQLite, error) {
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "foreign_keys(1)")
 	q.Add("_pragma", "synchronous(NORMAL)")
-	q.Set("_txlock", "immediate") // take the write lock at BEGIN: no upgrade deadlocks
+	q.Add("_pragma", "secure_delete(1)") // deleted content is overwritten, not left in free pages
+	q.Set("_txlock", "immediate")        // take the write lock at BEGIN: no upgrade deadlocks
 	db, err := sql.Open("sqlite", path+"?"+q.Encode())
 	if err != nil {
 		return nil, fmt.Errorf("job: open database: %w", err)
@@ -148,14 +149,14 @@ func affected(res sql.Result) (int64, error) {
 
 const applicationColumns = `id, name, max_attempts, quota_limit, quota_window, requests_per_minute,
 	submits_per_minute, max_in_progress, retention_default, force_none, html_policy, enabled,
-	created_at, updated_at`
+	source, created_at, updated_at`
 
 func scanApplication(r scanner) (Application, error) {
 	var a Application
 	var created, updated sql.NullInt64
 	err := r.Scan(&a.ID, &a.Name, &a.MaxAttempts, &a.QuotaLimit, &a.QuotaWindow, &a.RequestsPerMinute,
 		&a.SubmitsPerMinute, &a.MaxInProgress, &a.RetentionDefault, &a.ForceNone, &a.HTMLPolicy, &a.Enabled,
-		&created, &updated)
+		&a.Source, &created, &updated)
 	a.CreatedAt, a.UpdatedAt = fromMS(created), fromMS(updated)
 	return a, err
 }
@@ -164,7 +165,7 @@ func scanApplication(r scanner) (Application, error) {
 func (s *SQLite) UpsertApplication(ctx context.Context, a Application, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO applications (`+applicationColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'config', ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			name = excluded.name, max_attempts = excluded.max_attempts,
 			quota_limit = excluded.quota_limit, quota_window = excluded.quota_window,
@@ -172,7 +173,7 @@ func (s *SQLite) UpsertApplication(ctx context.Context, a Application, now time.
 			submits_per_minute = excluded.submits_per_minute,
 			max_in_progress = excluded.max_in_progress, retention_default = excluded.retention_default,
 			force_none = excluded.force_none, html_policy = excluded.html_policy,
-			enabled = 1, updated_at = excluded.updated_at`,
+			enabled = 1, source = 'config', updated_at = excluded.updated_at`,
 		a.ID, a.Name, a.MaxAttempts, a.QuotaLimit, a.QuotaWindow, a.RequestsPerMinute,
 		a.SubmitsPerMinute, a.MaxInProgress, a.RetentionDefault, a.ForceNone, a.HTMLPolicy,
 		now.UnixMilli(), now.UnixMilli())
@@ -190,7 +191,7 @@ func (s *SQLite) DisableApplicationsNotIn(ctx context.Context, ids []string, now
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		UPDATE applications SET enabled = 0, updated_at = ?
-		WHERE enabled = 1 AND id NOT IN (SELECT value FROM json_each(?))
+		WHERE enabled = 1 AND source = 'config' AND id NOT IN (SELECT value FROM json_each(?))
 		RETURNING id`, now.UnixMilli(), string(keep))
 	if err != nil {
 		return nil, fmt.Errorf("job: disable applications: %w", err)
@@ -208,6 +209,41 @@ func (s *SQLite) DisableApplicationsNotIn(ctx context.Context, ids []string, now
 		return nil, fmt.Errorf("job: disable applications: %w", err)
 	}
 	return disabled, nil
+}
+
+// CreateApplication implements Store.
+func (s *SQLite) CreateApplication(ctx context.Context, a Application, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO applications (`+applicationColumns+`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?)`,
+		a.ID, a.Name, a.MaxAttempts, a.QuotaLimit, a.QuotaWindow, a.RequestsPerMinute,
+		a.SubmitsPerMinute, a.MaxInProgress, a.RetentionDefault, a.ForceNone, a.HTMLPolicy, a.Enabled,
+		now.UnixMilli(), now.UnixMilli())
+	if isUnique(err) {
+		return ErrDuplicate
+	}
+	if err != nil {
+		return fmt.Errorf("job: create application: %w", err)
+	}
+	return nil
+}
+
+// UpdateApplication implements Store.
+func (s *SQLite) UpdateApplication(ctx context.Context, a Application, now time.Time) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE applications SET name = ?, max_attempts = ?, quota_limit = ?, quota_window = ?,
+			requests_per_minute = ?, submits_per_minute = ?, max_in_progress = ?,
+			retention_default = ?, force_none = ?, html_policy = ?, enabled = ?, updated_at = ?
+		WHERE id = ?`,
+		a.Name, a.MaxAttempts, a.QuotaLimit, a.QuotaWindow, a.RequestsPerMinute, a.SubmitsPerMinute,
+		a.MaxInProgress, a.RetentionDefault, a.ForceNone, a.HTMLPolicy, a.Enabled, now.UnixMilli(), a.ID)
+	if err != nil {
+		return fmt.Errorf("job: update application: %w", err)
+	}
+	if n, err := affected(res); err != nil || n == 0 {
+		return errors.Join(ErrNotFound, err)
+	}
+	return nil
 }
 
 // GetApplication implements Store.
@@ -251,8 +287,10 @@ const tokenColumns = `id, application_id, hash, scopes, label, expires_at, revok
 func scanToken(r scanner) (Token, error) {
 	var t Token
 	var scopes string
+	var app sql.NullString
 	var expires, revoked, created, used sql.NullInt64
-	err := r.Scan(&t.ID, &t.ApplicationID, &t.Hash, &scopes, &t.Label, &expires, &revoked, &created, &used)
+	err := r.Scan(&t.ID, &app, &t.Hash, &scopes, &t.Label, &expires, &revoked, &created, &used)
+	t.ApplicationID = app.String
 	if scopes != "" {
 		t.Scopes = strings.Split(scopes, ",")
 	}
@@ -266,7 +304,7 @@ func (s *SQLite) CreateToken(ctx context.Context, t Token) error {
 		return errors.New("job: create token: hash, created_at and expires_at are required")
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO tokens (`+tokenColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.ApplicationID, t.Hash, strings.Join(t.Scopes, ","), t.Label,
+		t.ID, nullString(t.ApplicationID), t.Hash, strings.Join(t.Scopes, ","), t.Label,
 		ms(t.ExpiresAt), ms(t.RevokedAt), ms(t.CreatedAt), ms(t.LastUsedAt))
 	if isUnique(err) {
 		return ErrDuplicate
@@ -289,7 +327,7 @@ func (s *SQLite) GetTokenByID(ctx context.Context, id string) (Token, error) {
 // ListTokens implements Store.
 func (s *SQLite) ListTokens(ctx context.Context, applicationID string) ([]Token, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+tokenColumns+` FROM tokens WHERE application_id = ? ORDER BY created_at, id`, applicationID)
+		`SELECT `+tokenColumns+` FROM tokens WHERE application_id IS ? ORDER BY created_at, id`, nullString(applicationID))
 	if err != nil {
 		return nil, fmt.Errorf("job: list tokens: %w", err)
 	}
@@ -397,18 +435,18 @@ func (s *SQLite) AppendAudit(ctx context.Context, e AuditEvent) (int64, error) {
 
 const jobColumns = `id, application_id, status, attempts, result, feedback, error, judge_confidence,
 	service_version, representation, media_type, size, page_count, retention, idempotency_key,
-	body_hash, extractor_instructions, judge_instructions, schema, max_attempts, created_at,
+	body_hash, attachments, extractor_instructions, judge_instructions, schema, max_attempts, created_at,
 	started_at, finished_at, expires_at, lease_until, worker_id, inputs_deleted_at,
 	content_deleted_at`
 
 func scanJob(r scanner) (Job, error) {
 	var j Job
-	var result, feedback, jobErr, key sql.NullString
+	var result, feedback, jobErr, key, attachments sql.NullString
 	var confidence sql.NullFloat64
 	var created, started, finished, expires, lease, inputsDeleted, contentDeleted sql.NullInt64
 	err := r.Scan(&j.ID, &j.ApplicationID, &j.Status, &j.Attempts, &result, &feedback, &jobErr, &confidence,
 		&j.ServiceVersion, &j.Representation, &j.MediaType, &j.Size, &j.PageCount, &j.Retention, &key,
-		&j.BodyHash, &j.ExtractorInstructions, &j.JudgeInstructions, &j.Schema, &j.MaxAttempts, &created,
+		&j.BodyHash, &attachments, &j.ExtractorInstructions, &j.JudgeInstructions, &j.Schema, &j.MaxAttempts, &created,
 		&started, &finished, &expires, &lease, &j.WorkerID, &inputsDeleted,
 		&contentDeleted)
 	if err != nil {
@@ -419,6 +457,11 @@ func scanJob(r scanner) (Job, error) {
 		j.JudgeConfidence = &confidence.Float64
 	}
 	j.IdempotencyKey = key.String
+	if attachments.Valid {
+		if err := json.Unmarshal([]byte(attachments.String), &j.Attachments); err != nil {
+			return Job{}, fmt.Errorf("attachments column: %w", err)
+		}
+	}
 	j.CreatedAt, j.StartedAt, j.FinishedAt = fromMS(created), fromMS(started), fromMS(finished)
 	j.ExpiresAt, j.LeaseUntil = fromMS(expires), fromMS(lease)
 	j.InputsDeletedAt, j.ContentDeletedAt = fromMS(inputsDeleted), fromMS(contentDeleted)
@@ -454,14 +497,22 @@ func (s *SQLite) CreateJob(ctx context.Context, j *Job) error {
 		return err
 	}
 	j.Status, j.Attempts = StatusQueued, 0
+	var attachments any // NULL when there are none
+	if len(j.Attachments) > 0 {
+		b, err := json.Marshal(j.Attachments)
+		if err != nil {
+			return fmt.Errorf("job: create job: %w", err)
+		}
+		attachments = string(b)
+	}
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO jobs (id, application_id, status, attempts, service_version, representation,
-			media_type, size, page_count, retention, idempotency_key, body_hash,
+			media_type, size, page_count, retention, idempotency_key, body_hash, attachments,
 			extractor_instructions, judge_instructions, schema, max_attempts, created_at, expires_at)
-		VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID, j.ApplicationID, j.Status, j.ServiceVersion, j.Representation,
-		j.MediaType, j.Size, j.PageCount, j.Retention, nullString(j.IdempotencyKey), j.BodyHash,
+		j.MediaType, j.Size, j.PageCount, j.Retention, nullString(j.IdempotencyKey), j.BodyHash, attachments,
 		j.ExtractorInstructions, j.JudgeInstructions, j.Schema, j.MaxAttempts,
 		j.CreatedAt.UnixMilli(), j.ExpiresAt.UnixMilli())
 	if isUnique(err) {
@@ -587,7 +638,7 @@ func (s *SQLite) MarkContentDeleted(ctx context.Context, id string, what Content
 	case ContentAll:
 		res, err = s.db.ExecContext(ctx, `
 			UPDATE jobs SET extractor_instructions = '', judge_instructions = '', schema = '',
-				result = NULL, feedback = NULL, error = NULL, judge_confidence = NULL,
+				result = NULL, feedback = NULL, error = NULL, judge_confidence = NULL, attachments = NULL,
 				inputs_deleted_at = COALESCE(inputs_deleted_at, ?1), content_deleted_at = ?1
 			WHERE id = ?2 AND content_deleted_at IS NULL
 			  AND status IN ('accepted', 'rejected', 'failed')`, now.UnixMilli(), id)
@@ -668,6 +719,45 @@ func (s *SQLite) CountRunning(ctx context.Context, applicationID string) (int, e
 		return 0, fmt.Errorf("job: count running: %w", err)
 	}
 	return n, nil
+}
+
+// CountInProgress implements Store.
+func (s *SQLite) CountInProgress(ctx context.Context, applicationID string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM jobs WHERE application_id = ? AND status IN ('queued', 'running')`, applicationID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("job: count in progress: %w", err)
+	}
+	return n, nil
+}
+
+// ListJobs implements Store.
+func (s *SQLite) ListJobs(ctx context.Context, f JobFilter, limit int) ([]Job, error) {
+	if limit <= 0 {
+		limit = -1 // SQLite: no limit
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+jobColumns+` FROM jobs
+		WHERE (?1 = '' OR application_id = ?1) AND (?2 = '' OR status = ?2) AND created_at >= ?3
+		ORDER BY created_at DESC, id DESC LIMIT ?4`,
+		f.ApplicationID, string(f.Status), f.Since.UnixMilli(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("job: list jobs: %w", err)
+	}
+	defer rows.Close()
+	var out []Job
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, fmt.Errorf("job: list jobs: %w", err)
+		}
+		out = append(out, j)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("job: list jobs: %w", err)
+	}
+	return out, nil
 }
 
 // oneRow turns an update that matched no row into ErrNotFound (no such job) or

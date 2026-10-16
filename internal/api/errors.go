@@ -17,6 +17,7 @@ const (
 	codeForbidden            = "forbidden"
 	codeNotFound             = "not_found"
 	codeMethodNotAllowed     = "method_not_allowed"
+	codeConflict             = "conflict" // admin API only
 	codePayloadTooLarge      = "payload_too_large"
 	codeUnsupportedMediaType = "unsupported_media_type"
 	codeUnsupportedDocument  = "unsupported_document"
@@ -37,6 +38,7 @@ var codeStatus = map[string]int{
 	codeForbidden:            http.StatusForbidden,
 	codeNotFound:             http.StatusNotFound,
 	codeMethodNotAllowed:     http.StatusMethodNotAllowed,
+	codeConflict:             http.StatusConflict,
 	codePayloadTooLarge:      http.StatusRequestEntityTooLarge,
 	codeUnsupportedMediaType: http.StatusUnsupportedMediaType,
 	codeUnsupportedDocument:  http.StatusUnsupportedMediaType,

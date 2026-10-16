@@ -19,7 +19,7 @@ info:
       the wrong method `405 method_not_allowed` with `Allow`.
     - HTTPS is required outside loopback: a plain-HTTP request from another host, or
       behind a trusted proxy one without `X-Forwarded-Proto: https`, answers
-      `400 bad_request`.
+      `400 bad_request`. `GET /healthz` is exempt (health checks reach it directly).
     - Clients ignore fields they do not know. Changes within `/v1` are additive only.
     - Every authenticated response carries `X-Quota-Remaining` and `X-Quota-Reset`.
   license:
@@ -471,7 +471,8 @@ components:
                 unsupported_media_type (415), unsupported_document (415),
                 invalid_schema (422), idempotency_mismatch (422), rate_limited (429),
                 quota_exhausted (429), internal (500), provider_unavailable (502),
-                unavailable (503), timeout (504).
+                unavailable (503), timeout (504). The admin API (api/admin-openapi.yaml)
+                also uses conflict (409); /v1 never does.
               type: string
             message:
               description: A fixed text that never quotes document contents, instructions, schemas or output.

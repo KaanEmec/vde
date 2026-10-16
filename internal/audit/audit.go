@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kaanemec/vde/internal/job"
@@ -44,6 +46,9 @@ const (
 	ActorAPI     = "api"
 	ActorCLI     = "cli"
 	ActorConfig  = "config"
+	// ActorAdmin prefixes the admin API's events: "admin:<token id>" names the admin
+	// token that made the change (the id is the token's public prefix, never a secret).
+	ActorAdmin = "admin"
 )
 
 // Details is the payload of an event: one of the structs below. Only they implement
@@ -65,10 +70,12 @@ type TokenRevoked struct {
 	TokenID string `json:"token_id"`
 }
 
-// AppEnabled: an application was enabled by the configuration.
+// AppEnabled: an application was enabled, by the configuration (created or listed
+// again) or over the admin API (created, or PATCH enabled: true).
 type AppEnabled struct{}
 
-// AppDisabled: an application was removed from the configuration and disabled.
+// AppDisabled: an application was disabled, removed from the configuration or by the
+// admin API (PATCH enabled: false).
 type AppDisabled struct{}
 
 // JobCreated: a job was accepted (contract §12): who, when and what kind of document,
@@ -94,11 +101,12 @@ type JobFinished struct {
 const (
 	DeletedByRequest = "request"    // DELETE /v1/jobs/{id}
 	DeletedFirstRead = "first_read" // retention: none, first terminal GET
+	DeletedByAdmin   = "admin"      // DELETE /admin/v1/jobs/{id}, any state
 )
 
 // JobDeleted: the caller's content was deleted before expiry.
 type JobDeleted struct {
-	Reason    string `json:"reason"` // DeletedByRequest or DeletedFirstRead
+	Reason    string `json:"reason"` // DeletedByRequest, DeletedFirstRead or DeletedByAdmin
 	Retention string `json:"retention"`
 }
 
@@ -338,4 +346,25 @@ func errorCode(raw json.RawMessage) string {
 		return ""
 	}
 	return e.Code
+}
+
+// ParseSince reads the start of a listing window as vde audit list and the admin API
+// accept it: an RFC 3339 time, a date (midnight UTC), or a positive duration back from
+// now (24h, 7d).
+func ParseSince(s string, now time.Time) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse(time.DateOnly, s); err == nil {
+		return t, nil
+	}
+	if days, ok := strings.CutSuffix(s, "d"); ok {
+		if n, err := strconv.Atoi(days); err == nil && n > 0 {
+			return now.Add(-time.Duration(n) * 24 * time.Hour), nil
+		}
+	}
+	if d, err := time.ParseDuration(s); err == nil && d > 0 {
+		return now.Add(-d), nil
+	}
+	return time.Time{}, fmt.Errorf("since %q is not an RFC 3339 time, a date or a positive duration (24h, 7d)", s)
 }

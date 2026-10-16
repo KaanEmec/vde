@@ -63,3 +63,10 @@ Listing jobs for callers (not in the contract; the admin API of epic 11 lists me
   expired → identical `404`; first read deletes row content and blob directory; `DELETE`;
   `jobResponse` json tags equal the `Job` properties, the OpenAPI job's deferred check),
   and `cmd/vde/serve_e2e_test.go` (submit → poll → `accepted` → `404`).
+
+Update (hardening, epic 11 agent): the email attachment list is stored on the job row
+(`jobs.attachments`, JSON, migration `0004_attachments`, cleared with the rest of the
+content), so `GET` and idempotent replays list `attachments` like the submit answer
+(`internal/api` `TestAttachmentsPersisted`). The database runs with
+`PRAGMA secure_delete=ON`. `GET /healthz` is exempt from the HTTPS rule (container health
+checks and probes reach it directly, also with `trusted_proxy`; `TestHealthzWithoutHTTPS`).

@@ -235,9 +235,14 @@ func TestAuthenticateContext(t *testing.T) {
 	now := testNow
 	s := newServer(Deps{
 		Config: &config.Config{}, Store: store, Logger: slog.New(slog.DiscardHandler),
-		ServiceVersion:  testServiceVersion,
-		ServiceVersions: map[string]string{testApp: "vde-0.0.0-dev+app00001"},
-		Now:             func() time.Time { return now },
+		ServiceVersion: testServiceVersion,
+		AppServiceVersion: func(a job.Application) string {
+			if a.ID == testApp {
+				return "vde-0.0.0-dev+app00001"
+			}
+			return ""
+		},
+		Now: func() time.Time { return now },
 	})
 	var gotApp job.Application
 	var gotScopes []string

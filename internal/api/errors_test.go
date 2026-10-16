@@ -18,6 +18,7 @@ func TestWriteError(t *testing.T) {
 		{codeForbidden, 403},
 		{codeNotFound, 404},
 		{codeMethodNotAllowed, 405},
+		{codeConflict, 409},
 		{codePayloadTooLarge, 413},
 		{codeUnsupportedMediaType, 415},
 		{codeUnsupportedDocument, 415},

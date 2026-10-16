@@ -415,3 +415,29 @@ func TestNewGroup_buildsEachEndpointOnce(t *testing.T) {
 		t.Errorf("NewGroup() = %v, builds %d; want 1 build, 2 pairs, max tries defaulting to 2", err, builds)
 	}
 }
+
+func TestGroup_OnFailover(t *testing.T) {
+	t.Parallel()
+	g, _ := newGroup(t, config.Failover{MaxTries: 5},
+		spec{name: "a", script: fake.AlwaysRetryable(503)},
+		spec{name: "b", script: fake.AlwaysRetryable(503)},
+		spec{name: "c", script: fake.Script{{Answer: "ok", Repeat: true}}})
+	var moves []string
+	g.OnFailover = func(req provider.Request, from, to Served) {
+		moves = append(moves, from.Endpoint+">"+to.Endpoint+":"+req.Parts[0].Text)
+	}
+	if _, served, err := g.Complete(context.Background(), textReq); err != nil || served.Endpoint != "c" {
+		t.Fatalf("Complete = %v, %v", served, err)
+	}
+	if want := []string{"a>b:instructions", "b>c:instructions"}; !slices.Equal(moves, want) {
+		t.Errorf("failovers = %v, want %v", moves, want)
+	}
+	moves = nil
+	if _, _, err := g.Complete(context.Background(), textReq); err != nil {
+		t.Fatal(err)
+	}
+	// a and b are marked down now: c is tried first and answers, no failover.
+	if len(moves) != 0 {
+		t.Errorf("failovers on a first-try answer: %v", moves)
+	}
+}

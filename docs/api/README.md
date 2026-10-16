@@ -11,6 +11,8 @@ error codes in step, and check the superset relation.
 
 - [guide.md](guide.md): authentication, submit, poll, statuses and feedback, idempotency,
   quota, retention, errors and schema-less mode.
+- [admin.md](admin.md): the admin API (`/admin/v1` on `admin.listen`, admin tokens),
+  described by [`api/admin-openapi.yaml`](../../api/admin-openapi.yaml).
 - [writing-instructions.md](writing-instructions.md): how framings and your instructions
   compose, and how to design schemas.
 - [examples/](examples/): [`submit.sh`](examples/submit.sh) (curl),

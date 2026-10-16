@@ -105,7 +105,10 @@ func TestCreate(t *testing.T) {
 		wantErr string
 	}{
 		{"no scope", func(r *Request) { r.Scopes = nil }, "at least one scope"},
-		{"unknown scope", func(r *Request) { r.Scopes = []string{"admin"} }, "unknown scope"},
+		{"unknown scope", func(r *Request) { r.Scopes = []string{"owner"} }, "unknown scope"},
+		{"admin scope with an application", func(r *Request) { r.Scopes = []string{ScopeAdmin} }, "cannot be combined"},
+		{"admin scope with jobs", func(r *Request) { r.ApplicationID, r.Scopes = "", []string{ScopeAdmin, ScopeJobs} }, "cannot be combined"},
+		{"no application", func(r *Request) { r.ApplicationID = "" }, "application is required"},
 		{"no expiry", func(r *Request) { r.ExpiresAt = time.Time{} }, "in the future"},
 		{"past expiry", func(r *Request) { r.ExpiresAt = t0.Add(-time.Second) }, "in the future"},
 		{"beyond the cap", func(r *Request) { r.ExpiresAt = t0.Add(maxTTL + time.Second) }, "max_token_ttl"},
@@ -132,6 +135,18 @@ func TestCreate(t *testing.T) {
 	_, secret, _ := Parse(token)
 	if !Verify(secret, stored.Hash) || stored.Label != "ci" || !stored.ExpiresAt.Equal(ok.ExpiresAt) {
 		t.Errorf("stored token = %+v, want the hash of the printed secret, label and expiry", stored)
+	}
+	adminToken, adminRow, err := Create(ctx, s, Request{Scopes: []string{ScopeAdmin}, ExpiresAt: t0.Add(time.Hour)}, maxTTL, t0)
+	if err != nil || adminRow.ApplicationID != "" {
+		t.Fatalf("admin token: %+v, %v", adminRow, err)
+	}
+	p, err := Authenticate(ctx, s, adminToken, t0)
+	if err != nil || p.Application.ID != "" || !Permits(p.Token.Scopes, ScopeAdmin) || Permits(p.Token.Scopes, "") ||
+		Permits(p.Token.Scopes, ScopeJobsRead) {
+		t.Errorf("admin principal = %+v, %v; want no application and the admin scope only", p, err)
+	}
+	if admins, err := s.ListTokens(ctx, ""); err != nil || len(admins) != 1 || admins[0].ID != adminRow.ID {
+		t.Errorf("ListTokens(\"\") = %v, %v; want the admin token", admins, err)
 	}
 	atCap := ok
 	atCap.ExpiresAt = t0.Add(maxTTL)

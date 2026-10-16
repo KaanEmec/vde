@@ -80,11 +80,15 @@ OpenTelemetry, dashboards (an example Grafana JSON may be added later).
   proxy on the same host does not publish the metrics.
 - `ObserveHTTP(r.Pattern, status)` from the access log; provider calls observed by a
   wrapper around each endpoint's provider in `vde serve` (`meteredFactory`); the pool
-  gets `*Metrics` as its Observer and the sweeper as its Observer. `ObserveFailover` is
-  not wired: the router has no failover hook yet.
-- `vde_jobs_in_progress` is set at startup from `CountRunning` (running only: the store
-  interface has no queued count); submit/finish updates belong to the submit and worker
-  owners.
+  gets `*Metrics` as its Observer and the sweeper as its Observer.
+- [x] Failovers: `router.Group.OnFailover(req, from, to)` is called each time a call moves
+  on to another pair; `vde serve` wires it to `ObserveFailover(role, from endpoint, to
+  endpoint)`, the role from the request's framing as for provider calls (epic 11 agent;
+  test `internal/router` `TestGroup_OnFailover`).
+- `vde_jobs_in_progress` is queued plus running (`job.Store.CountInProgress`): set at
+  startup for every enabled application, after each submission and admin force delete
+  (`internal/api`), and after each finished job (`progressObserver` around the metrics in
+  `vde serve`).
 - Tests: `internal/api/metrics_test.go` (protection modes, route labels are patterns
   never paths) and the scrape after a full scenario run in
   `cmd/vde/serve_e2e_test.go`.

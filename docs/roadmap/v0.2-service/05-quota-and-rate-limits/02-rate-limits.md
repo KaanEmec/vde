@@ -72,3 +72,11 @@ requests per minute. A client that does not back off, or more jobs in flight (ra
 `max_in_progress`), needs a higher `rate.requests_per_minute`; `rate.submits_per_minute`
 (default 30) and `rate.max_in_progress` (default 20) are separate knobs and do not
 consume the request allowance beyond the one token each request takes.
+
+Update (hardening, epic 11 agent): the rate limiter is a field of the server
+(`server.limits`) instead of a package-level map keyed by weak pointers; the in-progress
+ceiling counts queued plus running jobs (`job.Store.CountInProgress`), so it holds before
+the workers lease; and a 403 scope refusal carries `X-Quota-Remaining` and
+`X-Quota-Reset` like every other authenticated response (`authenticate` sets them before
+refusing). The empty placeholder package `internal/quota` is removed: quota and rate
+limits live in `internal/api`.

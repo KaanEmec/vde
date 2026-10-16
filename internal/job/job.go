@@ -69,6 +69,7 @@ type Job struct {
 	Retention      Retention
 	IdempotencyKey string // "" when none
 	BodyHash       string
+	Attachments    []Attachment // an email document's attachments, metadata only; nil otherwise
 
 	// Caller content, cleared with the blobs (InputsDeletedAt).
 	ExtractorInstructions string
@@ -85,6 +86,13 @@ type Job struct {
 
 	InputsDeletedAt  time.Time // document, pages, instructions and schema deleted
 	ContentDeletedAt time.Time // result, feedback and error deleted too
+}
+
+// Attachment is one attachment of an email document: metadata only, never content.
+type Attachment struct {
+	Name      string `json:"name"`
+	MediaType string `json:"media_type"`
+	Bytes     int64  `json:"bytes"`
 }
 
 // Progress is the persisted state after one extractor attempt.
@@ -119,7 +127,17 @@ const (
 	ContentAll
 )
 
-// Application is one row of the applications table, mirrored from the configuration.
+// Application sources: where an application row comes from.
+const (
+	// SourceConfig: declared in the YAML; vde serve rewrites every field at start and
+	// disables the row when the entry is removed.
+	SourceConfig = "config"
+	// SourceAdmin: created over the admin API; kept as stored across restarts.
+	SourceAdmin = "admin"
+)
+
+// Application is one row of the applications table, mirrored from the configuration or
+// created over the admin API (Source).
 type Application struct {
 	ID                string
 	Name              string
@@ -133,6 +151,7 @@ type Application struct {
 	ForceNone         bool
 	HTMLPolicy        string // "" means documents.html
 	Enabled           bool
+	Source            string // SourceConfig or SourceAdmin; "" reads as SourceConfig
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -140,7 +159,7 @@ type Application struct {
 // Token is one row of the tokens table. Only the hash of the secret is stored.
 type Token struct {
 	ID            string // the clear token id, also the display prefix
-	ApplicationID string
+	ApplicationID string // "" for an admin token
 	Hash          []byte // SHA-256 of the secret part
 	Scopes        []string
 	Label         string
@@ -170,21 +189,35 @@ type AuditFilter struct {
 	Since         time.Time // events at or after Since
 }
 
+// JobFilter selects jobs for ListJobs; zero fields match everything.
+type JobFilter struct {
+	ApplicationID string
+	Status        Status
+	Since         time.Time // created at or after Since
+}
+
 // Store is the persistence the service needs, and nothing more (ADR 0002). Times passed
 // in are the caller's clock so tests can control it.
 type Store interface {
-	// UpsertApplication inserts or updates an application from the configuration and
-	// enables it.
+	// UpsertApplication inserts or updates an application from the configuration,
+	// enables it and marks it SourceConfig.
 	UpsertApplication(ctx context.Context, a Application, now time.Time) error
-	// DisableApplicationsNotIn disables every enabled application whose id is not in
-	// ids and returns the ids it disabled.
+	// DisableApplicationsNotIn disables every enabled SourceConfig application whose id
+	// is not in ids and returns the ids it disabled. SourceAdmin rows are left alone.
 	DisableApplicationsNotIn(ctx context.Context, ids []string, now time.Time) ([]string, error)
+	// CreateApplication inserts a as SourceAdmin with a.Enabled; ErrDuplicate when the
+	// id is taken.
+	CreateApplication(ctx context.Context, a Application, now time.Time) error
+	// UpdateApplication rewrites the settings, name and enabled flag of an existing
+	// application, keeping its source and created_at; ErrNotFound when it does not exist.
+	UpdateApplication(ctx context.Context, a Application, now time.Time) error
 	GetApplication(ctx context.Context, id string) (Application, error)
 	ListApplications(ctx context.Context) ([]Application, error)
 
 	// CreateToken stores t; ErrDuplicate when its id is taken.
 	CreateToken(ctx context.Context, t Token) error
 	GetTokenByID(ctx context.Context, id string) (Token, error)
+	// ListTokens returns the application's tokens; applicationID "" lists the admin tokens.
 	ListTokens(ctx context.Context, applicationID string) ([]Token, error)
 	// RevokeToken sets revoked_at once; revoking a revoked token is not an error.
 	RevokeToken(ctx context.Context, id string, now time.Time) error
@@ -252,6 +285,11 @@ type Store interface {
 	ListStaleRunning(ctx context.Context, createdBefore time.Time, limit int) ([]Job, error)
 	// CountRunning returns the number of the application's running jobs.
 	CountRunning(ctx context.Context, applicationID string) (int, error)
+	// CountInProgress returns the number of the application's queued and running jobs.
+	CountInProgress(ctx context.Context, applicationID string) (int, error)
+	// ListJobs returns up to limit jobs matching f, newest first; limit <= 0 means no
+	// limit.
+	ListJobs(ctx context.Context, f JobFilter, limit int) ([]Job, error)
 }
 
 // expiry resolves a job's effective retention and its expires_at from the request and
