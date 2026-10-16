@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"time"
 
-	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/router"
@@ -110,49 +110,6 @@ type Outcome struct {
 	Error           *JobError `json:"error"` // set exactly when Status is StatusFailed
 }
 
-// Roles are the endpoint groups serving the two roles and the loop limits taken from
-// the configuration. Build them with NewRoles.
-type Roles struct {
-	Extractor *router.Group
-	Judge     *router.Group
-	// JudgeReparseTries is the number of extra judge calls after a verdict that cannot
-	// be parsed (limits.judge_reparse_tries; the contract asks for 1).
-	JudgeReparseTries int
-	// FeedbackMessageChars caps each feedback message (limits.feedback_message_chars);
-	// 0 or less means DefaultFeedbackMessageChars.
-	FeedbackMessageChars int
-}
-
-// NewRoles builds the groups of roles.extractor and roles.judge from cfg, which must
-// have passed Validate. When both roles name the same group they share one
-// *router.Group, and so its endpoint health. build returns the provider of an endpoint.
-func NewRoles(cfg *config.Config, build func(*config.Endpoint) (provider.Provider, error)) (Roles, error) {
-	extractor, err := newGroup(cfg, cfg.Roles.Extractor.Group, build)
-	if err != nil {
-		return Roles{}, err
-	}
-	judge := extractor
-	if cfg.Roles.Judge.Group != cfg.Roles.Extractor.Group {
-		if judge, err = newGroup(cfg, cfg.Roles.Judge.Group, build); err != nil {
-			return Roles{}, err
-		}
-	}
-	return Roles{
-		Extractor:            extractor,
-		Judge:                judge,
-		JudgeReparseTries:    cfg.Limits.JudgeReparseTries,
-		FeedbackMessageChars: cfg.Limits.FeedbackMessageChars,
-	}, nil
-}
-
-func newGroup(cfg *config.Config, name string, build func(*config.Endpoint) (provider.Provider, error)) (*router.Group, error) {
-	g, err := router.NewGroup(name, cfg.Groups[name], cfg, build)
-	if err != nil {
-		return nil, fmt.Errorf("extract: %w", err)
-	}
-	return g, nil
-}
-
 // errTimeout and errUnavailable end the loop with their job error codes; any other
 // error from a role call that is not a permanent provider failure is internal.
 var (
@@ -225,7 +182,8 @@ func (l *loop) run(ctx context.Context) Outcome {
 			return l.failed(CodeTimeout)
 		}
 		l.attempts++
-		resp, err := l.call(ctx, l.roles.Extractor, extractorSystem, assembleExtractor(l.in, l.prev, l.next))
+		extractor := at(l.roles.Extractor, l.roles.ExtractorEscalation, l.attempts)
+		resp, _, err := l.call(ctx, extractor, extractorSystem, assembleExtractor(l.in, l.prev, l.next))
 		switch {
 		case err == nil:
 		case errors.Is(err, router.ErrPermanent):
@@ -266,11 +224,24 @@ func (l *loop) run(ctx context.Context) Outcome {
 			}
 		}
 
-		v, err := l.judge(ctx, judgeSystem, candidate)
+		v, err := l.verdict(ctx, at(l.roles.Judge, l.roles.JudgeEscalation, l.attempts), judgeSystem, candidate)
 		if err != nil {
 			return l.fail(err, "judge")
 		}
 		l.confidence = v.confidence
+		if v.accept && l.roles.SecondJudge != nil {
+			// A second, independent opinion: its accept confirms, its reject feeds the
+			// next attempt, its failure fails the job as the judge's would.
+			second, err := l.verdict(ctx, l.roles.SecondJudge, judgeSystem, candidate)
+			if err != nil {
+				return l.fail(err, "second_judge")
+			}
+			l.confidence = second.confidence
+			if second.accept {
+				second.feedback = slices.Concat(v.feedback, second.feedback) // both judges' advisory entries
+			}
+			v = second
+		}
 		if v.accept {
 			l.feedback = v.feedback // advisory entries
 			return l.outcome(StatusAccepted, nil)
@@ -289,17 +260,38 @@ func (l *loop) run(ctx context.Context) Outcome {
 // errJudgeFailed: the judge's answer could not be parsed on any try.
 var errJudgeFailed = errors.New("extract: verdict not parseable")
 
-// judge asks for a verdict on candidate, once more with a format reminder per reparse
-// try when the answer cannot be parsed. A permanent failure (a refusal) counts as an
-// unparseable answer.
-func (l *loop) judge(ctx context.Context, system string, candidate json.RawMessage) (verdict, error) {
+// verdict asks group for a verdict on candidate. A reject answered by a classifier
+// endpoint, with feedback_fallback: llm, gets its feedback from the feedback group: the
+// verdict stays reject whatever that group answers, and the classifier's own entry is
+// kept when the group does not reject or fails (except on the job's deadline).
+func (l *loop) verdict(ctx context.Context, g *router.Group, system string, candidate json.RawMessage) (verdict, error) {
+	v, served, err := l.judge(ctx, g, system, candidate)
+	if err != nil || v.accept || l.roles.FeedbackJudge == nil || !l.roles.Classifiers[served.Endpoint] {
+		return v, err
+	}
+	fb, _, err := l.judge(ctx, l.roles.FeedbackJudge, system, candidate)
+	switch {
+	case errors.Is(err, errTimeout):
+		return verdict{}, err
+	case err != nil:
+		slog.Warn("extract: feedback group failed; keeping the classifier's feedback", "error", err)
+	case !fb.accept:
+		v.feedback = fb.feedback
+	}
+	return v, nil
+}
+
+// judge asks group for a verdict on candidate, once more with a format reminder per
+// reparse try when the answer cannot be parsed. A permanent failure (a refusal) counts
+// as an unparseable answer. It returns the pair that gave the verdict.
+func (l *loop) judge(ctx context.Context, g *router.Group, system string, candidate json.RawMessage) (verdict, router.Served, error) {
 	for try := 0; try <= l.roles.JudgeReparseTries; try++ {
-		resp, err := l.call(ctx, l.roles.Judge, system, assembleJudge(l.in, candidate, try > 0))
+		resp, served, err := l.call(ctx, g, system, assembleJudge(l.in, candidate, try > 0))
 		if errors.Is(err, router.ErrPermanent) {
 			continue
 		}
 		if err != nil {
-			return verdict{}, err
+			return verdict{}, router.Served{}, err
 		}
 		v, err := parseVerdict(resp.Text, l.maxChars)
 		if err != nil {
@@ -308,25 +300,25 @@ func (l *loop) judge(ctx context.Context, system string, candidate json.RawMessa
 		if v.ignoredConfidence {
 			slog.Warn("extract: judge confidence ignored", "reason", "not a number from 0 to 1")
 		}
-		return v, nil
+		return v, served, nil
 	}
-	return verdict{}, errJudgeFailed
+	return verdict{}, router.Served{}, errJudgeFailed
 }
 
 // call makes one role call. The job's deadline (or cancellation) is checked first,
 // because the router reports an exhausted group even when a per-try timeout was the
 // cause.
-func (l *loop) call(ctx context.Context, g *router.Group, system string, parts []provider.Part) (provider.Response, error) {
-	resp, _, err := g.Complete(ctx, provider.Request{System: system, Parts: parts})
+func (l *loop) call(ctx context.Context, g *router.Group, system string, parts []provider.Part) (provider.Response, router.Served, error) {
+	resp, served, err := g.Complete(ctx, provider.Request{System: system, Parts: parts})
 	switch {
 	case err == nil:
-		return resp, nil
+		return resp, served, nil
 	case ctx.Err() != nil:
-		return provider.Response{}, errTimeout
+		return provider.Response{}, router.Served{}, errTimeout
 	case errors.Is(err, router.ErrGroupUnavailable):
-		return provider.Response{}, fmt.Errorf("%w: %w", errUnavailable, err)
+		return provider.Response{}, router.Served{}, fmt.Errorf("%w: %w", errUnavailable, err)
 	}
-	return provider.Response{}, err
+	return provider.Response{}, router.Served{}, err
 }
 
 // fail maps a role call error to the failed outcome.

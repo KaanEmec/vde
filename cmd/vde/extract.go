@@ -237,7 +237,10 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 			return jobOutput{}, fmt.Errorf("%s: %w", o.schema, err)
 		}
 	}
-	rep, err := document.Select(doc, cfg.Capabilities(cfg.Roles.Extractor.Group), cfg.Capabilities(cfg.Roles.Judge.Group), policy)
+	// Every group that may serve a role (escalation, second judge, feedback group) must
+	// read the representation.
+	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
+	rep, err := document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images))
 	if err != nil {
 		return jobOutput{}, err
 	}

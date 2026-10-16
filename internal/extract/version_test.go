@@ -135,6 +135,31 @@ func TestServiceVersion_stability(t *testing.T) {
 		{"unused group", func(c *config.Config) { c.Groups["unused"].Endpoints[0].Model = "model-a" }, false},
 		{"logging", func(c *config.Config) { c.Logging.Level = "debug" }, false},
 		{"document limits", func(c *config.Config) { c.Limits.Pages = 10 }, false},
+		{"image policy", func(c *config.Config) { c.Documents.Images.MaxDimension = 1000 }, true},
+		{"image conversion off", func(c *config.Config) { c.Documents.Images.Enabled = false }, true},
+		{"extractor escalation", func(c *config.Config) {
+			c.Roles.Extractor.Escalation = []config.Escalation{{FromAttempt: 3, Group: "unused"}}
+		}, true},
+		{"escalation attempt", func(c *config.Config) {
+			c.Roles.Extractor.Escalation = []config.Escalation{{FromAttempt: 2, Group: "unused"}}
+		}, true},
+		{"judge escalation", func(c *config.Config) {
+			c.Roles.Judge.Escalation = []config.Escalation{{FromAttempt: 3, Group: "unused"}}
+		}, true},
+		{"empty escalation", func(c *config.Config) { c.Roles.Extractor.Escalation = []config.Escalation{} }, false},
+		{"second judge", func(c *config.Config) { c.Roles.SecondJudge.Group = "unused" }, true},
+		{"feedback fallback llm", func(c *config.Config) {
+			c.Roles.Judge.FeedbackFallback, c.Roles.Judge.FeedbackGroup = config.FeedbackLLM, "unused"
+		}, true},
+		{"feedback fallback default spelled out", func(c *config.Config) {
+			c.Roles.Judge.FeedbackFallback = config.FeedbackWholeResult
+		}, false},
+		{"classifier questions", func(c *config.Config) {
+			c.Endpoints["main"].Models["model-a"] = config.Model{
+				Accepts:   []string{"text/plain", "application/pdf"},
+				Questions: []config.Question{{ID: "accuracy", Text: "Accurate?", Threshold: 0.7}},
+			}
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

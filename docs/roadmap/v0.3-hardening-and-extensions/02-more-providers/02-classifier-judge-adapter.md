@@ -1,6 +1,6 @@
 # Job: Classifier-style judge adapter
 
-Version: v0.3 · Epic: 02 More providers · Status: in progress · Depends on: v0.1 02-01, 05-04
+Version: v0.3 · Epic: 02 More providers · Status: done (evaluation pending) · Depends on: v0.1 02-01, 05-04
 
 ## Goal
 
@@ -39,12 +39,13 @@ read before implementing.
 ## Tasks
 
 - [ ] Read the provider's documentation; write `docs/providers/typesafe.md` with what is
-      sent and the data-handling terms.
-- [ ] Implement the adapter and the two fallback modes behind configuration; hash the
+      sent and the data-handling terms. Not possible yet (early access); the generic
+      contract is documented in `docs/providers/classifier.md` instead.
+- [x] Implement the adapter and the two fallback modes behind configuration; hash the
       mode into `service_version`.
 - [ ] Evaluate on the TravelInbox corpus with the evaluation harness (epic 06): false
       accept rate, false reject rate, latency and cost versus the LLM judge. Record in
-      `docs/quality.md`.
+      `docs/quality.md`. Needs an epic 06 harness run against a real classifier.
 - [ ] Decide the default fallback mode from the numbers; document the trade-offs.
 
 ## Acceptance criteria
@@ -55,3 +56,33 @@ read before implementing.
 ## Out of scope
 
 Using the classifier as the extractor (it does not generate), threshold tuning per field.
+
+## Outcome
+
+- `internal/provider/classifier`: `provider: classifier` endpoints; models carry
+  `questions: [{id, text, threshold}]`. The adapter posts `{model, questions, text}` to
+  `{base_url}/classify` and reads `{decisions: [{question, label, probability}]}`, then
+  renders the verdict JSON: accept when every probability reaches its threshold,
+  confidence the minimum probability, on reject one entry at `""` (fixed message plus the
+  confidence). Malformed answers are permanent failures, so they end as `judge_failed`,
+  never as acceptance. Documented in `docs/providers/classifier.md`.
+- `roles.judge.feedback_fallback: whole_result | llm` (default `whole_result`) and
+  `roles.judge.feedback_group`: with `llm`, a reject answered by a classifier endpoint
+  gets the feedback group's pointer-level entries (judge framing, one call per rejection);
+  the verdict stays reject, and the `""` entry is kept when the group accepts or fails.
+  `llm` and its group are hashed into `service_version`; questions are hashed per pair.
+- Validation: classifier models need questions and text-only `accepts`; no classifier in
+  extractor groups or the feedback group; `feedback_group` only with `llm`.
+- Tests: adapter tests against `httptest`, and loop tests with a fake classifier server
+  (`TestRun_classifierWholeResult` in both spellings of the default,
+  `TestRun_classifierLLMFeedback`, `TestRun_classifierAccept`, `..Deadline`, `..Down`),
+  each asserting the contract §7 reject rule.
+
+Deviations:
+
+- The Jev API is early access and was not available, so there is no `typesafe.md`: the
+  adapter implements a generic classify contract (`docs/providers/classifier.md`) that a
+  vendor adapter or a thin proxy must satisfy. A Jev-specific adapter, with its
+  data-handling terms, follows when its documentation is available.
+- The adapter always renders the whole-result entry; the `llm` mode replaces it in the
+  loop, since only the loop can call another group.
