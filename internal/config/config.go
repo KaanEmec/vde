@@ -115,9 +115,12 @@ type Limits struct {
 	MaxAttempts       int           `yaml:"max_attempts"` // default per application; a request can only lower it
 	JobTimeout        time.Duration `yaml:"job_timeout"`  // hard max 8m
 	JudgeReparseTries int           `yaml:"judge_reparse_tries"`
-	DocumentBytes     int64         `yaml:"document_bytes"`
-	PageBytes         int64         `yaml:"page_bytes"`
-	Pages             int           `yaml:"pages"`
+	// FeedbackMessageChars caps each feedback message; 0 means the extraction loop's
+	// default of 4000.
+	FeedbackMessageChars int   `yaml:"feedback_message_chars"`
+	DocumentBytes        int64 `yaml:"document_bytes"`
+	PageBytes            int64 `yaml:"page_bytes"`
+	Pages                int   `yaml:"pages"`
 }
 
 // Documents sets the representation policy.

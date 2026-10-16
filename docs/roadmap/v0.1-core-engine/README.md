@@ -28,7 +28,7 @@ group that is fully down ending in `provider_unavailable`, and a job deadline pr
 | 02 | [Provider adapters](02-provider-adapters/README.md) | 01 | done |
 | 03 | [Endpoint groups and failover](03-endpoint-groups-and-failover/README.md) | 02 | done |
 | 04 | [Document representation](04-document-representation/README.md) | 01, 02 (capabilities) | done |
-| 05 | [Extraction loop](05-extraction-loop/README.md) | 03, 04 | in progress |
+| 05 | [Extraction loop](05-extraction-loop/README.md) | 03, 04 | done |
 | 06 | [CLI and developer experience](06-cli-and-developer-experience/README.md) | 05 | in progress |
 
 Epics 02 and 04 can proceed in parallel once 01 is done. Epic 05 is the integration point.

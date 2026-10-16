@@ -1,0 +1,757 @@
+package extract
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/document"
+	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/provider/fake"
+)
+
+// loopConfig: the extractor group fails over from primary to fallback; the judge group
+// has one endpoint and one try.
+const loopConfig = `
+endpoints:
+  primary:
+    provider: fake
+    models: {primary-model: {accepts: [text/plain, application/pdf, image/png]}}
+  fallback:
+    provider: fake
+    models: {fallback-model: {accepts: [text/plain, application/pdf, image/png]}}
+  review:
+    provider: fake
+    models: {judge-model: {accepts: [text/plain, application/pdf, image/png]}}
+groups:
+  extraction:
+    endpoints: [{endpoint: primary, model: primary-model}, {endpoint: fallback, model: fallback-model}]
+    failover: {max_tries: 2, max_total_time: 1m}
+  review:
+    endpoints: [{endpoint: review, model: judge-model}]
+    failover: {max_tries: 1, max_total_time: 1m}
+roles:
+  extractor: {group: extraction}
+  judge: {group: review}
+limits: {max_attempts: 3, job_timeout: 5m, judge_reparse_tries: 1}
+`
+
+const (
+	personSchema = `{"type": "object", "required": ["name"], "additionalProperties": false,
+		"properties": {"name": {"type": "string"}, "born": {"type": "integer"}}}`
+	valid       = `{"name": "Ada Lovelace", "born": 1815}`
+	valid2      = `{"name": "Ada King", "born": 1815}`
+	invalid     = `{"name": "Ada Lovelace", "born": "1815"}`
+	reject      = `{"verdict": "reject", "feedback": {"/name": "The document prints Ada King."}}`
+	accept      = fake.AcceptVerdict
+	notJSON     = "I am sorry, I cannot read this document."
+	garbage     = `{"verdict": "maybe"}`
+	pdfContents = "%PDF-1.7 not really a pdf"
+)
+
+func loadConfig(t *testing.T, yaml string) *config.Config {
+	t.Helper()
+	cfg, err := config.Parse([]byte(yaml), func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate().Err(false); err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// rig is a configured loop whose endpoints are fakes.
+type rig struct {
+	primary, fallback, judge *fake.Provider
+	roles                    Roles
+}
+
+func newRig(t *testing.T, primary, fallback, judge fake.Script) *rig {
+	t.Helper()
+	r := &rig{primary: fake.New(primary), fallback: fake.New(fallback), judge: fake.New(judge)}
+	cfg := loadConfig(t, loopConfig)
+	r.roles = buildRoles(t, cfg, map[string]provider.Provider{"primary": r.primary, "fallback": r.fallback, "review": r.judge})
+	return r
+}
+
+func buildRoles(t *testing.T, cfg *config.Config, providers map[string]provider.Provider) Roles {
+	t.Helper()
+	byEndpoint := map[*config.Endpoint]provider.Provider{}
+	for name, p := range providers {
+		byEndpoint[cfg.Endpoints[name]] = p
+	}
+	roles, err := NewRoles(cfg, func(e *config.Endpoint) (provider.Provider, error) {
+		if p, ok := byEndpoint[e]; ok {
+			return p, nil
+		}
+		return nil, errors.New("no provider")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return roles
+}
+
+// extractorCalls returns the calls the extractor group made, primary then fallback.
+func (r *rig) extractorCalls() []fake.Call {
+	return append(r.primary.Calls(), r.fallback.Calls()...)
+}
+
+func pdfRepresentation() document.Representation {
+	return document.Representation{
+		Kind:       document.Native,
+		Parts:      []provider.Part{{Document: &provider.Blob{MediaType: "application/pdf", Data: []byte(pdfContents)}}},
+		MediaTypes: []string{"application/pdf"},
+	}
+}
+
+func input(t *testing.T, schema string) Input {
+	t.Helper()
+	in := Input{
+		Representation:        pdfRepresentation(),
+		ExtractorInstructions: "Extract the person's name and year of birth.\n",
+		JudgeInstructions:     "Check the name and the year against the document.\n",
+		MaxAttempts:           3,
+	}
+	if schema != "" {
+		s, err := CompileSchema([]byte(schema))
+		if err != nil {
+			t.Fatal(err)
+		}
+		in.Schema = s
+	}
+	return in
+}
+
+// documentParts returns the parts of a call that follow the Document: separator.
+func documentParts(t *testing.T, c fake.Call, n int) []provider.Part {
+	t.Helper()
+	for i, p := range c.Request.Parts {
+		if p.Text == sepDocument && i+n < len(c.Request.Parts) {
+			return c.Request.Parts[i+1 : i+1+n]
+		}
+	}
+	t.Fatalf("no document section in %+v", c.Parts)
+	return nil
+}
+
+// checkCalls asserts the role call counts and that every extractor and judge call saw
+// the representation's document parts byte for byte.
+func checkCalls(t *testing.T, in Input, extractor, judge []fake.Call, wantExtractor, wantJudge int) {
+	t.Helper()
+	if len(extractor) != wantExtractor || len(judge) != wantJudge {
+		t.Fatalf("calls: extractor %d, judge %d; want %d, %d", len(extractor), len(judge), wantExtractor, wantJudge)
+	}
+	want := in.Representation.Parts
+	for _, c := range append(append([]fake.Call{}, extractor...), judge...) {
+		for i, p := range documentParts(t, c, len(want)) {
+			w := want[i]
+			if p.Text != w.Text || !sameBlob(p.Document, w.Document) || !sameBlob(p.Image, w.Image) {
+				t.Fatalf("document part %d differs from the representation", i)
+			}
+		}
+	}
+}
+
+func sameBlob(a, b *provider.Blob) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.MediaType == b.MediaType && bytes.Equal(a.Data, b.Data)
+}
+
+// checkOutcome asserts status, attempts and error code, and the acceptance invariant.
+func checkOutcome(t *testing.T, in Input, out Outcome, status Status, attempts int, code string) {
+	t.Helper()
+	if out.Status != status || out.Attempts != attempts {
+		t.Fatalf("outcome = %s after %d attempts (%+v), want %s after %d", out.Status, out.Attempts, out.Error, status, attempts)
+	}
+	gotCode := ""
+	if out.Error != nil {
+		gotCode = out.Error.Code
+	}
+	if gotCode != code {
+		t.Fatalf("error = %+v, want code %q", out.Error, code)
+	}
+	if out.Feedback == nil {
+		t.Error("feedback is nil, want an empty list")
+	}
+	checkAcceptance(t, in, out)
+}
+
+// checkAcceptance: accepted means a result, no error and, with a schema, a valid result.
+func checkAcceptance(t *testing.T, in Input, out Outcome) {
+	t.Helper()
+	if out.Status != StatusAccepted {
+		return
+	}
+	if out.Error != nil || out.Result == nil {
+		t.Fatalf("accepted with error %+v, result %s", out.Error, out.Result)
+	}
+	if in.Schema != nil && in.Schema.Validate(out.Result) != nil {
+		t.Fatalf("accepted an invalid result %s", out.Result)
+	}
+}
+
+func sameJSON(t *testing.T, got json.RawMessage, want string) {
+	t.Helper()
+	if string(got) != want {
+		t.Errorf("result = %s, want %s", got, want)
+	}
+}
+
+func hasText(c fake.Call, substr string) bool {
+	for _, p := range c.Request.Parts {
+		if strings.Contains(p.Text, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRun_acceptFirstTry(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil, fake.Script{fake.Answer(accept)})
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 1, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 1, 1)
+	sameJSON(t, out.Result, valid)
+	if len(out.Feedback) != 0 || out.JudgeConfidence != nil {
+		t.Errorf("feedback %+v, confidence %v; want none", out.Feedback, out.JudgeConfidence)
+	}
+	ext, jdg := r.primary.Calls()[0].Request, r.judge.Calls()[0].Request
+	if ext.Model != "primary-model" || jdg.Model != "judge-model" {
+		t.Errorf("models: extractor %q, judge %q", ext.Model, jdg.Model)
+	}
+	wantExt, wantJudge := framings(false)
+	if ext.System != wantExt || jdg.System != wantJudge {
+		t.Error("roles were not given their framings")
+	}
+	if !hasText(r.judge.Calls()[0], sepCandidate+"\n\n"+valid) || !hasText(r.judge.Calls()[0], personSchema) {
+		t.Error("the judge did not see the candidate and the schema")
+	}
+}
+
+// TestRun_sharedGroup: one group and one fake serve both roles, told apart by framing.
+func TestRun_sharedGroup(t *testing.T) {
+	cfg := loadConfig(t, strings.Replace(loopConfig, "judge: {group: review}", "judge: {group: extraction}", 1))
+	p := fake.New(fake.Script{
+		{Role: "judge", Answer: accept},
+		{Role: "extractor", Answer: valid},
+	})
+	roles := buildRoles(t, cfg, map[string]provider.Provider{"primary": p, "fallback": p, "review": p})
+	if roles.Extractor != roles.Judge {
+		t.Fatal("roles naming one group do not share it")
+	}
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, roles)
+	checkOutcome(t, in, out, StatusAccepted, 1, "")
+	calls := p.Calls()
+	checkCalls(t, in, calls[:1], calls[1:], 1, 1)
+}
+
+func TestRun_schemaViolationWithoutJudge(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(invalid), fake.Answer(valid)}, nil, fake.Script{fake.Answer(accept)})
+	in := input(t, personSchema)
+	var progress []Progress
+	in.OnAttempt = func(p Progress) { progress = append(progress, p) }
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 2, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 2, 1)
+	retry := r.primary.Calls()[1]
+	if !hasText(retry, sepPrevious+"\n\n"+invalid) || !hasText(retry, `"/born" (schema): `+"`born`: got string, want integer (keyword type)") {
+		t.Errorf("retry did not carry the candidate and its schema feedback: %+v", retry.Request.Parts)
+	}
+	if len(progress) != 1 || progress[0].Attempts != 1 || string(progress[0].Result) != invalid ||
+		len(progress[0].Feedback) != 1 || progress[0].Feedback[0].Source != SourceSchema {
+		t.Errorf("progress = %+v", progress)
+	}
+}
+
+func TestRun_rejectRepaired(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid), fake.Answer(valid2)}, nil, fake.Script{fake.Answer(reject), fake.Answer(accept)})
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 2, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 2, 2)
+	sameJSON(t, out.Result, valid2)
+	retry := r.primary.Calls()[1]
+	if !hasText(retry, sepPrevious+"\n\n"+valid) || !hasText(retry, `- "/name" (judge): The document prints Ada King.`) {
+		t.Errorf("retry did not carry the judge's feedback: %+v", retry.Request.Parts)
+	}
+}
+
+func TestRun_attemptsExhausted(t *testing.T) {
+	last := `{"verdict": "reject", "feedback": {"/born": "The year is not printed.", "": "Check again."}, "confidence": 0.8}`
+	r := newRig(t,
+		fake.Script{fake.Answer(valid), fake.Answer(invalid), fake.Answer(valid2)}, nil,
+		fake.Script{fake.Answer(reject), fake.Answer(last)})
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusRejected, 3, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 3, 2)
+	sameJSON(t, out.Result, valid2)
+	want := []Feedback{
+		{Pointer: "/born", Message: "The year is not printed.", Source: SourceJudge},
+		{Pointer: "", Message: "Check again.", Source: SourceJudge},
+	}
+	if !equalFeedback(out.Feedback, want) {
+		t.Errorf("feedback = %+v, want %+v", out.Feedback, want)
+	}
+	if out.JudgeConfidence == nil || *out.JudgeConfidence != 0.8 {
+		t.Errorf("confidence = %v, want 0.8", out.JudgeConfidence)
+	}
+}
+
+func equalFeedback(a, b []Feedback) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestRun_rejectedOnSchemaFeedback(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(invalid), fake.Answer(notJSON)}, nil, nil)
+	in := input(t, personSchema)
+	in.MaxAttempts = 2
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusRejected, 2, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 2, 0)
+	// The last parseable candidate, with the feedback on it rather than on the answer
+	// that was not JSON.
+	sameJSON(t, out.Result, invalid)
+	if len(out.Feedback) != 1 || out.Feedback[0].Pointer != "/born" {
+		t.Errorf("feedback = %+v, want the schema violation of the result", out.Feedback)
+	}
+}
+
+func TestRun_extractorFailover(t *testing.T) {
+	r := newRig(t, fake.AlwaysRetryable(503), fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)})
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 1, "")
+	if n := len(r.primary.Calls()); n != 1 {
+		t.Errorf("primary calls = %d, want 1", n)
+	}
+	checkCalls(t, in, r.fallback.Calls(), r.judge.Calls(), 1, 1)
+	if m := r.fallback.Calls()[0].Request.Model; m != "fallback-model" {
+		t.Errorf("fallback model = %q", m)
+	}
+}
+
+func TestRun_extractorGroupDown(t *testing.T) {
+	r := newRig(t, fake.AlwaysRetryable(503), fake.AlwaysRetryable(502), nil)
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusFailed, 1, CodeProviderUnavailable)
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 2, 0)
+	if out.Result != nil {
+		t.Errorf("result = %s, want none", out.Result)
+	}
+}
+
+func TestRun_judgeGroupDown(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil, fake.AlwaysRetryable(503))
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusFailed, 1, CodeProviderUnavailable)
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 1, 1)
+	sameJSON(t, out.Result, valid)
+}
+
+func TestRun_deadline(t *testing.T) {
+	slow := fake.Answer(valid2)
+	slow.Delay = 10 * time.Second
+	r := newRig(t, fake.Script{fake.Answer(valid), slow}, nil, fake.Script{fake.Answer(reject)})
+	in := input(t, personSchema)
+	in.Deadline = time.Now().Add(300 * time.Millisecond)
+	start := time.Now()
+	out := Run(t.Context(), in, r.roles)
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Run took %s past the deadline", elapsed)
+	}
+	checkOutcome(t, in, out, StatusFailed, 2, CodeTimeout)
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 2, 1)
+	// The candidate and feedback produced so far are kept.
+	sameJSON(t, out.Result, valid)
+	if len(out.Feedback) != 1 || out.Feedback[0].Source != SourceJudge {
+		t.Errorf("feedback = %+v, want the judge's", out.Feedback)
+	}
+}
+
+func TestRun_deadlineDuringJudge(t *testing.T) {
+	slow := fake.Answer(accept)
+	slow.Delay = 10 * time.Second
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil, fake.Script{slow})
+	in := input(t, personSchema)
+	in.Deadline = time.Now().Add(200 * time.Millisecond)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusFailed, 1, CodeTimeout)
+	sameJSON(t, out.Result, valid)
+}
+
+func TestRun_deadlinePassed(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil, nil)
+	in := input(t, personSchema)
+	in.Deadline = time.Now().Add(-time.Second)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusFailed, 0, CodeTimeout)
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 0, 0)
+}
+
+func TestRun_cancelled(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil, nil)
+	in := input(t, personSchema)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	out := Run(ctx, in, r.roles)
+	checkOutcome(t, in, out, StatusFailed, 0, CodeTimeout)
+}
+
+func TestRun_judgeUnparseable(t *testing.T) {
+	tests := []struct {
+		name      string
+		judge     fake.Script
+		status    Status
+		code      string
+		wantCalls int
+	}{
+		{"garbage twice", fake.Script{fake.Answer(garbage), fake.Answer("not even JSON")}, StatusFailed, CodeJudgeFailed, 2},
+		{"reject without entries twice", fake.Script{fake.Answer(`{"verdict": "reject", "feedback": {}}`), fake.Answer(garbage)}, StatusFailed, CodeJudgeFailed, 2},
+		{"refusal twice", fake.AlwaysPermanent(400), StatusFailed, CodeJudgeFailed, 2},
+		{"garbage then accept", fake.Script{fake.Answer(garbage), fake.Answer(accept)}, StatusAccepted, "", 2},
+		{"refusal then accept", fake.Script{fake.Fail(provider.Permanent, 400), fake.Answer(accept)}, StatusAccepted, "", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, fake.Script{fake.Answer(valid)}, nil, tt.judge)
+			in := input(t, personSchema)
+			out := Run(t.Context(), in, r.roles)
+			checkOutcome(t, in, out, tt.status, 1, tt.code)
+			calls := r.judge.Calls()
+			checkCalls(t, in, r.extractorCalls(), calls, 1, tt.wantCalls)
+			sameJSON(t, out.Result, valid)
+			if hasText(calls[0], reaskReminder) || !hasText(calls[1], reaskReminder) {
+				t.Error("the re-ask must carry the reminder, the first ask must not")
+			}
+		})
+	}
+}
+
+func TestRun_judgeReparseTries(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil, fake.Script{fake.Answer(garbage), fake.Answer(garbage), fake.Answer(accept)})
+	r.roles.JudgeReparseTries = 2
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 1, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 1, 3)
+}
+
+func TestRun_unparseableThenAccept(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(notJSON), fake.Answer("```json\n" + valid + "\n```")}, nil, fake.Script{fake.Answer(accept)})
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 2, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 2, 1)
+	sameJSON(t, out.Result, valid)
+	retry := r.primary.Calls()[1]
+	if hasText(retry, sepPrevious) || !hasText(retry, `- "" (schema): The answer was not a single JSON object: no JSON value was found.`) {
+		t.Errorf("retry = %+v, want only the parse feedback", retry.Request.Parts)
+	}
+}
+
+func TestRun_extractorFailed(t *testing.T) {
+	tests := []struct {
+		name      string
+		primary   fake.Script
+		wantParse bool // the feedback reports the last answer that was not JSON
+	}{
+		{"never JSON", fake.Script{fake.Answer(notJSON), fake.Answer(""), fake.Answer(`{"name": `)}, true},
+		{"always refused", fake.AlwaysPermanent(400), false},
+		{"refused and not JSON", fake.Script{fake.Fail(provider.Permanent, 400), fake.Answer(notJSON), fake.Fail(provider.Permanent, 400)}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, tt.primary, nil, fake.Script{{Answer: accept, Repeat: true}})
+			in := input(t, personSchema)
+			var progress int
+			in.OnAttempt = func(Progress) { progress++ }
+			out := Run(t.Context(), in, r.roles)
+			checkOutcome(t, in, out, StatusFailed, 3, CodeExtractorFailed)
+			checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 3, 0)
+			if out.Result != nil || progress != 3 {
+				t.Errorf("result %s, progress %d; want none and 3", out.Result, progress)
+			}
+			if got := len(out.Feedback) == 1 && out.Feedback[0].Pointer == ""; got != tt.wantParse {
+				t.Errorf("feedback = %+v", out.Feedback)
+			}
+		})
+	}
+}
+
+func TestRun_schemaless(t *testing.T) {
+	list := `[{"name": "Ada Lovelace"}, {"name": "Charles Babbage"}]`
+	r := newRig(t, fake.Script{fake.Answer("Here you go:\n" + list)}, nil, fake.Script{fake.Answer(accept)})
+	in := input(t, "")
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 1, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 1, 1)
+	sameJSON(t, out.Result, list)
+	wantExt, wantJudge := framings(true)
+	ext, jdg := r.primary.Calls()[0], r.judge.Calls()[0]
+	if ext.Request.System != wantExt || jdg.Request.System != wantJudge {
+		t.Error("schema-less mode did not use the schema-less framings")
+	}
+	if hasText(ext, sepSchema) || hasText(jdg, sepSchema) {
+		t.Error("schema-less requests carry a schema section")
+	}
+}
+
+func TestRun_schemalessReject(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(`{"a": 1}`), fake.Answer("[1]")}, nil, fake.Script{fake.Answer(reject), fake.Answer(fake.RejectVerdict)})
+	in := input(t, "")
+	in.MaxAttempts = 2
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusRejected, 2, "")
+	sameJSON(t, out.Result, "[1]")
+}
+
+// TestRun_schemaArrays: with a schema, the parser takes a top-level array only when the
+// schema allows one.
+func TestRun_schemaArrays(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer("[1, 2]")}, nil, fake.Script{fake.Answer(accept)})
+	in := input(t, `{"type": "array", "items": {"type": "integer"}}`)
+	checkOutcome(t, in, Run(t.Context(), in, r.roles), StatusAccepted, 1, "")
+
+	r = newRig(t, fake.Script{fake.Answer("[1, 2]")}, nil, fake.Script{fake.Answer(accept)})
+	in = input(t, personSchema)
+	in.MaxAttempts = 1
+	checkOutcome(t, in, Run(t.Context(), in, r.roles), StatusFailed, 1, CodeExtractorFailed)
+}
+
+func TestRun_confidence(t *testing.T) {
+	tests := []struct {
+		name    string
+		verdict string
+		want    *float64
+	}{
+		{"present", `{"verdict": "accept", "feedback": {}, "confidence": 0.9}`, new(0.9)},
+		{"absent", accept, nil},
+		{"out of range", `{"verdict": "accept", "feedback": {}, "confidence": 7}`, nil},
+		{"zero", `{"verdict": "accept", "feedback": {}, "confidence": 0}`, new(0.0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, fake.Script{fake.Answer(valid)}, nil, fake.Script{fake.Answer(tt.verdict)})
+			in := input(t, personSchema)
+			out := Run(t.Context(), in, r.roles)
+			checkOutcome(t, in, out, StatusAccepted, 1, "")
+			if (out.JudgeConfidence == nil) != (tt.want == nil) || (tt.want != nil && *out.JudgeConfidence != *tt.want) {
+				t.Errorf("confidence = %v, want %v", out.JudgeConfidence, tt.want)
+			}
+		})
+	}
+}
+
+func TestRun_advisoryFeedback(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil,
+		fake.Script{fake.Answer(`{"verdict": "accept", "feedback": {"/born": "Only the year is printed."}}`)})
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 1, "")
+	want := []Feedback{{Pointer: "/born", Message: "Only the year is printed.", Source: SourceJudge}}
+	if !equalFeedback(out.Feedback, want) {
+		t.Errorf("feedback = %+v, want %+v", out.Feedback, want)
+	}
+}
+
+func TestRun_feedbackCap(t *testing.T) {
+	long := strings.Repeat("x", 100)
+	r := newRig(t, fake.Script{fake.Answer(`{"name": "` + long + `", "born": "` + long + `"}`)}, nil, nil)
+	r.roles.FeedbackMessageChars = 20
+	in := input(t, personSchema)
+	in.MaxAttempts = 1
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusRejected, 1, "")
+	if len(out.Feedback) != 1 || len([]rune(out.Feedback[0].Message)) != 20 || !strings.HasSuffix(out.Feedback[0].Message, "…") {
+		t.Errorf("feedback = %+v, want one message of 20 characters", out.Feedback)
+	}
+}
+
+func TestRun_maxAttemptsDefault(t *testing.T) {
+	r := newRig(t, fake.Script{{Answer: invalid, Repeat: true}}, nil, nil)
+	in := input(t, personSchema)
+	in.MaxAttempts = 0
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusRejected, DefaultMaxAttempts, "")
+}
+
+// panicky is a provider whose code panics.
+type panicky struct{}
+
+func (panicky) Complete(_ context.Context, req provider.Request) (provider.Response, error) {
+	return provider.Response{Text: req.Parts[len(req.Parts)].Text}, nil // index out of range
+}
+
+func TestRun_panic(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(valid)}, nil, nil)
+	cfg := loadConfig(t, loopConfig)
+	roles := buildRoles(t, cfg, map[string]provider.Provider{"primary": r.primary, "fallback": r.fallback, "review": panicky{}})
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, roles)
+	checkOutcome(t, in, out, StatusFailed, 1, CodeInternal)
+	sameJSON(t, out.Result, valid)
+	if strings.Contains(out.Error.Message, "index") {
+		t.Errorf("error message %q is not generic", out.Error.Message)
+	}
+
+	// A panic in the caller's progress callback ends the same way.
+	r = newRig(t, fake.Script{fake.Answer(invalid)}, nil, nil)
+	in.OnAttempt = func(Progress) { panic("callback") }
+	out = Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusFailed, 1, CodeInternal)
+}
+
+func TestRun_missingRoles(t *testing.T) {
+	in := input(t, personSchema)
+	out := Run(t.Context(), in, Roles{})
+	checkOutcome(t, in, out, StatusFailed, 0, CodeInternal)
+}
+
+// TestRun_neverAcceptedOtherwise enumerates every path that is not a parsed accept on a
+// schema-valid candidate and asserts that none ends accepted. The judge always has an
+// accept left, so only the loop's rules keep these jobs from acceptance.
+func TestRun_neverAcceptedOtherwise(t *testing.T) {
+	acceptLater := fake.Script{{Answer: accept, Repeat: true}}
+	tests := []struct {
+		name               string
+		primary, fallback  fake.Script
+		judge              fake.Script
+		schemaless         bool
+		deadline           time.Duration
+		status             Status
+		code               string
+		wantJudgeCallsZero bool
+	}{
+		{name: "schema invalid every attempt", primary: fake.Script{{Answer: invalid, Repeat: true}}, judge: acceptLater, status: StatusRejected, wantJudgeCallsZero: true},
+		{name: "not JSON every attempt", primary: fake.Script{{Answer: notJSON, Repeat: true}}, judge: acceptLater, status: StatusFailed, code: CodeExtractorFailed, wantJudgeCallsZero: true},
+		{name: "array where an object is required", primary: fake.Script{{Answer: `[` + valid + `]`, Repeat: true}}, judge: acceptLater, status: StatusFailed, code: CodeExtractorFailed, wantJudgeCallsZero: true},
+		{name: "truncated JSON", primary: fake.Script{{Answer: valid[:20], Repeat: true}}, judge: acceptLater, status: StatusFailed, code: CodeExtractorFailed, wantJudgeCallsZero: true},
+		{name: "extractor refuses", primary: fake.AlwaysPermanent(400), judge: acceptLater, status: StatusFailed, code: CodeExtractorFailed, wantJudgeCallsZero: true},
+		{name: "extractor group down", primary: fake.AlwaysRetryable(503), fallback: fake.AlwaysRetryable(503), judge: acceptLater, status: StatusFailed, code: CodeProviderUnavailable, wantJudgeCallsZero: true},
+		{name: "judge rejects every attempt", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.Script{{Answer: reject, Repeat: true}}, status: StatusRejected},
+		{name: "judge garbage", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.Script{fake.Answer(garbage), fake.Answer(garbage), {Answer: accept, Repeat: true}}, status: StatusFailed, code: CodeJudgeFailed},
+		{name: "judge says accepted", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.Script{fake.Answer(`{"verdict": "accepted", "feedback": {}}`), fake.Answer(`{"verdict": "ACCEPT", "feedback": {}}`), {Answer: accept, Repeat: true}}, status: StatusFailed, code: CodeJudgeFailed},
+		{name: "judge accepts in prose only", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.Script{fake.Answer("I accept."), fake.Answer("accept"), {Answer: accept, Repeat: true}}, status: StatusFailed, code: CodeJudgeFailed},
+		{name: "judge empty answers", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.Script{fake.Answer(""), fake.Answer(" "), {Answer: accept, Repeat: true}}, status: StatusFailed, code: CodeJudgeFailed},
+		{name: "judge refuses", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.AlwaysPermanent(400), status: StatusFailed, code: CodeJudgeFailed},
+		{name: "judge group down", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.AlwaysRetryable(503), status: StatusFailed, code: CodeProviderUnavailable},
+		{name: "judge too slow", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.Script{{Answer: accept, Repeat: true, Delay: 10 * time.Second}}, deadline: 100 * time.Millisecond, status: StatusFailed, code: CodeTimeout},
+		{name: "schema-less judge rejects", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.Script{{Answer: reject, Repeat: true}}, schemaless: true, status: StatusRejected},
+		{name: "schema-less judge down", primary: fake.Script{{Answer: valid, Repeat: true}}, judge: fake.AlwaysRetryable(500), schemaless: true, status: StatusFailed, code: CodeProviderUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, tt.primary, tt.fallback, tt.judge)
+			schema := personSchema
+			if tt.schemaless {
+				schema = ""
+			}
+			in := input(t, schema)
+			if tt.deadline > 0 {
+				in.Deadline = time.Now().Add(tt.deadline)
+			}
+			out := Run(t.Context(), in, r.roles)
+			if out.Status == StatusAccepted {
+				t.Fatalf("accepted: %+v", out)
+			}
+			if out.Status != tt.status || (out.Error == nil) != (tt.code == "") || (out.Error != nil && out.Error.Code != tt.code) {
+				t.Fatalf("outcome = %s %+v, want %s %q", out.Status, out.Error, tt.status, tt.code)
+			}
+			if tt.wantJudgeCallsZero && len(r.judge.Calls()) != 0 {
+				t.Errorf("judge called %d times", len(r.judge.Calls()))
+			}
+		})
+	}
+}
+
+// TestRun_travelInbox runs a corpus ground truth through the loop with the TravelInbox
+// schema and instructions.
+func TestRun_travelInbox(t *testing.T) {
+	read := func(path string) string {
+		data, err := os.ReadFile("../../testdata/travelinbox/" + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	result := read("corpus/001-flight/truth.json")
+	broken := strings.Replace(result, `"provider": 1.0,`, "", 1)
+	r := newRig(t, fake.Script{fake.Answer(broken), fake.Answer("```json\n" + result + "```")}, nil, fake.Script{fake.Answer(accept)})
+	in := Input{
+		Representation: document.Representation{
+			Kind: document.Text, Parts: []provider.Part{{Text: read("corpus/001-flight/notes.md")}}, MediaTypes: []string{"text/plain"},
+		},
+		ExtractorInstructions: read("prompts/extractor.md"),
+		JudgeInstructions:     read("prompts/judge.md"),
+		Schema:                travelSchema(t),
+	}
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 2, "")
+	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 2, 1)
+	if !hasText(r.primary.Calls()[0], sepInstructions+"\n\n"+in.ExtractorInstructions) ||
+		!hasText(r.judge.Calls()[0], sepInstructions+"\n\n"+in.JudgeInstructions) {
+		t.Error("caller instructions did not reach the roles verbatim")
+	}
+	if !hasText(r.primary.Calls()[1], `"/reservations/0/confidence" (schema): `+"`confidence`: missing required property 'provider'") {
+		t.Errorf("retry lacks the schema feedback: %+v", r.primary.Calls()[1].Parts)
+	}
+}
+
+func TestOutcome_json(t *testing.T) {
+	r := newRig(t, fake.AlwaysRetryable(503), fake.AlwaysRetryable(503), nil)
+	in := input(t, personSchema)
+	data, err := json.Marshal(Run(t.Context(), in, r.roles))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"status":"failed","result":null,"feedback":[],"attempts":1,"judge_confidence":null,` +
+		`"error":{"code":"provider_unavailable","message":"Every endpoint of a role's group failed."}}`
+	if string(data) != want {
+		t.Errorf("JSON = %s\nwant   %s", data, want)
+	}
+}
+
+func TestNewRoles_errors(t *testing.T) {
+	build := func(*config.Endpoint) (provider.Provider, error) { return fake.New(nil), nil }
+	cfg := loadConfig(t, loopConfig)
+	cfg.Roles.Extractor.Group = "missing"
+	if _, err := NewRoles(cfg, build); err == nil {
+		t.Error("NewRoles with a missing extractor group succeeded")
+	}
+	cfg = loadConfig(t, loopConfig)
+	cfg.Roles.Judge.Group = "missing"
+	if _, err := NewRoles(cfg, build); err == nil {
+		t.Error("NewRoles with a missing judge group succeeded")
+	}
+	cfg = loadConfig(t, loopConfig)
+	roles, err := NewRoles(cfg, build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roles.JudgeReparseTries != 1 || roles.FeedbackMessageChars != 0 || roles.Extractor.Name() != "extraction" || roles.Judge.Name() != "review" {
+		t.Errorf("roles = %+v", roles)
+	}
+}

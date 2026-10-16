@@ -1,6 +1,6 @@
 # Job: Judge verdict
 
-Version: v0.1 · Epic: 05 Extraction loop · Status: planned · Depends on: 02
+Version: v0.1 · Epic: 05 Extraction loop · Status: done · Depends on: 02
 
 ## Goal
 
@@ -20,19 +20,19 @@ that produces verdict and confidence natively.
 
 ## Tasks
 
-- [ ] `Verdict{Accept bool; Feedback []Feedback; Confidence *float64}`.
+- [x] `Verdict{Accept bool; Feedback []Feedback; Confidence *float64}`.
       `ParseVerdict(text) (Verdict, error)` built on the answer parser (job 02); verdict
       must be exactly `accept` or `reject`; `feedback` an object of string values;
       `confidence` optional, a number in [0, 1] (out of range or wrong type → ignored,
       logged as a warning count, never fails the verdict); unknown keys ignored.
-- [ ] Order: parse `feedback` with a `json.Decoder` token walk to keep the judge's order.
-- [ ] Rules: `reject` with empty feedback → unparseable (the loop re-asks once); `accept`
+- [x] Order: parse `feedback` with a `json.Decoder` token walk to keep the judge's order.
+- [x] Rules: `reject` with empty feedback → unparseable (the loop re-asks once); `accept`
       with feedback → accepted with advisory entries (`source: "judge"`); each message
       truncated at `limits.feedback_message_chars` (default 4,000) with an ellipsis.
-- [ ] Pointers are syntactically checked as RFC 6901 and otherwise kept as given.
-- [ ] `Outcome.JudgeConfidence *float64` carries the last verdict's confidence (nil when
+- [x] Pointers are syntactically checked as RFC 6901 and otherwise kept as given.
+- [x] `Outcome.JudgeConfidence *float64` carries the last verdict's confidence (nil when
       absent), persisted and exposed by v0.2 as `judge_confidence`.
-- [ ] Tests: accept, reject with two entries in order, accept with advisory, reject
+- [x] Tests: accept, reject with two entries in order, accept with advisory, reject
       without entries, wrong verdict word, fenced verdict, extra keys, confidence
       present, confidence out of range.
 
@@ -46,3 +46,13 @@ that produces verdict and confidence natively.
 
 Using confidence to decide acceptance (the verdict decides; a threshold policy could be a
 later per-application option), multiple judges, the classifier judge adapter (v0.3).
+
+## Implementation notes
+
+Done in `internal/extract/verdict.go` as the unexported `parseVerdict(text, maxChars)`.
+Details beyond the job text: a missing `feedback` key on an accept is an empty feedback
+(on a reject it is unparseable); a feedback key that is not an RFC 6901 pointer, a
+non-string or null message, and a duplicate `verdict` or `feedback` key make the verdict
+unparseable. An ignored confidence is logged as a warning (no content) instead of being
+counted; metrics arrive in v0.2. `limits.feedback_message_chars` was added to the
+configuration (0 means 4,000) and the cap also applies to schema feedback messages.
