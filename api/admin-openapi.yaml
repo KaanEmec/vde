@@ -1,0 +1,451 @@
+openapi: 3.1.0
+info:
+  title: Verified Document Extraction admin API
+  version: 0.2.0
+  description: |
+    Run-time management of applications, tokens and jobs (epic 11), for operators. It is
+    not part of the TravelInbox contract and is served only on its own listener,
+    `admin.listen` (default `127.0.0.1:8091`; empty disables it). Prose guide:
+    `docs/api/admin.md`.
+
+    Conventions:
+    - Every request needs an admin token (`vde token create --admin`): a bearer token with
+      the single scope `admin` and no application. Application tokens get
+      `403 forbidden` here, and admin tokens get `403 forbidden` on `/v1`.
+    - HTTPS is required outside loopback, as on `/v1`, except that `server.trusted_proxy`
+      does not apply: the admin listener is reached directly, never through the proxy.
+    - 60 requests per minute per admin token; over it, `429 rate_limited` with
+      `Retry-After`.
+    - Errors use the `/v1` error body (`Error`) with fixed messages; `400 bad_request`
+      names the offending field or query parameter.
+    - Changes are written to the audit log with the fixed kinds `token.created`,
+      `token.revoked`, `app.enabled`, `app.disabled` and `job.deleted` (reason `admin`),
+      actor `admin:<token id>`. Reads are only access-logged.
+    - Job resources here carry metadata only: never the result, feedback, error message,
+      instructions, schema, idempotency key or attachment names.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: http://127.0.0.1:8091/admin/v1
+    description: The default admin listener, loopback only
+
+security:
+  - admin: []
+
+paths:
+  /applications:
+    get:
+      operationId: listApplications
+      summary: List applications (YAML-declared and dynamic)
+      responses:
+        "200":
+          description: Every application, ordered by id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [applications]
+                properties:
+                  applications: { type: array, items: { $ref: "#/components/schemas/Application" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createApplication
+      summary: Create a dynamic application
+      description: |
+        The new application has `source: admin` and persists in the store across restarts.
+        Absent or zero settings take the YAML defaults (quota 1000 per `P1D`, 300 requests
+        and 30 submissions per minute, 20 in progress, retention `24h`,
+        `limits.max_attempts`). Enabled unless `enabled: false`; writes `app.enabled`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ApplicationSettings"
+                - type: object
+                  required: [id]
+                  properties:
+                    id: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,63}$" }
+                    enabled: { type: boolean, default: true }
+      responses:
+        "201":
+          description: The application as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`conflict`: an application with this id exists (declared in the YAML or created earlier)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /applications/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getApplication
+      summary: Read an application
+      responses:
+        "200":
+          description: The application.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateApplication
+      summary: Change an application's name, limits, retention, HTML policy or enabled flag
+      description: |
+        The fields present replace the stored ones; absent fields keep them, and a zero
+        value means the YAML default. Takes effect on the next request (the API and the
+        workers read the stored row). For a `source: config` application the next start
+        of `vde serve` rewrites every field from the YAML again, enabled included (the
+        YAML wins). Writes `app.enabled` or `app.disabled` when `enabled` changes; other
+        changes are only access-logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ApplicationSettings"
+                - type: object
+                  properties:
+                    enabled: { type: boolean }
+      responses:
+        "200":
+          description: The application as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /applications/{id}/tokens:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: listTokens
+      summary: List an application's tokens (metadata, never the secret)
+      responses:
+        "200":
+          description: The tokens, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tokens]
+                properties:
+                  tokens: { type: array, items: { $ref: "#/components/schemas/Token" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createToken
+      summary: Issue an application token (vde token create)
+      description: |
+        The token is in the response once; only its hash is stored. Scopes `jobs` and
+        `jobs:read`; the `admin` scope is refused (admin tokens are created by the CLI
+        only). `expires` takes what `vde token create --expires` takes: a date, an RFC 3339
+        time, or a duration from now (`90d`, `2160h`), at most `auth.max_token_ttl` away.
+        Writes `token.created`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scopes, expires]
+              properties:
+                scopes: { type: array, minItems: 1, items: { type: string, enum: [jobs, "jobs:read"] } }
+                expires: { type: string }
+                label: { type: string, maxLength: 200 }
+      responses:
+        "201":
+          description: The token and its metadata.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Token"
+                  - type: object
+                    required: [token]
+                    properties:
+                      token: { type: string, description: "vde_<id>_<secret>; shown once." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`conflict`: the application is disabled."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /applications/{id}/quota:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getQuota
+      summary: An application's quota in the current window (not charged)
+      responses:
+        "200":
+          description: The quota.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [limit, used, remaining, reset, window]
+                properties:
+                  limit: { type: integer }
+                  used: { type: integer }
+                  remaining: { type: integer }
+                  reset: { type: string, format: date-time }
+                  window: { type: string, description: ISO 8601 duration such as P1D. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /tokens/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, description: The token id (8 characters). } }
+    delete:
+      operationId: revokeToken
+      summary: Revoke a token (vde token revoke), application or admin
+      description: Takes effect on the token's next request. Revoking a revoked token is 204 again and writes nothing; otherwise writes `token.revoked`.
+      responses:
+        "204": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /jobs:
+    get:
+      operationId: listJobs
+      summary: List jobs (metadata only), newest first
+      parameters:
+        - { name: app, in: query, schema: { type: string }, description: Only this application's jobs. }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/Status" } }
+        - { name: since, in: query, schema: { type: string }, description: "Created at or after: an RFC 3339 time, a date, or a duration back from now (24h, 7d)." }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 100 } }
+      responses:
+        "200":
+          description: The jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs: { type: array, items: { $ref: "#/components/schemas/JobMetadata" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /jobs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getJob
+      summary: A job's metadata, any application, until the sweeper removes it
+      responses:
+        "200":
+          description: The job's metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobMetadata" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteJob
+      summary: Force-delete a job in any state
+      description: |
+        Deletes the document and page blobs, then the row with its content. A worker still
+        running the job loses it at its next write. Writes `job.deleted` with reason
+        `admin`; the job is 404 to its application from then on.
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /audit:
+    get:
+      operationId: listAudit
+      summary: Audit events, oldest first (vde audit list)
+      parameters:
+        - { name: app, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { $ref: "#/components/schemas/AuditKind" } }
+        - { name: since, in: query, schema: { type: string, default: 24h }, description: "An RFC 3339 time, a date, or a duration back from now; the last 24 hours when absent." }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 100 } }
+      responses:
+        "200":
+          description: The events.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    admin:
+      type: http
+      scheme: bearer
+      description: An admin token, `vde token create --admin --expires …`.
+
+  responses:
+    Error:
+      description: |
+        `bad_request` (400, names the field or parameter), `unauthorized` (401),
+        `forbidden` (403, not an admin token), `not_found` (404), `rate_limited` (429,
+        with `Retry-After`), `internal` (500).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
+
+    ApplicationSettings:
+      type: object
+      description: The fields of an `applications[]` entry of the YAML.
+      properties:
+        name: { type: string }
+        max_attempts: { type: integer, minimum: 0 }
+        quota:
+          type: object
+          properties:
+            limit: { type: integer, minimum: 0 }
+            window: { type: string, description: "ISO 8601 duration in weeks, days, hours, minutes or seconds (P1D, PT1H)." }
+        rate:
+          type: object
+          properties:
+            requests_per_minute: { type: integer, minimum: 0 }
+            submits_per_minute: { type: integer, minimum: 0 }
+            max_in_progress: { type: integer, minimum: 0 }
+        retention:
+          type: object
+          properties:
+            default: { type: string, description: "A duration such as 24h, or none." }
+            force_none: { type: boolean }
+        documents:
+          type: object
+          properties:
+            html: { type: string, enum: ["", raw_html, visible_text], description: "\"\" means documents.html." }
+
+    Application:
+      allOf:
+        - $ref: "#/components/schemas/ApplicationSettings"
+        - type: object
+          required: [id, enabled, source, created_at, updated_at]
+          properties:
+            id: { type: string }
+            enabled: { type: boolean }
+            source:
+              type: string
+              enum: [config, admin]
+              description: "`config`: declared in the YAML, rewritten at every start and disabled when removed from it. `admin`: created here, kept as stored."
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    Token:
+      type: object
+      required: [id, application_id, scopes, label, status, expires_at, revoked_at, created_at, last_used_at]
+      properties:
+        id: { type: string }
+        application_id: { type: string }
+        scopes: { type: array, items: { type: string } }
+        label: { type: string }
+        status: { type: string, enum: [active, revoked, expired] }
+        expires_at: { type: string, format: date-time }
+        revoked_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+
+    Status:
+      type: string
+      enum: [queued, running, accepted, rejected, failed]
+
+    JobMetadata:
+      type: object
+      description: Exactly these fields; never content.
+      required: [id, application_id, status, attempts, max_attempts, service_version, representation,
+        media_type, bytes, pages, retention, error_code, created_at, started_at, finished_at,
+        expires_at, inputs_deleted_at, content_deleted_at]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        application_id: { type: string }
+        status: { $ref: "#/components/schemas/Status" }
+        attempts: { type: integer }
+        max_attempts: { type: integer, description: The request's attempt limit; 0 means the application's. }
+        service_version: { type: string }
+        representation: { type: string, enum: [native, pages, text] }
+        media_type: { type: string }
+        bytes: { type: integer }
+        pages: { type: integer }
+        retention: { type: string, enum: [none, default] }
+        error_code: { type: string, description: The job error code when failed, else empty. }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: string, format: date-time }
+        inputs_deleted_at: { type: [string, "null"], format: date-time }
+        content_deleted_at: { type: [string, "null"], format: date-time }
+
+    AuditKind:
+      type: string
+      enum: [token.created, token.revoked, app.enabled, app.disabled, job.created, job.finished,
+        job.deleted, job.expired, auth.failed, config.loaded]
+
+    AuditEvent:
+      type: object
+      required: [id, at, kind, application_id, actor, job_id, details]
+      properties:
+        id: { type: integer }
+        at: { type: string, format: date-time }
+        kind: { $ref: "#/components/schemas/AuditKind" }
+        application_id: { type: string }
+        actor: { type: string, description: "worker, sweeper, api, cli, config, or admin:<token id>." }
+        job_id: { type: string }
+        details: { type: object, description: The kind's fixed fields; never content. }

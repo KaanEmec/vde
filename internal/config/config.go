@@ -28,8 +28,9 @@ type Config struct {
 	Auth         Auth                 `yaml:"auth"`
 	Logging      Logging              `yaml:"logging"`
 	Debug        Debug                `yaml:"debug"`
-	// Metrics, Worker, Retention and Audit configure the serve process (service.go).
+	// Metrics, Admin, Worker, Retention and Audit configure the serve process (service.go).
 	Metrics   Metrics          `yaml:"metrics"`
+	Admin     Admin            `yaml:"admin"`
 	Worker    Worker           `yaml:"worker"`
 	Retention ServiceRetention `yaml:"retention"`
 	Audit     Audit            `yaml:"audit"`
@@ -246,6 +247,7 @@ func defaults() *Config {
 		Documents: Documents{HTML: "raw_html"},
 		Auth:      Auth{MaxTokenTTL: defaultMaxTokenTTL},
 		Logging:   Logging{Level: "info", Format: "json"},
+		Admin:     Admin{Listen: defaultAdminListen},
 		Worker:    Worker{Size: defaultWorkerSize, PollInterval: defaultPollInterval},
 		Retention: ServiceRetention{SweepInterval: defaultSweepInterval},
 		Audit:     Audit{Retention: defaultAuditRetention},

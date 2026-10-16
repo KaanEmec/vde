@@ -208,7 +208,8 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	log := p.opts.Logger.With("job_id", j.ID, "application_id", j.ApplicationID, "worker_id", workerID)
 	p.opts.Observer.JobStarted(j.ApplicationID)
 	deadline := j.CreatedAt.Add(p.jobTimeout)
-	remaining := p.maxAttempts(j) - j.Attempts
+	app := p.application(ctx, j.ApplicationID)
+	remaining := p.maxAttempts(app, j) - j.Attempts
 
 	var out job.Outcome
 	switch {
@@ -218,7 +219,7 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 		out = exhausted(j)
 	default:
 		var ok bool
-		if out, ok = p.extract(ctx, log, workerID, j, deadline, remaining); !ok {
+		if out, ok = p.extract(ctx, log, workerID, app, j, deadline, remaining); !ok {
 			return
 		}
 	}
@@ -238,13 +239,13 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	p.opts.Observer.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
 	j.Status, j.Attempts, j.Error, j.FinishedAt = out.Status, out.Attempts, out.Error, time.Now()
 	p.opts.Audit.JobFinished(fctx, j)
-	p.applyRetention(fctx, log, j)
+	p.applyRetention(fctx, log, app, j)
 }
 
 // extract runs the loop for the remaining attempts. ok is false when the job must be
 // left alone: the pool was cancelled or the lease was lost.
-func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, j job.Job, deadline time.Time, remaining int) (job.Outcome, bool) {
-	in, reason, err := p.input(ctx, j)
+func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, app config.Application, j job.Job, deadline time.Time, remaining int) (job.Outcome, bool) {
+	in, reason, err := p.input(ctx, app, j)
 	if err != nil {
 		if ctx.Err() != nil {
 			return job.Outcome{}, false
@@ -305,7 +306,7 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, j
 
 // input builds the loop input from the row and its blobs. reason names the failing
 // step for the log; errors may quote content and are never logged.
-func (p *Pool) input(ctx context.Context, j job.Job) (in extract.Input, reason string, err error) {
+func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in extract.Input, reason string, err error) {
 	data, err := p.read(ctx, j.ID, blob.Document)
 	if err != nil {
 		return in, "document blob", err
@@ -320,7 +321,7 @@ func (p *Pool) input(ctx context.Context, j job.Job) (in extract.Input, reason s
 	if err != nil {
 		return in, "document", err
 	}
-	policy, err := document.ResolveHTMLPolicy(p.cfg.Documents.HTML, p.apps[j.ApplicationID].Documents.HTML)
+	policy, err := document.ResolveHTMLPolicy(p.cfg.Documents.HTML, app.Documents.HTML)
 	if err != nil {
 		return in, "html policy", err
 	}
@@ -354,10 +355,24 @@ func (p *Pool) read(ctx context.Context, jobID, name string) ([]byte, error) {
 	return io.ReadAll(rc)
 }
 
+// application is the job's application as the API sees it: the store row (declared in
+// the YAML or created over the admin API, as changed by PATCH) for the attempt limit
+// and the HTML policy over the configuration entry, which alone carries
+// delete_blobs_at_terminal; force_none from either deletes the inputs at the terminal
+// state. When the row cannot be read the configuration entry is used.
+func (p *Pool) application(ctx context.Context, id string) config.Application {
+	a := p.apps[id]
+	if row, err := p.store.GetApplication(ctx, id); err == nil {
+		a.MaxAttempts, a.Documents.HTML = row.MaxAttempts, row.HTMLPolicy
+		a.Retention.ForceNone = a.Retention.ForceNone || row.ForceNone
+	}
+	return a
+}
+
 // maxAttempts is the job's attempt limit: its own, capped by the application's, which
 // defaults to limits.max_attempts.
-func (p *Pool) maxAttempts(j job.Job) int {
-	limit := p.apps[j.ApplicationID].MaxAttempts
+func (p *Pool) maxAttempts(app config.Application, j job.Job) int {
+	limit := app.MaxAttempts
 	if limit <= 0 {
 		limit = p.cfg.Limits.MaxAttempts
 	}
@@ -374,8 +389,8 @@ func (p *Pool) maxAttempts(j job.Job) int {
 // first, then the instruction and schema columns. That is every retention: none job, and
 // a retention: default job of an application with delete_blobs_at_terminal; the other
 // default jobs keep their inputs until the sweeper removes them at expires_at.
-func (p *Pool) applyRetention(ctx context.Context, log *slog.Logger, j job.Job) {
-	r := p.apps[j.ApplicationID].Retention
+func (p *Pool) applyRetention(ctx context.Context, log *slog.Logger, app config.Application, j job.Job) {
+	r := app.Retention
 	if j.Retention != job.RetentionNone && !r.ForceNone && !r.DeleteBlobsAtTerminal {
 		return
 	}

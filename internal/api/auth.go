@@ -77,6 +77,13 @@ func (s *server) authenticate(need string, next http.Handler) http.Handler {
 		}
 		if !auth.Permits(p.Token.Scopes, need) {
 			closeIfBodyPending(w, r)
+			// Every authenticated /v1 response carries the quota headers (contract §8),
+			// a scope refusal too; an admin token has no application and gets none.
+			if p.Application.ID != "" && need != auth.ScopeAdmin {
+				if _, ok := s.quotaHeaders(w, r, p.Application); !ok {
+					return
+				}
+			}
 			writeError(w, r, newError(codeForbidden, msgForbidden))
 			return
 		}
@@ -86,8 +93,8 @@ func (s *server) authenticate(need string, next http.Handler) http.Handler {
 					slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
 			}
 		}
-		if v := s.deps.ServiceVersions[p.Application.ID]; v != "" && w.Header().Get(headerServiceVersion) != "" {
-			w.Header().Set(headerServiceVersion, v)
+		if p.Application.ID != "" && w.Header().Get(headerServiceVersion) != "" {
+			w.Header().Set(headerServiceVersion, s.serviceVersion(p.Application))
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, principalKey{}, p)))
 	})
@@ -121,15 +128,20 @@ func closeIfBodyPending(w http.ResponseWriter, r *http.Request) {
 }
 
 // recordAudit appends one audit event through the audit package's typed details (never
-// content), tagged with the API actor, with Deps.Audit or, when that is nil, a recorder
-// on the store (authentication failures and deletions are always audited). A failure is
-// logged and does not change the response.
+// content), tagged with the API actor (admin:<token id> for an admin token), with
+// Deps.Audit or, when that is nil, a recorder on the store (authentication failures,
+// deletions and admin changes are always audited). A failure is logged and does not
+// change the response.
 func (s *server) recordAudit(ctx context.Context, applicationID, jobID string, d audit.Details) {
 	rec := s.deps.Audit
 	if rec == nil {
 		rec = audit.New(s.deps.Store, audit.Options{Clock: s.now})
 	}
-	if err := rec.Record(context.WithoutCancel(ctx), audit.ActorAPI, applicationID, jobID, d); err != nil {
+	actor := audit.ActorAPI
+	if p, ok := ctx.Value(principalKey{}).(auth.Principal); ok && p.Application.ID == "" && p.Token.ID != "" {
+		actor = audit.ActorAdmin + ":" + p.Token.ID
+	}
+	if err := rec.Record(context.WithoutCancel(ctx), actor, applicationID, jobID, d); err != nil {
 		s.log.LogAttrs(ctx, slog.LevelWarn, "audit event not written",
 			slog.String("kind", string(d.AuditKind())), slog.String("job_id", jobID), slog.String("error", err.Error()))
 	}

@@ -26,7 +26,8 @@ Commands:
   extract      run one extraction on a document file (vde extract -h)
   config       check the configuration file (vde config check -h)
   app          list the applications in the database (vde app list -h)
-  token        create, list and revoke access tokens (vde token -h)
+  token        create, list and revoke access and admin tokens (vde token -h)
+  audit        list the audit log (vde audit list -h)
   healthcheck  request /healthz on the configured listener
   version      print version, commit and build date
   help         print this help
@@ -58,6 +59,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runApp(args[1:], stdout, stderr)
 	case "token":
 		return runToken(args[1:], stdout, stderr)
+	case "audit":
+		return runAudit(args[1:], stdout, stderr)
 	case "healthcheck":
 		return runHealthcheck(args[1:], stdout, stderr)
 	case "help", "-h", "-help", "--help":

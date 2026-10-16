@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
 )
@@ -22,17 +22,6 @@ import (
 // vde.yaml does not exist, so `docker compose exec vde vde token …` and the image's
 // HEALTHCHECK work without flags.
 const imageConfigPath = "/etc/vde/vde.yaml"
-
-// Audit actors and kinds written by the commands.
-const (
-	actorCLI    = "cli"
-	actorConfig = "config"
-
-	auditAppEnabled   = "app.enabled"
-	auditAppDisabled  = "app.disabled"
-	auditTokenCreated = "token.created"
-	auditTokenRevoked = "token.revoked"
-)
 
 const flagsHeading = "\nFlags:\n"
 
@@ -72,17 +61,9 @@ func openStore(cfg *config.Config) (*job.SQLite, error) {
 	return job.Open(cfg.Server.DatabasePath())
 }
 
-// appendAudit writes one audit event with details marshalled from a fixed struct.
-func appendAudit(ctx context.Context, store job.Store, e job.AuditEvent, details any) error {
-	if details != nil {
-		raw, err := json.Marshal(details)
-		if err != nil {
-			return err
-		}
-		e.Details = raw
-	}
-	_, err := store.AppendAudit(ctx, e)
-	return err
+// cliAudit is the recorder of the operator commands: the store, actor cli.
+func cliAudit(store job.Store) *audit.Recorder {
+	return audit.New(store, audit.Options{}).WithActor(audit.ActorCLI)
 }
 
 // storeApplication is the store row of a configured application (defaults applied).
@@ -104,9 +85,12 @@ func storeApplication(a config.Application) job.Application {
 }
 
 // syncApplications mirrors the configured applications into the store: each is
-// upserted and enabled, every other enabled one is disabled (its tokens stop working,
-// its jobs stay until they expire). Each change of state is audited.
-func syncApplications(ctx context.Context, store job.Store, apps []config.Application, now time.Time) error {
+// upserted (every field of the entry, defaults applied, rewritten: the YAML wins over
+// admin API changes), marked source config and enabled; every other enabled source config
+// application is disabled (its tokens stop working, its jobs stay until they expire).
+// Applications created over the admin API are left alone. Each change of state is
+// audited through rec, actor config.
+func syncApplications(ctx context.Context, store job.Store, rec *audit.Recorder, apps []config.Application, now time.Time) error {
 	ids := make([]string, 0, len(apps))
 	for _, a := range apps {
 		prev, err := store.GetApplication(ctx, a.ID)
@@ -117,7 +101,7 @@ func syncApplications(ctx context.Context, store job.Store, apps []config.Applic
 			return err
 		}
 		if !prev.Enabled {
-			if err := appendAudit(ctx, store, job.AuditEvent{At: now, Kind: auditAppEnabled, ApplicationID: a.ID, Actor: actorConfig}, nil); err != nil {
+			if err := rec.Record(ctx, audit.ActorConfig, a.ID, "", audit.AppEnabled{}); err != nil {
 				return err
 			}
 		}
@@ -128,7 +112,7 @@ func syncApplications(ctx context.Context, store job.Store, apps []config.Applic
 		return err
 	}
 	for _, id := range disabled {
-		if err := appendAudit(ctx, store, job.AuditEvent{At: now, Kind: auditAppDisabled, ApplicationID: id, Actor: actorConfig}, nil); err != nil {
+		if err := rec.Record(ctx, audit.ActorConfig, id, "", audit.AppDisabled{}); err != nil {
 			return err
 		}
 	}
@@ -137,8 +121,9 @@ func syncApplications(ctx context.Context, store job.Store, apps []config.Applic
 
 const appUsage = `Usage: vde app list [--config path]
 
-Lists the applications in the database (mirrored from the configuration by vde serve):
-id, name, enabled, attempt limit, quota, rate limits, retention and active tokens.
+Lists the applications in the database (mirrored from the configuration by vde serve, or
+created over the admin API): id, name, source, enabled, attempt limit, quota, rate limits,
+retention and active tokens.
 `
 
 func runApp(args []string, stdout, stderr io.Writer) int {
@@ -184,7 +169,7 @@ func listApplications(ctx context.Context, w io.Writer, store job.Store, now tim
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tENABLED\tATTEMPTS\tQUOTA\tREQ/MIN\tSUBMITS/MIN\tIN PROGRESS\tRETENTION\tTOKENS")
+	fmt.Fprintln(tw, "ID\tNAME\tSOURCE\tENABLED\tATTEMPTS\tQUOTA\tREQ/MIN\tSUBMITS/MIN\tIN PROGRESS\tRETENTION\tTOKENS")
 	for _, a := range apps {
 		tokens, err := store.ListTokens(ctx, a.ID)
 		if err != nil {
@@ -200,7 +185,7 @@ func listApplications(ctx context.Context, w io.Writer, store job.Store, now tim
 		if a.ForceNone {
 			retention = "none (forced)"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%t\t%d\t%d/%s\t%d\t%d\t%d\t%s\t%d\n", a.ID, dash(a.Name), a.Enabled, a.MaxAttempts,
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d/%s\t%d\t%d\t%d\t%s\t%d\n", a.ID, dash(a.Name), dash(a.Source), a.Enabled, a.MaxAttempts,
 			a.QuotaLimit, a.QuotaWindow, a.RequestsPerMinute, a.SubmitsPerMinute, a.MaxInProgress, retention, active)
 	}
 	return tw.Flush()

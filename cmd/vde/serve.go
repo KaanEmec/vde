@@ -25,6 +25,7 @@ import (
 	"github.com/kaanemec/vde/internal/logging"
 	"github.com/kaanemec/vde/internal/metrics"
 	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/router"
 	"github.com/kaanemec/vde/internal/sweeper"
 	"github.com/kaanemec/vde/internal/version"
 	"github.com/kaanemec/vde/internal/worker"
@@ -34,9 +35,10 @@ const serveUsage = `Usage: vde serve [--config path]
 
 Validates the configuration, opens the database (server.data_dir/vde.db), mirrors the
 configured applications into it (an application no longer configured is disabled and its
-tokens stop working), starts worker.size job workers and the expiry sweeper, then serves
-the /v1 API, /healthz and /metrics on server.listen (/metrics on metrics.listen instead
-when set).
+tokens stop working; applications created over the admin API are kept), starts
+worker.size job workers and the expiry sweeper, then serves the /v1 API, /healthz and
+/metrics on server.listen (/metrics on metrics.listen instead when set) and the admin API
+(/admin/v1, admin tokens only) on admin.listen unless it is empty.
 With server.tls the binary terminates TLS; otherwise it serves plain HTTP and refuses a
 non-loopback listen address unless server.trusted_proxy (a reverse proxy terminates TLS)
 or server.insecure_http (trusted private networks only) is true. SIGINT or SIGTERM stops
@@ -93,9 +95,17 @@ func runServe(args []string, _, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "vde serve: %v\n", err)
 		return exitFailure
 	}
+	var adminLn net.Listener // config validation refused a plain non-loopback admin.listen
+	if cfg.Admin.Listen != "" {
+		if adminLn, err = net.Listen("tcp", cfg.Admin.Listen); err != nil {
+			ln.Close()
+			fmt.Fprintf(stderr, "vde serve: admin.listen: %v\n", err)
+			return exitFailure
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := serve(ctx, cfg, ln, newLogger(stderr, cfg.Logging), newProvider); err != nil {
+	if err := serve(ctx, cfg, ln, adminLn, newLogger(stderr, cfg.Logging), newProvider); err != nil {
 		fmt.Fprintf(stderr, "vde serve: %v\n", err)
 		return exitFailure
 	}
@@ -124,15 +134,18 @@ func checkListen(s config.Server) error {
 
 // serve opens the store, mirrors the configured applications into it, starts the worker
 // pool and the expiry sweeper, and runs the HTTP server on ln (and the metrics listener
-// of metrics.listen) until ctx is done. Then it drains in-flight requests, stops the
+// of metrics.listen, and the admin API on adminLn unless it is nil) until ctx is done. Then it drains in-flight requests, stops the
 // pool (running jobs get the rest of the drain time to finish, or keep their lease and
 // persisted attempts for the next start) and the sweeper. build makes each endpoint's
 // provider. It returns nil after a clean shutdown.
-func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slog.Logger,
+func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, logger *slog.Logger,
 	build func(*config.Endpoint) (provider.Provider, error)) (err error) {
 	defer func() {
 		if err != nil {
 			ln.Close()
+			if adminLn != nil {
+				adminLn.Close()
+			}
 		}
 	}()
 	var metricOpts []metrics.Option
@@ -144,6 +157,11 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 	if err != nil {
 		return err
 	}
+	for _, g := range []*router.Group{roles.Extractor, roles.Judge} { // may be one group
+		g.OnFailover = func(req provider.Request, from, to router.Served) {
+			m.ObserveFailover(roleOf(req.System), from.Endpoint, to.Endpoint)
+		}
+	}
 	store, err := job.Open(cfg.Server.DatabasePath())
 	if err != nil {
 		return err
@@ -153,9 +171,7 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 	if err != nil {
 		return err
 	}
-	if err := syncApplications(ctx, store, cfg.Applications, time.Now()); err != nil {
-		return err
-	}
+
 	if len(cfg.Applications) == 0 {
 		logger.Warn("no applications are configured: every /v1 request is refused")
 	}
@@ -177,27 +193,44 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 		auditLogger = logger
 	}
 	rec := audit.New(store, audit.Options{Logger: auditLogger})
+	if err := syncApplications(ctx, store, rec, cfg.Applications, time.Now()); err != nil {
+		return err
+	}
 	serviceVersion := extract.ServiceVersion(cfg, version.Version)
 	if err := rec.Record(ctx, audit.ActorConfig, "", "", audit.ConfigLoaded{ServiceVersion: serviceVersion}); err != nil {
 		logger.Warn("audit event not written", "kind", string(audit.ConfigLoadedKind), "error", err)
 	}
-	versions := make(map[string]string, len(cfg.Applications))
+	// The service_version of an application's jobs follows its stored row (attempt limit
+	// and HTML policy), so applications created or changed over the admin API get theirs.
+	appVersion := func(a job.Application) string {
+		return extract.ApplicationServiceVersion(cfg, config.Application{
+			MaxAttempts: a.MaxAttempts, Documents: config.AppDocuments{HTML: a.HTMLPolicy},
+		}, version.Version)
+	}
 	inputsAtTerminal := map[string]bool{}
 	for _, a := range cfg.Applications {
-		versions[a.ID] = extract.ApplicationServiceVersion(cfg, a, version.Version)
-		logger.Info("application enabled", "app_id", a.ID, "service_version", versions[a.ID])
 		if a.Retention.ForceNone || a.Retention.DeleteBlobsAtTerminal {
 			inputsAtTerminal[a.ID] = true
 		}
-		if n, err := store.CountRunning(ctx, a.ID); err == nil {
-			m.SetJobsInProgress(a.ID, n) // jobs left running by a previous process
+	}
+	apps, err := store.ListApplications(ctx)
+	if err != nil {
+		return err
+	}
+	for _, a := range apps {
+		if !a.Enabled {
+			continue
+		}
+		logger.Info("application enabled", "app_id", a.ID, "source", a.Source, "service_version", appVersion(a))
+		if n, err := store.CountInProgress(ctx, a.ID); err == nil {
+			m.SetJobsInProgress(a.ID, n) // jobs left queued or running by a previous process
 		}
 	}
 
 	pool := worker.New(store, blobs, cfg, roles, worker.Options{
 		Size:         cfg.Worker.Size,
 		PollInterval: cfg.Worker.PollInterval,
-		Observer:     m,
+		Observer:     progressObserver{Metrics: m, store: store},
 		Logger:       logger,
 		Audit:        rec.WithActor(audit.ActorWorker),
 	})
@@ -210,23 +243,30 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 		Audit:                  rec.WithActor(audit.ActorSweeper),
 		DeleteInputsAtTerminal: inputsAtTerminal,
 	})
-	handler := api.New(api.Deps{
-		Config:          cfg,
-		Store:           store,
-		ServiceVersion:  serviceVersion,
-		ServiceVersions: versions,
-		Logger:          logger,
-		Extractor:       roles.Extractor,
-		Judge:           roles.Judge,
-		Blobs:           blobs,
-		Wake:            pool.Wake,
-		Metrics:         m,
-		Audit:           rec.WithActor(audit.ActorAPI),
-	})
+	deps := api.Deps{
+		Config:            cfg,
+		Store:             store,
+		ServiceVersion:    serviceVersion,
+		AppServiceVersion: appVersion,
+		Logger:            logger,
+		Extractor:         roles.Extractor,
+		Judge:             roles.Judge,
+		Blobs:             blobs,
+		Wake:              pool.Wake,
+		Metrics:           m,
+		Audit:             rec.WithActor(audit.ActorAPI),
+	}
 	useTLS := cfg.Server.TLS.CertFile != ""
-	srv := newHTTPServer(handler, logger)
+	srv := newHTTPServer(api.New(deps), logger)
+	var adminSrv *http.Server // same certificate as the main listener with server.tls
+	if adminLn != nil {
+		adminSrv = newHTTPServer(api.NewAdmin(deps), logger)
+	}
 	if useTLS {
 		srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} // Go's default suites otherwise
+		if adminSrv != nil {
+			adminSrv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
 	}
 	var metricsSrv *http.Server
 	var metricsLn net.Listener
@@ -253,15 +293,21 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 		"tls", useTLS,
 		"trusted_proxy", cfg.Server.TrustedProxy,
 		"insecure_http", cfg.Server.InsecureHTTP)
-	errc := make(chan error, 2)
-	go func() {
+	errc := make(chan error, 3)
+	start := func(srv *http.Server, ln net.Listener) {
 		if useTLS {
 			errc <- srv.ServeTLS(ln, cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile)
 			return
 		}
 		errc <- srv.Serve(ln)
-	}()
+	}
+	go start(srv, ln)
 	servers := 1
+	if adminSrv != nil {
+		servers++
+		logger.Info("admin listener starting", "listen", adminLn.Addr().String(), "tls", useTLS)
+		go start(adminSrv, adminLn)
+	}
 	if metricsSrv != nil {
 		servers++
 		logger.Info("metrics listener starting", "listen", metricsLn.Addr().String())
@@ -280,6 +326,9 @@ func serve(ctx context.Context, cfg *config.Config, ln net.Listener, logger *slo
 	err = shutdown(drainCtx, srv)
 	if metricsSrv != nil {
 		err = errors.Join(err, shutdown(drainCtx, metricsSrv))
+	}
+	if adminSrv != nil {
+		err = errors.Join(err, shutdown(drainCtx, adminSrv))
 	}
 	// After the HTTP drain no job is submitted any more; running jobs finish within the
 	// rest of the drain time or keep their lease for the next start.
@@ -339,6 +388,21 @@ func metricsHandler(m *metrics.Metrics, c config.Metrics) http.Handler {
 		mux.ServeHTTP(sw, r)
 		m.ObserveHTTP(r.Pattern, sw.status)
 	})
+}
+
+// progressObserver is the worker pool's observer: the metrics, plus the application's
+// vde_jobs_in_progress gauge refreshed from the store (queued plus running) after each
+// finished job, one indexed COUNT.
+type progressObserver struct {
+	*metrics.Metrics
+	store job.Store
+}
+
+func (o progressObserver) JobFinished(app string, status job.Status, attempts int, d time.Duration) {
+	o.Metrics.JobFinished(app, status, attempts, d)
+	if n, err := o.store.CountInProgress(context.Background(), app); err == nil {
+		o.SetJobsInProgress(app, n)
+	}
 }
 
 type statusRecorder struct {

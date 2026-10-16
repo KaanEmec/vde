@@ -1,6 +1,6 @@
 # Job: Audit log
 
-Version: v0.2 · Epic: 07 Operations · Status: in progress · Depends on: 03-01, 02-02
+Version: v0.2 · Epic: 07 Operations · Status: done · Depends on: 03-01, 02-02
 
 ## Goal
 
@@ -23,11 +23,15 @@ events without exposing secrets."
       `service_version`).
 - [x] `details` schema per kind defined as Go structs so no free-form data is written.
 - [x] Also emitted to `slog` at `info` with `audit=true` when `audit.log: true`. (`audit.Options.Logger`; config key `audit.log`, wired in `serve`.)
-- [ ] `vde audit list --app id --since …` CLI for operators without a database client.
+- [x] `vde audit list --app id --since …` CLI for operators without a database client
+      (`cmd/vde/audit.go`: `--app`, `--since` duration or RFC 3339, default 24h, `--kind`,
+      `--limit`, default 100; the admin API serves the same at `GET /admin/v1/audit`).
 - [x] Retention of audit rows is separate (`audit.retention`, default 365 days), swept
       by the sweeper (`sweeper.Options.AuditRetention`; config key `audit.retention`, wired in `serve`).
-- [ ] Tests: every kind written by the code path that owns it; the redaction sentinel
-      test (epic 06) covers the audit table too.
+- [x] Tests: every kind written by the code path that owns it (`cmd/vde`
+      `TestAuthEndToEnd` and `TestAdminEndToEnd`, `internal/sweeper`, `internal/worker`,
+      `internal/api` admin and jobs tests); the sentinel tests of the worker, sweeper and
+      API check the audit details carry no content.
 
 ## Notes
 
@@ -54,3 +58,12 @@ Update (epic 05/07 wiring): `config.loaded` is written at `serve` start; `job.de
 `DELETE` (`request`) and the first terminal read (`first_read`); `auth.failed` now goes
 through `audit.Recorder` with `audit.AuthFailed`; `serve` passes recorders to the API,
 the worker and the sweeper. Still ad hoc: the token and app events in `cmd/vde`.
+
+Done (epic 11 agent): the token and app events in `cmd/vde` now go through
+`audit.Recorder` with the typed structs (`audit.TokenCreated`, `TokenRevoked`,
+`AppEnabled`, `AppDisabled`); `syncApplications` records through the serve recorder, so
+`audit.log` covers them too. The admin API writes the same kinds with actor
+`admin:<token id>` (`audit.ActorAdmin`) and `job.deleted` reason `admin`
+(`audit.DeletedByAdmin`). `audit.ParseSince` is shared by the CLI and the admin API.
+Deviation: `token.created` details carry `expires_at` with sub-second precision (the
+struct's `time.Time`) instead of the CLI's former whole-second string.

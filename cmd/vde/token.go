@@ -6,28 +6,32 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/job"
 )
 
 const tokenUsage = `Usage:
   vde token create --app id --scope jobs[,jobs:read] --expires date|duration [--label text] [--config path]
-  vde token list --app id [--config path]
+  vde token create --admin --expires date|duration [--label text] [--config path]
+  vde token list (--app id | --admin) [--config path]
   vde token revoke [--config path] <token id>
 
-Manages the access tokens of an application in the database vde serve uses
-(server.data_dir/vde.db); a running service sees each change on its next request.
+Manages the access tokens of an application, and the admin tokens of the admin API, in
+the database vde serve uses (server.data_dir/vde.db); a running service sees each change
+on its next request. The commands work on the database directly, never over HTTP.
 
 create prints the token once on stdout and nothing else; only its hash is stored, so a
 lost token cannot be shown again: create another. --expires is required: a date
 (2027-10-16, midnight UTC), an RFC 3339 time, or a duration from now (90d, 2160h), at
 most auth.max_token_ttl away. Scopes: jobs (submit, poll, delete, quota) and jobs:read
-(poll and quota only). Rotate by creating a new token before revoking the old one.
+(poll and quota only). --admin creates an admin token instead: no application, the single
+scope admin, accepted only by the admin API (admin.listen) and refused on /v1; admin
+tokens are created here only. Rotate by creating a new token before revoking the old one.
 `
 
 func runToken(args []string, stdout, stderr io.Writer) int {
@@ -80,8 +84,9 @@ func openOperatorStore(path string) (*job.SQLite, time.Duration, error) {
 func runTokenCreate(args []string, stdout, stderr io.Writer) int {
 	set := tokenFlagSet("create", stderr)
 	configPath := operatorFlags(set)
-	app := set.String("app", "", "application id (required)")
-	scopes := set.String("scope", "", "comma-separated scopes: jobs, jobs:read (required)")
+	app := set.String("app", "", "application id (required unless --admin)")
+	scopes := set.String("scope", "", "comma-separated scopes: jobs, jobs:read (required unless --admin)")
+	admin := set.Bool("admin", false, "create an admin token (admin API only) instead of an application token")
 	expires := set.String("expires", "", "expiry: date, RFC 3339 time or duration such as 90d (required)")
 	label := set.String("label", "", "free text shown by vde token list")
 	if code, done := parseFlags(set, args); done {
@@ -91,17 +96,28 @@ func runTokenCreate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "vde token create: unexpected argument %q\n", set.Arg(0))
 		return exitUsage
 	}
-	if *app == "" || *scopes == "" || *expires == "" {
-		fmt.Fprintln(stderr, "vde token create: --app, --scope and --expires are required")
+	var scopeList []string
+	switch {
+	case *admin && (*app != "" || *scopes != ""):
+		fmt.Fprintln(stderr, "vde token create: --admin cannot be combined with --app or --scope")
 		return exitUsage
-	}
-	scopeList, err := auth.ParseScopes(*scopes)
-	if err != nil {
-		fmt.Fprintf(stderr, "vde token create: %v\n", err)
+	case *admin && *expires == "":
+		fmt.Fprintln(stderr, "vde token create: --expires is required")
 		return exitUsage
+	case *admin:
+		scopeList = []string{auth.ScopeAdmin}
+	case *app == "" || *scopes == "" || *expires == "":
+		fmt.Fprintln(stderr, "vde token create: --app, --scope and --expires are required (or --admin and --expires)")
+		return exitUsage
+	default:
+		var err error
+		if scopeList, err = auth.ParseScopes(*scopes); err != nil {
+			fmt.Fprintf(stderr, "vde token create: %v\n", err)
+			return exitUsage
+		}
 	}
 	now := time.Now()
-	expiresAt, err := parseExpires(*expires, now)
+	expiresAt, err := auth.ParseExpires(*expires, now)
 	if err != nil {
 		fmt.Fprintf(stderr, "vde token create: %v\n", err)
 		return exitUsage
@@ -121,33 +137,31 @@ func runTokenCreate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "vde token create: %v\n", err)
 		return exitFailure
 	}
-	if err := appendAudit(ctx, store, job.AuditEvent{
-		At: now, Kind: auditTokenCreated, ApplicationID: row.ApplicationID, Actor: actorCLI,
-	}, tokenDetails{TokenID: row.ID, Scopes: row.Scopes, ExpiresAt: row.ExpiresAt.UTC().Format(time.RFC3339)}); err != nil {
+	if err := cliAudit(store).Record(ctx, "", row.ApplicationID, "", audit.TokenCreated{
+		TokenID: row.ID, Scopes: row.Scopes, ExpiresAt: row.ExpiresAt.UTC(),
+	}); err != nil {
 		fmt.Fprintf(stderr, "vde token create: warning: audit event not written: %v\n", err)
+	}
+	owner := row.ApplicationID
+	if owner == "" {
+		owner = "the admin API"
 	}
 	fmt.Fprintln(stdout, token)
 	fmt.Fprintf(stderr, "vde token create: token %s for %s (scopes %s) expires %s; it is shown once, store it as a secret\n",
-		row.ID, row.ApplicationID, strings.Join(row.Scopes, ","), row.ExpiresAt.UTC().Format(time.RFC3339))
+		row.ID, owner, strings.Join(row.Scopes, ","), row.ExpiresAt.UTC().Format(time.RFC3339))
 	return exitOK
-}
-
-// tokenDetails is the audit detail of token events: never the token or its hash.
-type tokenDetails struct {
-	TokenID   string   `json:"token_id"`
-	Scopes    []string `json:"scopes,omitempty"`
-	ExpiresAt string   `json:"expires_at,omitempty"`
 }
 
 func runTokenList(args []string, stdout, stderr io.Writer) int {
 	set := tokenFlagSet("list", stderr)
 	configPath := operatorFlags(set)
-	app := set.String("app", "", "application id (required)")
+	app := set.String("app", "", "application id")
+	admin := set.Bool("admin", false, "list the admin tokens instead")
 	if code, done := parseFlags(set, args); done {
 		return code
 	}
-	if set.NArg() > 0 || *app == "" {
-		fmt.Fprintln(stderr, "vde token list: --app is required and takes no arguments")
+	if set.NArg() > 0 || (*app == "") == !*admin {
+		fmt.Fprintln(stderr, "vde token list: give exactly one of --app and --admin, and no arguments")
 		return exitUsage
 	}
 	store, _, err := openOperatorStore(configPath())
@@ -157,11 +171,13 @@ func runTokenList(args []string, stdout, stderr io.Writer) int {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if _, err := store.GetApplication(ctx, *app); err != nil {
-		fmt.Fprintf(stderr, "vde token list: application %q: %v\n", *app, err)
-		return exitFailure
+	if !*admin {
+		if _, err := store.GetApplication(ctx, *app); err != nil {
+			fmt.Fprintf(stderr, "vde token list: application %q: %v\n", *app, err)
+			return exitFailure
+		}
 	}
-	tokens, err := store.ListTokens(ctx, *app)
+	tokens, err := store.ListTokens(ctx, *app) // "" lists the admin tokens
 	if err != nil {
 		fmt.Fprintf(stderr, "vde token list: %v\n", err)
 		return exitFailure
@@ -223,12 +239,14 @@ func runTokenRevoke(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "vde token revoke: %v\n", err)
 		return exitFailure
 	}
-	if err := appendAudit(ctx, store, job.AuditEvent{
-		At: now, Kind: auditTokenRevoked, ApplicationID: t.ApplicationID, Actor: actorCLI,
-	}, tokenDetails{TokenID: t.ID}); err != nil {
+	if err := cliAudit(store).Record(ctx, "", t.ApplicationID, "", audit.TokenRevoked{TokenID: t.ID}); err != nil {
 		fmt.Fprintf(stderr, "vde token revoke: warning: audit event not written: %v\n", err)
 	}
-	fmt.Fprintf(stdout, "token %s of %s revoked\n", t.ID, t.ApplicationID)
+	owner := t.ApplicationID
+	if owner == "" {
+		owner = "the admin API"
+	}
+	fmt.Fprintf(stdout, "token %s of %s revoked\n", t.ID, owner)
 	return exitOK
 }
 
@@ -247,24 +265,4 @@ func stamp(t time.Time) string {
 		return "-"
 	}
 	return t.UTC().Format(time.RFC3339)
-}
-
-// parseExpires reads --expires: a date (midnight UTC), an RFC 3339 time, a number of days
-// (90d) or a Go duration (2160h), the last two counted from now.
-func parseExpires(s string, now time.Time) (time.Time, error) {
-	if t, err := time.Parse(time.DateOnly, s); err == nil {
-		return t, nil
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
-	}
-	if days, ok := strings.CutSuffix(s, "d"); ok {
-		if n, err := strconv.Atoi(days); err == nil && n > 0 {
-			return now.Add(time.Duration(n) * 24 * time.Hour), nil
-		}
-	}
-	if d, err := time.ParseDuration(s); err == nil && d > 0 {
-		return now.Add(d), nil
-	}
-	return time.Time{}, fmt.Errorf("--expires %q is not a date (2027-10-16), an RFC 3339 time or a positive duration (90d, 2160h)", s)
 }

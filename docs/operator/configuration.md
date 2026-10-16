@@ -90,7 +90,9 @@ explained in [troubleshooting](troubleshooting.md#config-check-messages).
 
 Applications are mirrored into the database when `vde serve` starts: an application
 removed from the file is disabled, its tokens stop working, and its jobs remain until they
-expire. `vde app list` shows them. All counts above (`max_attempts`, `quota.limit`, `rate.*`) must be at least 1. See [applications and tokens](applications-and-tokens.md).
+expire. Applications created over the [admin API](../api/admin.md) are kept as stored; for
+the applications the file declares, the file wins at every start. `vde app list` shows
+them. All counts above (`max_attempts`, `quota.limit`, `rate.*`) must be at least 1. See [applications and tokens](applications-and-tokens.md).
 
 ## `auth`
 
@@ -118,6 +120,7 @@ expire. `vde app list` shows them. All counts above (`max_attempts`, `quota.limi
 | `metrics.token_env` | string | empty | Name of an environment variable holding a bearer token that `GET /metrics` requires; the variable must be set when named. |
 | `metrics.listen` | string | empty | A second listener, `host:port`, serving only `/metrics` (with the token when `token_env` is set); `/metrics` then answers `404` on `server.listen`. Not loopback and no token is a warning. With neither key, `/metrics` on `server.listen` answers only loopback peers that did not come through a proxy. |
 | `metrics.go_runtime` | bool | `false` | Add the Go runtime and process series to `/metrics`. The series are listed in [operations](operations.md#metrics). |
+| `admin.listen` | string | `127.0.0.1:8091` | The admin API's own listener (`/admin/v1`, admin tokens from `vde token create --admin` only; see [the admin API](../api/admin.md)). Empty disables it. Must differ from `server.listen` and `metrics.listen`; a non-loopback address is refused unless `server.tls` is set (the admin listener serves the same certificate) or `server.insecure_http` is true. `server.trusted_proxy` does not apply to it. |
 
 `GET /healthz` is unauthenticated and not rate limited: it runs a one-row database query
 (1 s timeout), reads the role groups' in-memory state and checks the data directory is

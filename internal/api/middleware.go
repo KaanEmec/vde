@@ -25,13 +25,14 @@ const (
 
 // wrap applies the middleware chain, outermost first: panic recovery, request id,
 // HTTPS enforcement, access log. The per-route steps, authentication (auth.go) and rate
-// limit and quota (epic 05), run inside the mux (routes).
+// limit and quota (epic 05), run inside the mux (routes). The admin listener is reached
+// directly, never through the reverse proxy, so server.trusted_proxy does not apply to it.
 func (s *server) wrap(h http.Handler) http.Handler {
 	var srv config.Server
 	if s.deps.Config != nil {
 		srv = s.deps.Config.Server
 	}
-	return s.recoverPanics(requestID(requireHTTPS(srv.TrustedProxy, srv.InsecureHTTP, s.accessLog(h))))
+	return s.recoverPanics(requestID(requireHTTPS(srv.TrustedProxy && !s.admin, srv.InsecureHTTP, s.accessLog(h))))
 }
 
 // recoverPanics answers a panicking handler with a 500 internal error body (never the
@@ -109,10 +110,13 @@ func validRequestID(id string) bool {
 // X-Forwarded-Proto: https, from loopback too, since the proxy itself usually connects
 // from loopback. Without a trusted proxy only loopback peers may use plain HTTP; vde
 // serve also refuses to bind such a listener to a non-loopback address. insecure lets
-// every request through (server.insecure_http, trusted private networks only).
+// every request through (server.insecure_http, trusted private networks only). GET
+// /healthz is exempt: it carries nothing sensitive and container health checks and
+// orchestrator probes reach it directly, without the proxy's X-Forwarded-Proto.
 func requireHTTPS(trustedProxy, insecure bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if insecure || r.TLS != nil || (trustedProxy && forwardedHTTPS(r)) || (!trustedProxy && loopbackPeer(r)) {
+		healthz := r.URL.Path == "/healthz" && (r.Method == http.MethodGet || r.Method == http.MethodHead)
+		if healthz || insecure || r.TLS != nil || (trustedProxy && forwardedHTTPS(r)) || (!trustedProxy && loopbackPeer(r)) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -175,7 +179,6 @@ func (s *server) accessLog(next http.Handler) http.Handler {
 // Retry-After when it is empty (ratelimit.go). The submit handler charges the quota
 // and applies the submission limits itself.
 func (s *server) limit(next http.Handler) http.Handler {
-	rates := s.rates()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		app, ok := ApplicationFrom(r.Context())
 		if !ok { // authenticate always runs first; fail closed if it did not
@@ -185,7 +188,7 @@ func (s *server) limit(next http.Handler) http.Handler {
 		if _, ok := s.quotaHeaders(w, r, app); !ok {
 			return
 		}
-		if wait, ok := rates.take(app.ID, bucketRequests, app.RequestsPerMinute, s.now()); !ok {
+		if wait, ok := s.limits.take(app.ID, bucketRequests, app.RequestsPerMinute, s.now()); !ok {
 			closeIfBodyPending(w, r)
 			writeError(w, r, newError(codeRateLimited, msgRateLimited).withRetryAfter(wait))
 			return

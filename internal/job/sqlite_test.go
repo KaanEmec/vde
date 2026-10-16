@@ -74,6 +74,7 @@ func TestOpenPermissionsAndPragmas(t *testing.T) {
 	}
 	for pragma, want := range map[string]string{
 		"journal_mode": "wal", "busy_timeout": "5000", "foreign_keys": "1", "synchronous": "1",
+		"secure_delete": "1",
 	} {
 		var got string
 		if err := s.db.QueryRowContext(t.Context(), "PRAGMA "+pragma).Scan(&got); err != nil {
@@ -658,5 +659,139 @@ func TestListAndDeleteAudit(t *testing.T) {
 	}
 	if got := list(AuditFilter{}, 0); len(got) != 2 {
 		t.Errorf("%d events left, want 2", len(got))
+	}
+}
+
+func TestAdminApplications(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedApp(t, s, testApp("yaml"))
+	dyn := testApp("dyn")
+	dyn.Enabled = true
+	if err := s.CreateApplication(ctx, dyn, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateApplication(ctx, testApp("yaml"), t0); !errors.Is(err, ErrDuplicate) {
+		t.Errorf("CreateApplication over a configured id = %v, want ErrDuplicate", err)
+	}
+	got, err := s.GetApplication(ctx, "dyn")
+	if err != nil || got.Source != SourceAdmin || !got.Enabled {
+		t.Fatalf("dyn = %+v, %v", got, err)
+	}
+	// A restart with the YAML (only "yaml") disables no admin application.
+	if disabled, err := s.DisableApplicationsNotIn(ctx, []string{"yaml"}, t0); err != nil || len(disabled) != 0 {
+		t.Errorf("DisableApplicationsNotIn = %v, %v; want nothing disabled", disabled, err)
+	}
+	got.QuotaLimit, got.Enabled, got.Name = 7, false, "renamed"
+	if err := s.UpdateApplication(ctx, got, t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := s.GetApplication(ctx, "dyn")
+	if after.QuotaLimit != 7 || after.Enabled || after.Name != "renamed" || after.Source != SourceAdmin ||
+		!after.CreatedAt.Equal(t0) || !after.UpdatedAt.Equal(t0.Add(time.Hour)) {
+		t.Errorf("after update = %+v", after)
+	}
+	if err := s.UpdateApplication(ctx, testApp("nope"), t0); !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateApplication of an unknown id = %v, want ErrNotFound", err)
+	}
+	// The YAML declaring the id takes the row over: source config, every field rewritten.
+	seedApp(t, s, testApp("dyn"))
+	if again, _ := s.GetApplication(ctx, "dyn"); again.Source != SourceConfig || !again.Enabled || again.QuotaLimit != 1000 {
+		t.Errorf("after the YAML declared it = %+v", again)
+	}
+}
+
+func TestAdminTokenRows(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedApp(t, s, testApp("app"))
+	admin := Token{ID: "admin001", Hash: []byte("h"), Scopes: []string{"admin"}, ExpiresAt: t0.Add(time.Hour), CreatedAt: t0}
+	if err := s.CreateToken(ctx, admin); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetTokenByID(ctx, "admin001"); err != nil || got.ApplicationID != "" {
+		t.Errorf("admin token = %+v, %v", got, err)
+	}
+	for _, bad := range []Token{
+		{ID: "bad00001", ApplicationID: "app", Scopes: []string{"admin"}},
+		{ID: "bad00002", Scopes: []string{"jobs"}},
+	} {
+		bad.Hash, bad.ExpiresAt, bad.CreatedAt = []byte("h"), t0.Add(time.Hour), t0
+		if err := s.CreateToken(ctx, bad); err == nil {
+			t.Errorf("token %+v stored: the admin scope and a missing application go together", bad)
+		}
+	}
+	if tokens, err := s.ListTokens(ctx, ""); err != nil || len(tokens) != 1 {
+		t.Errorf("ListTokens(\"\") = %v, %v", tokens, err)
+	}
+	if tokens, err := s.ListTokens(ctx, "app"); err != nil || len(tokens) != 0 {
+		t.Errorf("ListTokens(app) = %v, %v", tokens, err)
+	}
+}
+
+func TestAttachmentsColumn(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedApp(t, s, testApp("app"))
+	j := newJob("app")
+	j.Attachments = []Attachment{{Name: "ticket.pdf", MediaType: "application/pdf", Bytes: 9}}
+	createJob(t, s, j)
+	plain := createJob(t, s, newJob("app"))
+	got, _ := s.GetJob(ctx, "app", j.ID)
+	if len(got.Attachments) != 1 || got.Attachments[0] != j.Attachments[0] {
+		t.Errorf("attachments = %+v", got.Attachments)
+	}
+	if got, _ := s.GetJob(ctx, "app", plain.ID); got.Attachments != nil {
+		t.Errorf("attachments of a plain document = %+v, want nil", got.Attachments)
+	}
+	finishJob(t, s, j.ID, StatusAccepted)
+	if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetJobAny(ctx, j.ID); got.Attachments != nil {
+		t.Errorf("attachments after the content deletion = %+v", got.Attachments)
+	}
+}
+
+func TestCountInProgressAndListJobs(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedApp(t, s, testApp("a"))
+	seedApp(t, s, testApp("b"))
+	var ids []string
+	for i, app := range []string{"a", "a", "a", "b"} {
+		j := newJob(app)
+		j.CreatedAt = t0.Add(time.Duration(i) * time.Minute)
+		ids = append(ids, createJob(t, s, j).ID)
+	}
+	finishJob(t, s, ids[0], StatusFailed)
+	if _, err := s.LeaseNextQueued(ctx, "w", t0, t0.Add(time.Minute), nil); err != nil { // ids[1] runs
+		t.Fatal(err)
+	}
+	if n, err := s.CountInProgress(ctx, "a"); err != nil || n != 2 {
+		t.Errorf("CountInProgress(a) = %d, %v; want 2 (one queued, one running)", n, err)
+	}
+	all, err := s.ListJobs(ctx, JobFilter{}, 0)
+	if err != nil || len(all) != 4 || all[0].ID != ids[3] || all[3].ID != ids[0] {
+		t.Fatalf("ListJobs = %d jobs, %v; want 4 newest first", len(all), err)
+	}
+	for _, tt := range []struct {
+		f     JobFilter
+		limit int
+		want  []string
+	}{
+		{JobFilter{ApplicationID: "a"}, 0, []string{ids[2], ids[1], ids[0]}},
+		{JobFilter{Status: StatusFailed}, 0, []string{ids[0]}},
+		{JobFilter{Since: t0.Add(2 * time.Minute)}, 0, []string{ids[3], ids[2]}},
+		{JobFilter{ApplicationID: "a"}, 1, []string{ids[2]}},
+	} {
+		got, err := s.ListJobs(ctx, tt.f, tt.limit)
+		var gotIDs []string
+		for _, j := range got {
+			gotIDs = append(gotIDs, j.ID)
+		}
+		if err != nil || !slices.Equal(gotIDs, tt.want) {
+			t.Errorf("ListJobs(%+v, %d) = %v, %v; want %v", tt.f, tt.limit, gotIDs, err, tt.want)
+		}
 	}
 }

@@ -30,12 +30,14 @@ type Deps struct {
 	// reads its token from it; nil refuses every /v1 request with 500.
 	Store job.Store
 	// ServiceVersion is sent as X-Service-Version on every /v1/jobs response
-	// (contract §11). ServiceVersions overrides it per application id for authenticated
-	// requests (extract.ApplicationServiceVersion).
-	ServiceVersion  string
-	ServiceVersions map[string]string
-	Logger          *slog.Logger     // nil means slog.Default()
-	Now             func() time.Time // nil means time.Now; tests set it
+	// (contract §11). AppServiceVersion, when set, gives it per application for
+	// authenticated requests and new jobs (extract.ApplicationServiceVersion over the
+	// application's stored row, so admin API changes count at once); "" falls back to
+	// ServiceVersion.
+	ServiceVersion    string
+	AppServiceVersion func(job.Application) string
+	Logger            *slog.Logger     // nil means slog.Default()
+	Now               func() time.Time // nil means time.Now; tests set it
 	// Extractor and Judge are the role groups checked by /healthz. They may be the
 	// same group.
 	Extractor, Judge HealthChecker
@@ -52,9 +54,11 @@ type Deps struct {
 }
 
 type server struct {
-	deps Deps
-	log  *slog.Logger
-	mux  *http.ServeMux
+	deps   Deps
+	log    *slog.Logger
+	mux    *http.ServeMux
+	limits *rateLimiter // in memory, one per handler (ADR 0003)
+	admin  bool         // the admin API's handler (admin.go)
 }
 
 // route is one registered pattern, in the Go 1.22 ServeMux syntax.
@@ -70,12 +74,25 @@ func New(deps Deps) http.Handler {
 	return s.wrap(http.HandlerFunc(s.dispatch))
 }
 
-func newServer(deps Deps) *server {
-	s := &server{deps: deps, log: deps.Logger, mux: http.NewServeMux()}
+// NewAdmin returns the admin API's handler (admin.go): the /admin/v1 routes behind the
+// same middleware chain, for its own listener.
+func NewAdmin(deps Deps) http.Handler {
+	s := newServerWith(deps, true)
+	return s.wrap(http.HandlerFunc(s.dispatch))
+}
+
+func newServer(deps Deps) *server { return newServerWith(deps, false) }
+
+func newServerWith(deps Deps, admin bool) *server {
+	s := &server{deps: deps, log: deps.Logger, mux: http.NewServeMux(), limits: newRateLimiter(), admin: admin}
 	if s.log == nil {
 		s.log = slog.Default()
 	}
-	for _, rt := range s.routes() {
+	routes := s.routes
+	if admin {
+		routes = s.adminRoutes
+	}
+	for _, rt := range routes() {
 		s.mux.Handle(rt.pattern, rt.handler)
 	}
 	return s

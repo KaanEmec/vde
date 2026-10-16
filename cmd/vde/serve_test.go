@@ -68,7 +68,7 @@ func TestServeAndShutdown(t *testing.T) {
 	var logs syncBuffer
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, cfg, ln, slog.New(slog.NewJSONHandler(&logs, nil)), newProvider) }()
+	go func() { done <- serve(ctx, cfg, ln, nil, slog.New(slog.NewJSONHandler(&logs, nil)), newProvider) }()
 
 	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
 	if err != nil {

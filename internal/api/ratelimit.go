@@ -1,10 +1,8 @@
 package api
 
 import (
-	"runtime"
 	"sync"
 	"time"
-	"weak"
 )
 
 // inProgressRetryAfter is the Retry-After of a submission refused for the in-progress
@@ -17,6 +15,7 @@ type bucketKind int
 const (
 	bucketRequests bucketKind = iota + 1 // every /v1 request (limit)
 	bucketSubmits                        // POST /v1/jobs, after validation and idempotency
+	bucketAdmin                          // every admin API request, keyed by admin token id
 )
 
 type bucketKey struct {
@@ -31,7 +30,7 @@ type bucket struct {
 	last   time.Time
 }
 
-// rateLimiter holds the in-memory limits of one server: token buckets per application
+// rateLimiter holds the in-memory limits of one server (server.limits): token buckets per application
 // (ADR 0003: one process; several replicas each apply their own limits), and the locks
 // that serialize submissions sharing an idempotency key.
 type rateLimiter struct {
@@ -103,22 +102,4 @@ func (l *rateLimiter) lockKey(app, key string) func() {
 		}
 		l.mu.Unlock()
 	}
-}
-
-// limiters maps each server to its rateLimiter. The limiter lives beside the server
-// rather than in it so the HTTP layer's server struct stays as api.go declares it; an
-// entry goes away with its server.
-var limiters sync.Map // weak.Pointer[server] → *rateLimiter
-
-// rates returns the server's rate limiter, creating it on first use.
-func (s *server) rates() *rateLimiter {
-	key := weak.Make(s)
-	if v, ok := limiters.Load(key); ok {
-		return v.(*rateLimiter)
-	}
-	v, loaded := limiters.LoadOrStore(key, newRateLimiter())
-	if !loaded {
-		runtime.AddCleanup(s, func(k weak.Pointer[server]) { limiters.Delete(k) }, key)
-	}
-	return v.(*rateLimiter)
 }

@@ -21,6 +21,80 @@ func TestServiceDefaults(t *testing.T) {
 	if c.Metrics != (Metrics{}) {
 		t.Errorf("metrics = %+v, want all unset", c.Metrics)
 	}
+	if c.Admin.Listen != "127.0.0.1:8091" {
+		t.Errorf("admin.listen = %q, want 127.0.0.1:8091", c.Admin.Listen)
+	}
+}
+
+func TestAdminListen(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, server, admin string
+		wantMessage         string // "" means no issue
+	}{
+		{name: "default", server: `{listen: ":8090"}`},
+		{name: "disabled", server: `{listen: ":8090"}`, admin: `{listen: ""}`},
+		{name: "IPv6 loopback", server: `{listen: ":8090"}`, admin: `{listen: "[::1]:9443"}`},
+		{name: "not host:port", server: `{listen: ":8090"}`, admin: `{listen: "8091"}`, wantMessage: "host:port"},
+		{name: "same as server", server: `{listen: "127.0.0.1:8090"}`, admin: `{listen: "127.0.0.1:8090"}`, wantMessage: "differ"},
+		{name: "public without TLS", server: `{listen: ":8090"}`, admin: `{listen: "0.0.0.0:8091"}`, wantMessage: "not a loopback address"},
+		{name: "public without TLS behind a proxy", server: `{listen: ":8090", trusted_proxy: true}`, admin: `{listen: ":8091"}`, wantMessage: "not a loopback address"},
+		{name: "public with TLS", server: `{listen: ":8443", tls: {cert_file: c.pem, key_file: k.pem}}`, admin: `{listen: ":8091"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			yaml := strings.Replace(validYAML, `server: {listen: ":8090"}`, "server: "+tt.server, 1)
+			if tt.admin != "" {
+				yaml += "admin: " + tt.admin + "\n"
+			}
+			c, err := Parse([]byte(yaml), env(map[string]string{"ANTHROPIC_API_KEY": testSecret}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []Issue
+			for _, i := range c.Validate() {
+				if i.Key == "admin.listen" {
+					got = append(got, i)
+				}
+			}
+			switch {
+			case tt.wantMessage == "" && len(got) != 0:
+				t.Errorf("issues = %v, want none", got)
+			case tt.wantMessage != "" && (len(got) != 1 || got[0].Warning || !strings.Contains(got[0].Message, tt.wantMessage)):
+				t.Errorf("issues = %v, want one error containing %q", got, tt.wantMessage)
+			}
+		})
+	}
+	// server.insecure_http allows a plain non-loopback admin listener.
+	yaml := strings.Replace(validYAML, `server: {listen: ":8090"}`, `server: {listen: ":8090", insecure_http: true}`, 1) +
+		"admin: {listen: \":8091\"}\n"
+	c, err := Parse([]byte(yaml), env(map[string]string{"ANTHROPIC_API_KEY": testSecret}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range c.Validate() {
+		if i.Key == "admin.listen" {
+			t.Errorf("insecure_http: %v", i)
+		}
+	}
+}
+
+func TestCheckApplication(t *testing.T) {
+	t.Parallel()
+	c := validConfig(t)
+	a := Application{ID: "dyn", Rate: Rate{RequestsPerMinute: 5}}
+	if issues := c.CheckApplication(&a); issues.Err(false) != nil {
+		t.Fatalf("issues = %v", issues)
+	}
+	if a.Quota.Limit != 1000 || a.Quota.Window != "P1D" || a.Rate.RequestsPerMinute != 5 || a.MaxAttempts != c.Limits.MaxAttempts {
+		t.Errorf("defaults not applied: %+v", a)
+	}
+	bad := Application{ID: "dyn", Quota: Quota{Window: "P1M"}, Documents: AppDocuments{HTML: "pdf"}}
+	issues := c.CheckApplication(&bad)
+	if len(issues) != 2 || issues[0].Key != "quota.window" || issues[1].Key != "documents.html" {
+		t.Errorf("issues = %v, want quota.window and documents.html", issues)
+	}
 }
 
 func TestServiceValidate(t *testing.T) {

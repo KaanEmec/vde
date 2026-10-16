@@ -55,6 +55,14 @@ func writeServiceConfig(t *testing.T, dataDir string, apps ...string) string {
 // returns the base URL and a function that stops it.
 func startService(t *testing.T, path string, p provider.Provider) (string, func()) {
 	t.Helper()
+	base, _, stop := startServiceAdmin(t, path, p, false)
+	return base, stop
+}
+
+// startServiceAdmin is startService that also serves the admin API on a second loopback
+// port when admin is true, and returns its base URL too.
+func startServiceAdmin(t *testing.T, path string, p provider.Provider, admin bool) (string, string, func()) {
+	t.Helper()
 	cfg, _, err := loadConfigEnv(path, false, func(string) string { return "" })
 	if err != nil {
 		t.Fatal(err)
@@ -63,10 +71,18 @@ func startService(t *testing.T, path string, p provider.Provider) (string, func(
 	if err != nil {
 		t.Fatal(err)
 	}
+	var adminLn net.Listener
+	adminBase := ""
+	if admin {
+		if adminLn, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
+			t.Fatal(err)
+		}
+		adminBase = "http://" + adminLn.Addr().String()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	build := func(*config.Endpoint) (provider.Provider, error) { return p, nil }
-	go func() { done <- serve(ctx, cfg, ln, slog.New(slog.DiscardHandler), build) }()
+	go func() { done <- serve(ctx, cfg, ln, adminLn, slog.New(slog.DiscardHandler), build) }()
 	stopped := false
 	stop := func() {
 		if stopped {
@@ -91,7 +107,7 @@ func startService(t *testing.T, path string, p provider.Provider) (string, func(
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	return base, stop
+	return base, adminBase, stop
 }
 
 // cli runs a vde command in-process and returns its exit code, stdout and stderr.
@@ -206,7 +222,7 @@ func TestAuthEndToEnd(t *testing.T) {
 		t.Errorf("token of a removed application: GET /v1/quota = %d, want 401", got)
 	}
 	code, out, _ = cli("app", "list", "--config", path)
-	if code != exitOK || !strings.Contains(out, "app-a") || !regexpLine(out, `^app-b\s+-\s+false`) {
+	if code != exitOK || !strings.Contains(out, "app-a") || !regexpLine(out, `^app-b\s+-\s+config\s+false`) {
 		t.Errorf("app list = %d %q, want app-a and a disabled app-b", code, out)
 	}
 	if code, _, stderr := cli("token", "create", "--config", path, "--app", "app-b", "--scope", "jobs", "--expires", "1d"); code != exitFailure || !strings.Contains(stderr, "disabled") {
@@ -287,32 +303,6 @@ func checkAudit(t *testing.T, path string, want []string) {
 
 func regexpLine(text, pattern string) bool {
 	return regexp.MustCompile("(?m)" + pattern).MatchString(text)
-}
-
-func TestParseExpires(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
-	tests := []struct {
-		in   string
-		want time.Time
-	}{
-		{"2027-10-16", time.Date(2027, 10, 16, 0, 0, 0, 0, time.UTC)},
-		{"2027-10-16T08:30:00+02:00", time.Date(2027, 10, 16, 6, 30, 0, 0, time.UTC)},
-		{"90d", now.Add(90 * 24 * time.Hour)},
-		{"2160h", now.Add(2160 * time.Hour)},
-		{"1h30m", now.Add(90 * time.Minute)},
-	}
-	for _, tt := range tests {
-		got, err := parseExpires(tt.in, now)
-		if err != nil || !got.Equal(tt.want) {
-			t.Errorf("parseExpires(%q) = %s, %v; want %s", tt.in, got, err, tt.want)
-		}
-	}
-	for _, bad := range []string{"", "never", "-1h", "0d", "d", "2027-13-01", "16.10.2027"} {
-		if _, err := parseExpires(bad, now); err == nil {
-			t.Errorf("parseExpires(%q) accepted", bad)
-		}
-	}
 }
 
 func TestTokenUsage(t *testing.T) {

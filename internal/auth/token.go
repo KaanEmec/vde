@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Token format: vde_<id>_<secret>. The id is 8 characters of lowercase base32, stored in
@@ -23,9 +25,12 @@ const (
 )
 
 // Scopes. jobs covers submit, poll, delete and quota; jobs:read only poll and quota.
+// admin is the admin API's scope: an admin token belongs to no application, carries
+// only this scope, is created by the CLI only and is refused on /v1.
 const (
 	ScopeJobs     = "jobs"
 	ScopeJobsRead = "jobs:read"
+	ScopeAdmin    = "admin"
 )
 
 var knownScopes = []string{ScopeJobs, ScopeJobsRead}
@@ -82,8 +87,9 @@ func Verify(secret string, hash []byte) bool {
 	return subtle.ConstantTimeCompare(Hash(secret), hash) == 1
 }
 
-// ParseScopes parses a comma-separated scope list, refusing unknown and empty ones. The
-// result is sorted and without duplicates.
+// ParseScopes parses a comma-separated list of application scopes, refusing unknown and
+// empty ones and admin (an admin token is created with --admin). The result is sorted and
+// without duplicates.
 func ParseScopes(list string) ([]string, error) {
 	var scopes []string
 	for s := range strings.SplitSeq(list, ",") {
@@ -98,14 +104,36 @@ func ParseScopes(list string) ([]string, error) {
 }
 
 // Permits reports whether a token holding scopes may make a request that needs need.
-// jobs implies jobs:read; need "" is satisfied by any scope.
+// jobs implies jobs:read; need "" is satisfied by any application scope (never admin
+// alone: admin tokens are refused on /v1).
 func Permits(scopes []string, need string) bool {
 	switch need {
 	case "":
-		return len(scopes) > 0
+		return slices.Contains(scopes, ScopeJobsRead) || slices.Contains(scopes, ScopeJobs)
 	case ScopeJobsRead:
 		return slices.Contains(scopes, ScopeJobsRead) || slices.Contains(scopes, ScopeJobs)
 	default:
 		return slices.Contains(scopes, need)
 	}
+}
+
+// ParseExpires reads an expiry as the CLI and the admin API accept it: a date (midnight
+// UTC), an RFC 3339 time, a number of days (90d) or a Go duration (2160h), the last two
+// counted from now.
+func ParseExpires(s string, now time.Time) (time.Time, error) {
+	if t, err := time.Parse(time.DateOnly, s); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if days, ok := strings.CutSuffix(s, "d"); ok {
+		if n, err := strconv.Atoi(days); err == nil && n > 0 {
+			return now.Add(time.Duration(n) * 24 * time.Hour), nil
+		}
+	}
+	if d, err := time.ParseDuration(s); err == nil && d > 0 {
+		return now.Add(d), nil
+	}
+	return time.Time{}, fmt.Errorf("expiry %q is not a date (2027-10-16), an RFC 3339 time or a positive duration (90d, 2160h)", s)
 }

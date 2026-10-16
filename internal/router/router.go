@@ -56,6 +56,11 @@ type Group struct {
 	backoff time.Duration    // mean wait between tries
 	now     func() time.Time // the clock for health marking
 
+	// OnFailover, when set, is called each time a call moves on from one pair to
+	// another, with the caller's request and both pairs; for metrics.
+	// Set it before the first Complete; it must not block.
+	OnFailover func(req provider.Request, from, to Served)
+
 	mu     sync.Mutex
 	health []health // per pair, guarded by mu
 }
@@ -131,12 +136,17 @@ func (g *Group) Complete(ctx context.Context, req provider.Request) (provider.Re
 	var last error
 	wait := time.Duration(0)
 	retried := false // the current pair was retried after its Retry-After
+	prev := -1       // the pair tried last
 	for i, tries := 0, 0; i < len(order) && tries < g.maxTries; tries++ {
 		if !sleep(budget, wait) {
 			break
 		}
 		idx := order[i]
 		p := &g.pairs[idx]
+		if prev >= 0 && prev != idx && g.OnFailover != nil {
+			g.OnFailover(req, g.pairs[prev].Served, p.Served)
+		}
+		prev = idx
 		resp, err := g.try(budget, p, req)
 		if err == nil {
 			g.markUp(idx)

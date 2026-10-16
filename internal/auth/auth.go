@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/kaanemec/vde/internal/job"
@@ -38,7 +39,8 @@ type Reader interface {
 	GetApplication(ctx context.Context, id string) (job.Application, error)
 }
 
-// Principal is an authenticated caller.
+// Principal is an authenticated caller. An admin token's principal has no application
+// (Application.ID is "").
 type Principal struct {
 	Application job.Application
 	Token       job.Token // the row: id, scopes, expiry; Hash is the stored hash only
@@ -73,6 +75,11 @@ func Authenticate(ctx context.Context, r Reader, token string, now time.Time) (P
 		return refuse(ReasonRevoked)
 	case !now.Before(t.ExpiresAt):
 		return refuse(ReasonExpired)
+	case t.ApplicationID == "": // an admin token: no application to check
+		if len(t.Scopes) != 1 || t.Scopes[0] != ScopeAdmin {
+			return refuse(ReasonMalformed)
+		}
+		return Principal{Token: t}, nil
 	}
 	app, err := r.GetApplication(ctx, t.ApplicationID)
 	if errors.Is(err, job.ErrNotFound) {
@@ -93,19 +100,21 @@ type Creator interface {
 	CreateToken(ctx context.Context, t job.Token) error
 }
 
-// Request describes a token to issue.
+// Request describes a token to issue. An admin token has no ApplicationID and the
+// single scope ScopeAdmin.
 type Request struct {
 	ApplicationID string
-	Scopes        []string // from ParseScopes
+	Scopes        []string // from ParseScopes, or [ScopeAdmin]
 	ExpiresAt     time.Time
 	Label         string
 }
 
 const maxLabelChars = 200
 
-// Create issues a token for an enabled application and stores its hash. It returns the
-// token, to be shown once, and the stored row. Expiry is required, in the future and at
-// most maxTTL from now.
+// Create issues a token for an enabled application, or an admin token, and stores its
+// hash. It returns the token, to be shown once, and the stored row. Expiry is required,
+// in the future and at most maxTTL from now. The admin scope cannot be combined with
+// another scope or an application.
 func Create(ctx context.Context, s Creator, req Request, maxTTL time.Duration, now time.Time) (string, job.Token, error) {
 	switch {
 	case len(req.Scopes) == 0:
@@ -117,21 +126,30 @@ func Create(ctx context.Context, s Creator, req Request, maxTTL time.Duration, n
 	case len(req.Label) > maxLabelChars:
 		return "", job.Token{}, fmt.Errorf("auth: the label is longer than %d characters", maxLabelChars)
 	}
-	for _, s := range req.Scopes {
-		if _, err := ParseScopes(s); err != nil {
+	admin := slices.Contains(req.Scopes, ScopeAdmin)
+	switch {
+	case admin && (len(req.Scopes) != 1 || req.ApplicationID != ""):
+		return "", job.Token{}, errors.New("auth: the admin scope cannot be combined with other scopes or an application")
+	case !admin && req.ApplicationID == "":
+		return "", job.Token{}, errors.New("auth: an application is required")
+	}
+	if !admin {
+		for _, s := range req.Scopes {
+			if _, err := ParseScopes(s); err != nil {
+				return "", job.Token{}, err
+			}
+		}
+		app, err := s.GetApplication(ctx, req.ApplicationID)
+		if errors.Is(err, job.ErrNotFound) {
+			return "", job.Token{}, fmt.Errorf("auth: application %q is not in the database; "+
+				"add it to applications in the configuration and start vde serve once", req.ApplicationID)
+		}
+		if err != nil {
 			return "", job.Token{}, err
 		}
-	}
-	app, err := s.GetApplication(ctx, req.ApplicationID)
-	if errors.Is(err, job.ErrNotFound) {
-		return "", job.Token{}, fmt.Errorf("auth: application %q is not in the database; "+
-			"add it to applications in the configuration and start vde serve once", req.ApplicationID)
-	}
-	if err != nil {
-		return "", job.Token{}, err
-	}
-	if !app.Enabled {
-		return "", job.Token{}, fmt.Errorf("auth: application %q is disabled (no longer in the configuration)", req.ApplicationID)
+		if !app.Enabled {
+			return "", job.Token{}, fmt.Errorf("auth: application %q is disabled", req.ApplicationID)
+		}
 	}
 	for range 3 { // an id collision (1 in 2^40 per existing token) gets a fresh token
 		token, id, hash, err := Generate()
@@ -140,7 +158,7 @@ func Create(ctx context.Context, s Creator, req Request, maxTTL time.Duration, n
 		}
 		t := job.Token{
 			ID:            id,
-			ApplicationID: app.ID,
+			ApplicationID: req.ApplicationID,
 			Hash:          hash,
 			Scopes:        req.Scopes,
 			Label:         req.Label,

@@ -97,6 +97,39 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 	}
 }
 
+// TestAdminOpenAPIMatchesRoutes checks every admin route against api/admin-openapi.yaml,
+// whose server base path is /admin/v1, and back.
+func TestAdminOpenAPIMatchesRoutes(t *testing.T) {
+	t.Parallel()
+	doc, _ := loadDoc(t, spec.AdminOpenAPI)
+	documented := map[string]bool{}
+	for path, item := range doc.Paths {
+		for _, m := range operations(item) {
+			documented[strings.ToUpper(m)+" "+path] = true
+		}
+	}
+	routes := newServerWith(Deps{}, true).adminRoutes()
+	if len(routes) == 0 {
+		t.Fatal("no admin routes")
+	}
+	for _, rt := range routes {
+		method, path, _ := strings.Cut(rt.pattern, " ")
+		p, ok := strings.CutPrefix(path, "/admin/v1")
+		if !ok {
+			t.Errorf("admin route %q is not under /admin/v1", rt.pattern)
+			continue
+		}
+		key := method + " " + p
+		if !documented[key] {
+			t.Errorf("admin route %q is not in api/admin-openapi.yaml as %s", rt.pattern, key)
+		}
+		delete(documented, key)
+	}
+	for key := range documented {
+		t.Errorf("api/admin-openapi.yaml documents %s, which no admin route serves", key)
+	}
+}
+
 func TestOpenAPIDescribesErrorCodes(t *testing.T) {
 	t.Parallel()
 	_, tree := loadDoc(t, spec.OpenAPI)

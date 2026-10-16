@@ -293,6 +293,21 @@ func (v *validator) other(c *Config) {
 	}
 }
 
+// CheckApplication applies the applications[] defaults to a (a zero value means the
+// default, as in the YAML) and validates it as one entry, for an application created or
+// changed over the admin API. Issue keys are relative to the application (quota.window).
+func (c *Config) CheckApplication(a *Application) Issues {
+	tmp := Config{Limits: c.Limits, Applications: []Application{*a}}
+	tmp.applyDefaults()
+	*a = tmp.Applications[0]
+	var v validator
+	v.applications(&tmp)
+	for i := range v.issues {
+		v.issues[i].Key = strings.TrimPrefix(v.issues[i].Key, "applications[0].")
+	}
+	return v.issues
+}
+
 func (v *validator) applications(c *Config) {
 	seen := map[string]bool{}
 	for i, a := range c.Applications {

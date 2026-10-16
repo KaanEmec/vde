@@ -127,6 +127,24 @@ func TestRequestID(t *testing.T) {
 	})
 }
 
+// TestHealthzWithoutHTTPS: container health checks and orchestrator probes reach
+// /healthz in plain HTTP directly, without the proxy's X-Forwarded-Proto, so it is exempt
+// from the HTTPS rule even with trusted_proxy (which has no loopback exemption).
+func TestHealthzWithoutHTTPS(t *testing.T) {
+	t.Parallel()
+	s, _ := newTestServer(t, true)
+	for _, remote := range []string{"127.0.0.1:4000", "10.0.0.2:4000"} {
+		w := serve(handlerOf(s), http.MethodGet, "/healthz", func(r *http.Request) { r.RemoteAddr = remote })
+		if w.Code != http.StatusOK || w.Header().Get(headerRequestID) == "" {
+			t.Errorf("plain GET /healthz from %s with trusted_proxy = %d, want 200 with a request id", remote, w.Code)
+		}
+	}
+	w := serve(handlerOf(s), http.MethodPost, "/healthz", func(r *http.Request) { r.RemoteAddr = "10.0.0.2:4000" })
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("plain POST /healthz = %d, want 400 (only GET and HEAD are exempt)", w.Code)
+	}
+}
+
 func TestRequireHTTPS(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -153,7 +171,9 @@ func TestRequireHTTPS(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s, _ := newTestServer(t, tt.trustedProxy)
-			w := serve(handlerOf(s), http.MethodGet, "/healthz", func(r *http.Request) {
+			// An unknown route: 404 when the request passes, 400 when refused. /healthz is
+			// exempt (TestHealthzWithoutHTTPS).
+			w := serve(handlerOf(s), http.MethodGet, "/v1/no-such-route", func(r *http.Request) {
 				r.RemoteAddr = tt.remote
 				if tt.tls {
 					r.TLS = &tls.ConnectionState{}
@@ -163,8 +183,8 @@ func TestRequireHTTPS(t *testing.T) {
 				}
 			})
 			if !tt.wantRefused {
-				if w.Code != http.StatusOK {
-					t.Errorf("status = %d, want 200; body %s", w.Code, w.Body)
+				if w.Code != http.StatusNotFound {
+					t.Errorf("status = %d, want 404 (passed to the mux); body %s", w.Code, w.Body)
 				}
 				return
 			}

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGenerateParseVerify(t *testing.T) {
@@ -104,10 +105,40 @@ func TestPermits(t *testing.T) {
 		{read, ScopeJobs, false},
 		{nil, "", false},
 		{nil, ScopeJobsRead, false},
+		{[]string{ScopeAdmin}, ScopeAdmin, true},
+		{[]string{ScopeAdmin}, "", false},
+		{[]string{ScopeAdmin}, ScopeJobsRead, false},
+		{jobs, ScopeAdmin, false},
 	}
 	for _, tt := range tests {
 		if got := Permits(tt.scopes, tt.need); got != tt.want {
 			t.Errorf("Permits(%q, %q) = %t, want %t", tt.scopes, tt.need, got, tt.want)
+		}
+	}
+}
+
+func TestParseExpires(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		in   string
+		want time.Time
+	}{
+		{"2027-10-16", time.Date(2027, 10, 16, 0, 0, 0, 0, time.UTC)},
+		{"2027-10-16T08:30:00+02:00", time.Date(2027, 10, 16, 6, 30, 0, 0, time.UTC)},
+		{"90d", now.Add(90 * 24 * time.Hour)},
+		{"2160h", now.Add(2160 * time.Hour)},
+		{"1h30m", now.Add(90 * time.Minute)},
+	}
+	for _, tt := range tests {
+		got, err := ParseExpires(tt.in, now)
+		if err != nil || !got.Equal(tt.want) {
+			t.Errorf("ParseExpires(%q) = %s, %v; want %s", tt.in, got, err, tt.want)
+		}
+	}
+	for _, bad := range []string{"", "never", "-1h", "0d", "d", "2027-13-01", "16.10.2027"} {
+		if _, err := ParseExpires(bad, now); err == nil {
+			t.Errorf("ParseExpires(%q) accepted", bad)
 		}
 	}
 }

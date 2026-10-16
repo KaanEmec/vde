@@ -68,9 +68,10 @@ The documents and page images are not in the database but in separate files unde
 `<data_dir>/blobs/` (directories `0700`, files `0600`). With `retention: none` they are
 deleted when the job is terminal; with `default` at `expires_at`.
 
-Deleting clears columns and unlinks files; it does not wipe storage. The database does not
-set `secure_delete`, so cleared text can remain in free pages or the write-ahead log until
-they are reused, and unlinked blob files can be recovered from the volume. Protect the
+Deleting clears columns and unlinks files; it does not wipe storage. The database sets
+`secure_delete`, so SQLite overwrites deleted content in the database file, but earlier
+copies of a page can remain in the write-ahead log until the next checkpoint, and unlinked
+blob files can be recovered from the volume. Protect the
 volume (see the checklist); do not treat deletion as erasure against someone with raw disk access.
 
 ### What providers receive

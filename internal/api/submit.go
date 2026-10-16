@@ -168,7 +168,7 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 
 	bodyHash := sub.hash()
 	if key != "" {
-		unlock := s.rates().lockKey(app.ID, key)
+		unlock := s.limits.lockKey(app.ID, key)
 		defer unlock()
 		if s.replay(w, r, app, key, bodyHash) {
 			return
@@ -181,7 +181,7 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 	j := &job.Job{
 		ID:                    job.NewID(),
 		ApplicationID:         app.ID,
-		ServiceVersion:        s.serviceVersion(app.ID),
+		ServiceVersion:        s.serviceVersion(app),
 		Representation:        rep.Kind.String(),
 		MediaType:             doc.MediaType,
 		Size:                  int64(len(doc.Data)),
@@ -189,6 +189,7 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 		Retention:             retention,
 		IdempotencyKey:        key,
 		BodyHash:              bodyHash,
+		Attachments:           jobAttachments(doc.Attachments),
 		ExtractorInstructions: string(sub.extractorInstructions.data),
 		JudgeInstructions:     string(sub.judgeInstructions.data),
 		Schema:                schema,
@@ -206,11 +207,12 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.deps.Audit.JobCreated(ctx, *j) // nil-safe
+	s.refreshInProgress(ctx, app.ID)
 	if s.deps.Wake != nil {
 		s.deps.Wake()
 	}
 	w.Header().Set("Location", "/v1/jobs/"+j.ID)
-	writeJSON(w, http.StatusAccepted, jobToResponse(j).withAttachments(doc.Attachments))
+	writeJSON(w, http.StatusAccepted, jobToResponse(j))
 }
 
 // readSubmission streams the multipart body, enforcing the part rules and the per-part
@@ -489,7 +491,7 @@ func (s *server) replay(w http.ResponseWriter, r *http.Request, app job.Applicat
 func (s *server) admit(w http.ResponseWriter, r *http.Request, app job.Application) bool {
 	ctx := r.Context()
 	now := s.now()
-	if wait, ok := s.rates().take(app.ID, bucketSubmits, app.SubmitsPerMinute, now); !ok {
+	if wait, ok := s.limits.take(app.ID, bucketSubmits, app.SubmitsPerMinute, now); !ok {
 		writeError(w, r, newError(codeRateLimited, msgSubmitRateLimited).withRetryAfter(wait))
 		return false
 	}
@@ -499,12 +501,12 @@ func (s *server) admit(w http.ResponseWriter, r *http.Request, app job.Applicati
 		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
 		return false
 	}
-	if app.MaxInProgress > 0 {
-		running, err := s.deps.Store.CountRunning(ctx, app.ID)
+	if app.MaxInProgress > 0 { // queued and running: the ceiling holds before the workers lease
+		inProgress, err := s.deps.Store.CountInProgress(ctx, app.ID)
 		if err != nil {
 			return storeFailed("jobs in progress not counted", err)
 		}
-		if running >= app.MaxInProgress {
+		if inProgress >= app.MaxInProgress {
 			writeError(w, r, newError(codeRateLimited, msgTooManyInProgress, app.MaxInProgress).
 				withRetryAfter(inProgressRetryAfter))
 			return false
@@ -551,9 +553,22 @@ func (s *server) storeJob(ctx context.Context, j *job.Job, doc *document.Documen
 }
 
 // serviceVersion is the service_version of the application's jobs.
-func (s *server) serviceVersion(appID string) string {
-	if v := s.deps.ServiceVersions[appID]; v != "" {
-		return v
+func (s *server) serviceVersion(app job.Application) string {
+	if s.deps.AppServiceVersion != nil {
+		if v := s.deps.AppServiceVersion(app); v != "" {
+			return v
+		}
 	}
 	return s.deps.ServiceVersion
+}
+
+// refreshInProgress sets the application's vde_jobs_in_progress gauge from the store
+// (queued plus running), after a submission or a deletion.
+func (s *server) refreshInProgress(ctx context.Context, appID string) {
+	if s.deps.Metrics == nil {
+		return
+	}
+	if n, err := s.deps.Store.CountInProgress(ctx, appID); err == nil {
+		s.deps.Metrics.SetJobsInProgress(appID, n)
+	}
 }
