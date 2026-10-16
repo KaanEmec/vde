@@ -1,0 +1,59 @@
+server:                      # used from v0.2
+  listen: ":8090"
+  tls: {cert_file: "", key_file: ""}          # or
+  trusted_proxy: false                          # require X-Forwarded-Proto: https
+  data_dir: "/var/lib/vde"
+
+endpoints:
+  gemini:
+    provider: gemini
+    base_url: "https://generativelanguage.googleapis.com"
+    api_key_env: GEMINI_API_KEY
+    models:
+      gemini-model: {accepts: [application/pdf, image/png, image/jpeg, text/plain]}
+  openrouter:
+    provider: openai_compatible
+    preset: openrouter                    # sets base URL and attribution headers
+    api_key_env: OPENROUTER_API_KEY
+    models:
+      vendor/model: {accepts: [image/png, image/jpeg, text/plain]}
+  anthropic:
+    provider: anthropic
+    base_url: "https://api.anthropic.com"
+    api_key_env: ANTHROPIC_API_KEY
+    timeout: 90s
+    models:
+      claude-fable-5-1: {accepts: [application/pdf, image/png, image/jpeg, image/webp, text/plain]}
+  local:
+    provider: openai_compatible
+    base_url: "http://ollama:11434/v1"
+    api_key_env: ""                       # optional for local endpoints
+    models:
+      some-vision-model: {accepts: [image/png, image/jpeg, text/plain]}
+
+groups:
+  extraction:
+    endpoints:
+      - {endpoint: anthropic, model: claude-fable-5-1}
+      - {endpoint: local, model: some-vision-model}
+    failover: {max_tries: 3, max_total_time: 3m}
+  review:
+    endpoints:
+      - {endpoint: anthropic, model: claude-fable-5-1}
+
+roles:
+  extractor: {group: extraction}
+  judge: {group: review}
+
+limits:
+  max_attempts: 3            # default per application, request can only lower it
+  job_timeout: 5m            # hard max 8m
+  judge_reparse_tries: 1
+
+documents:
+  html: raw_html             # default; or visible_text (per application override allowed)
+
+applications: []             # v0.2: id, name, quota, rate limits, attempt limit, retention
+
+logging: {level: info, format: json}
+debug: {log_content: false}
