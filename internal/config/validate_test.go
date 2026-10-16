@@ -91,6 +91,14 @@ func TestValidate(t *testing.T) {
 			wantMessage: `unknown media type "image/gif"`,
 		},
 		{
+			name: "negative max_output_tokens",
+			edit: func(c *Config) {
+				c.Endpoints["local"].Models["vision"] = Model{Accepts: []string{"image/png"}, MaxOutputTokens: -1}
+			},
+			wantKey:     "endpoints.local.models.vision.max_output_tokens",
+			wantMessage: "must be positive",
+		},
+		{
 			name: "endpoint without models",
 			edit: func(c *Config) {
 				c.Endpoints["local"].Models = nil

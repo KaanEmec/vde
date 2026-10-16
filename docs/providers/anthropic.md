@@ -27,7 +27,7 @@ The document goes out as the source material for the model to read, in one of th
   `image/webp`; `image/gif` is accepted by the API but vde does not produce it);
 - text representations (extracted text, visible text of HTML) as `text` blocks.
 
-Also sent: the model name, `max_tokens` (4096 when the caller sets none) and, only when the
+Also sent: the model name, `max_tokens` (4096 when the request sets none; the router sets it from `max_output_tokens`) and, only when the
 caller sets one above zero, `temperature`. Nothing else: no tools, no streaming, no
 `metadata` (so no end-user identifier), no thinking configuration, no prompt-caching
 markers, no `service_tier`, no `inference_geo`.
@@ -117,8 +117,9 @@ Error messages are fixed text plus, for HTTP errors, the error type the API docu
 (for example `rate_limit_error`). They never include the request, the document, the model's
 answer, the API's free-text error message or the key.
 
-If the answer was cut off at `max_tokens` the text received is returned as is; the
-verification loop then rejects it as an invalid candidate. A refusal is reported so the job
+If the answer was cut off at `max_tokens` the text received is returned as is, with
+`Truncated` set; the verification loop then tells the extractor the answer was cut off and
+asks for a more compact one. A refusal is reported so the job
 can end as `extractor_failed` instead of retrying the same content.
 
 ## Not implemented in v0.1

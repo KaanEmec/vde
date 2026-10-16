@@ -191,6 +191,21 @@ func TestCompleteSuccess(t *testing.T) {
 	}
 }
 
+func TestCompleteTruncated(t *testing.T) {
+	t.Parallel()
+	for reason, want := range map[string]bool{"MAX_TOKENS": true, "STOP": false} {
+		reply := `{"candidates":[{"content":{"parts":[{"text":"{\"a\":"}]},"finishReason":"` + reason + `"}]}`
+		c, _ := serve(t, http.StatusOK, reply, nil)
+		resp, err := c.Complete(t.Context(), baseRequest())
+		if err != nil {
+			t.Fatalf("finishReason %q: %v", reason, err)
+		}
+		if resp.Text != `{"a":` || resp.Truncated != want {
+			t.Errorf("finishReason %q: text %q truncated %v, want truncated %v", reason, resp.Text, resp.Truncated, want)
+		}
+	}
+}
+
 func TestCompleteModelFallsBackToRequested(t *testing.T) {
 	t.Parallel()
 	reply := `{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}`

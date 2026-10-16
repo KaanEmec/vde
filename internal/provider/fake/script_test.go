@@ -56,11 +56,13 @@ steps:
   - error: {kind: retryable, status: 429, retry_after: 2s}
     repeat: true
   - error: {kind: permanent}
+  - {answer: cut, truncated: true}
 `,
 			want: fake.Script{
 				{Role: "judge", Model: "m", Delay: 5 * time.Millisecond},
 				{Repeat: true, Err: &provider.Error{Kind: provider.Retryable, Status: 429, RetryAfter: 2 * time.Second, Message: "fake: scripted failure"}},
 				{Err: &provider.Error{Kind: provider.Permanent, Message: "fake: scripted failure"}},
+				{Answer: "cut", Truncated: true},
 			},
 		},
 		{name: "empty", yaml: "", wantErr: "script is empty"},
@@ -90,7 +92,7 @@ steps:
 			}
 			for i := range got {
 				g, w := got[i], tt.want[i]
-				if g.Role != w.Role || g.Model != w.Model || g.Delay != w.Delay || g.Answer != w.Answer || g.Repeat != w.Repeat ||
+				if g.Role != w.Role || g.Model != w.Model || g.Delay != w.Delay || g.Answer != w.Answer || g.Repeat != w.Repeat || g.Truncated != w.Truncated ||
 					(g.Err == nil) != (w.Err == nil) || g.Err != nil && *g.Err != *w.Err {
 					t.Errorf("step %d = %+v (err %+v), want %+v (err %+v)", i, g, g.Err, w, w.Err)
 				}

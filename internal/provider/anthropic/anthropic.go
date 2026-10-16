@@ -251,5 +251,6 @@ func parseResponse(body io.Reader) (provider.Response, error) {
 		InputTokens:  mr.Usage.InputTokens,
 		OutputTokens: mr.Usage.OutputTokens,
 		Model:        mr.Model,
+		Truncated:    mr.StopReason == "max_tokens",
 	}, nil
 }

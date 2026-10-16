@@ -155,6 +155,9 @@ func (v *validator) endpoints(c *Config) {
 		}
 		for _, model := range slices.Sorted(maps.Keys(e.Models)) {
 			mkey := key + ".models." + model + ".accepts"
+			if e.Models[model].MaxOutputTokens < 0 {
+				v.errorf(key+".models."+model+".max_output_tokens", "must be positive")
+			}
 			accepts := e.Models[model].Accepts
 			if len(accepts) == 0 {
 				v.errorf(mkey, "must list the media types the model reads")

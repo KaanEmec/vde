@@ -41,6 +41,7 @@ type pair struct {
 	Served
 	provider provider.Provider
 	accepts  []string
+	maxOut   int           // output-token limit for requests that set none
 	timeout  time.Duration // per try; 0 for none
 }
 
@@ -96,6 +97,7 @@ func NewGroup(name string, g *config.Group, cfg *config.Config,
 			Served:   Served{Endpoint: entry.Endpoint, Model: entry.Model},
 			provider: p,
 			accepts:  slices.Clone(m.Accepts),
+			maxOut:   m.OutputTokens(),
 			timeout:  e.Timeout,
 		})
 	}
@@ -119,8 +121,8 @@ func NewGroup(name string, g *config.Group, cfg *config.Config,
 func (g *Group) Name() string { return g.name }
 
 // Complete sends req to the group's pairs in order, healthy pairs first, skipping pairs
-// that cannot read the media types of req's parts, until one answers. req.Model is set
-// per pair. The returned errors are described in the package documentation.
+// that cannot read the media types of req's parts, until one answers. req.Model, and
+// req.MaxTokens when it is 0, are set per pair. The returned errors are described in the package documentation.
 func (g *Group) Complete(ctx context.Context, req provider.Request) (provider.Response, Served, error) {
 	order, err := g.order(req)
 	if err != nil {
@@ -191,6 +193,9 @@ func (g *Group) try(ctx context.Context, p *pair, req provider.Request) (provide
 		defer cancel()
 	}
 	req.Model = p.Model
+	if req.MaxTokens == 0 {
+		req.MaxTokens = p.maxOut
+	}
 	return p.provider.Complete(ctx, req)
 }
 

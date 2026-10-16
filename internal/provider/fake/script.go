@@ -78,6 +78,8 @@ type fileStep struct {
 	Answer *string       `yaml:"answer"`
 	Error  *fileError    `yaml:"error"`
 	Repeat bool          `yaml:"repeat"`
+	// Truncated marks the answer as cut off at the output-token limit.
+	Truncated bool `yaml:"truncated"`
 }
 
 type fileError struct {
@@ -102,7 +104,7 @@ func Parse(data []byte) (Script, error) {
 	}
 	script := make(Script, len(f.Steps))
 	for i, fs := range f.Steps {
-		s := Step{Role: fs.Role, Model: fs.Model, Delay: fs.Delay, Repeat: fs.Repeat}
+		s := Step{Role: fs.Role, Model: fs.Model, Delay: fs.Delay, Repeat: fs.Repeat, Truncated: fs.Truncated}
 		switch {
 		case (fs.Answer == nil) == (fs.Error == nil):
 			return nil, fmt.Errorf("fake: steps[%d]: exactly one of answer or error is required", i)

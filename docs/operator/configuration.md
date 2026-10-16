@@ -38,6 +38,7 @@ probing is planned for v0.3; until then test an endpoint with `vde extract` and 
 | `api_key_env` | string | required except `openai_compatible` and `fake` | Name of the environment variable holding the key. The variable must be set when named. |
 | `timeout` | duration | `90s` | Per-call timeout of one provider request; must be positive. Local models often need more. |
 | `models.<model>.accepts` | list of media types | required, non-empty | Media types the model reads natively: `application/pdf`, `image/png`, `image/jpeg`, `image/webp`, `image/heic`, `text/plain`, `text/html`, `text/markdown`. At least one model per endpoint. You declare it; `vde` never probes the model. See [providers](providers.md#declaring-accepts). |
+| `models.<model>.max_output_tokens` | integer | `16384` | Output-token limit sent with every call to this model (`max_tokens`, `maxOutputTokens`). Raise it for large documents in schema-less mode; an answer cut off at it is retried with a request for a more compact one. Must be positive when set. |
 
 ## `groups.<name>`
 

@@ -243,7 +243,12 @@ func (l *loop) run(ctx context.Context) Outcome {
 				what = "a single JSON object or array"
 			}
 			l.prev = nil
-			l.next = []Feedback{schemaFeedback("", fmt.Sprintf("The answer was not %s: %s.", what, perr))}
+			msg := fmt.Sprintf("The answer was not %s: %s.", what, perr)
+			if resp.Truncated {
+				msg = fmt.Sprintf("The answer was cut off at the output-token limit, so it was not %s. "+
+					"Answer again more compactly: no prose, no repetition, only the JSON.", what)
+			}
+			l.next = []Feedback{schemaFeedback("", msg)}
 			if !l.usable {
 				l.feedback = l.next // nothing parseable yet: report on the whole (null) result
 			}

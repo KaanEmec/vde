@@ -267,6 +267,27 @@ func TestGroup_Complete_setsModelPerPair(t *testing.T) {
 	}
 }
 
+func TestGroup_Complete_setsMaxTokens(t *testing.T) {
+	t.Parallel()
+	g, fakes := newGroup(t, config.Failover{},
+		spec{name: "a", script: fake.AlwaysRetryable(503)}, spec{name: "b", script: fake.Script{fake.Answer("ok"), fake.Answer("ok")}})
+	g.pairs[1].maxOut = 99
+	if _, _, err := g.Complete(context.Background(), provider.Request{}); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []int{config.DefaultMaxOutputTokens, 99} {
+		if got := fakes[i].Calls()[0].Request.MaxTokens; got != want {
+			t.Errorf("pair %d got MaxTokens %d, want %d", i, got, want)
+		}
+	}
+	if _, _, err := g.Complete(context.Background(), provider.Request{MaxTokens: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if got := fakes[1].Calls()[1].Request.MaxTokens; got != 5 {
+		t.Errorf("a request's own MaxTokens became %d, want 5", got)
+	}
+}
+
 func TestGroup_Complete_maxTotalTime(t *testing.T) {
 	t.Parallel()
 	slow := fake.Script{{Delay: time.Hour, Answer: "late", Repeat: true}}
