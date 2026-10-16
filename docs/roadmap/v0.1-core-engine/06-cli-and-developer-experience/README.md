@@ -9,7 +9,7 @@ on instructions without the service.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [`vde extract` command](01-vde-extract-command.md) | planned |
+| 01 | [`vde extract` command](01-vde-extract-command.md) | done |
 | 02 | [Development configuration example](02-dev-configuration-example.md) | done |
-| 03 | [End-to-end scenarios with the fake provider](03-end-to-end-scenarios.md) | planned |
-| 04 | [Real-provider smoke test](04-real-provider-smoke-test.md) | planned |
+| 03 | [End-to-end scenarios with the fake provider](03-end-to-end-scenarios.md) | done |
+| 04 | [Real-provider smoke test](04-real-provider-smoke-test.md) | in progress |

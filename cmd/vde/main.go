@@ -9,16 +9,20 @@ import (
 	"github.com/kaanemec/vde/internal/version"
 )
 
-// Exit codes: 0 success, 1 failure (including an invalid configuration), 2 usage error.
+// Exit codes: 0 success (vde extract: accepted), 1 usage or configuration error or other
+// failure, 2 rejected and 3 failed (vde extract only).
 const (
-	exitOK      = 0
-	exitFailure = 1
-	exitUsage   = 2
+	exitOK       = 0
+	exitFailure  = 1
+	exitUsage    = 1
+	exitRejected = 2
+	exitFailed   = 3
 )
 
 const usage = `Usage: vde <command> [arguments]
 
 Commands:
+  extract    run one extraction on a document file (vde extract -h)
   config     check the configuration file (vde config check -h)
   version    print version, commit and build date
   help       print this help
@@ -40,6 +44,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "version", "--version", "-version":
 		fmt.Fprintln(stdout, version.String())
 		return exitOK
+	case "extract":
+		return runExtract(args[1:], stdout, stderr)
 	case "config":
 		return runConfig(args[1:], stdout, stderr)
 	case "help", "-h", "-help", "--help":

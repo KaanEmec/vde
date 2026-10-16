@@ -49,20 +49,54 @@ that each endpoint answers.
 
 ### Extract a document
 
-`vde extract` lands with v0.1 epic 06, job 01. Once it does, one document runs like this
-(the samples below are what the command takes):
+`vde extract` runs one document through the extractor and the judge and prints the
+job-shaped result as JSON on stdout. With a key set:
 
 ```
+export ANTHROPIC_API_KEY=...
 vde extract --config examples/vde.dev.yaml \
-  --document examples/samples/booking.pdf \
+  --document examples/samples/booking.pdf --page examples/samples/booking.png \
   --extractor-instructions examples/samples/extractor.md \
   --judge-instructions examples/samples/judge.md \
   --schema examples/samples/schema.json
 ```
 
-The result is one JSON object on stdout with `status` (`accepted`, `rejected` or `failed`),
-`result`, `feedback` and `attempts`; the exit code is 0 for accepted. Until then,
-`vde config check` is the part of the workflow you can run.
+The media type comes from the extension (`.txt`, `.md`, `.html`, `.eml`, `.pdf`, `.png`,
+`.jpg`, `.webp`, `.heic`; `--type` overrides it). `--page` adds a page image, in order, used
+when the configured models read PDFs only as images (as with `vde.local-ollama.yaml`). Leave
+out `--schema` for schema-less extraction; the instructions then describe the JSON.
+`--max-attempts`, `--timeout` and `--html raw_html|visible_text` override the configuration
+for this run, and `--verbose` prints one line per attempt and per model call (endpoint,
+outcome, tokens) to stderr, never document content.
+
+The result has `status` (`accepted`, `rejected` or `failed`), `result`, `feedback`,
+`attempts`, `service_version`, `judge_confidence`, `error` (a code such as `timeout` or
+`provider_unavailable` when failed), `finished_at` and, for an `.eml`, the `attachments`
+it lists but does not read. The exit code is 0 accepted, 2 rejected, 3 failed and 1 for a
+usage or configuration error.
+
+### Try it without a key
+
+`--provider-script` replaces every endpoint's provider with one fake that replays a
+script, so no key is needed and nothing leaves the machine. The scenarios in
+[`testdata/scenarios/`](../testdata/scenarios/) are such scripts:
+
+```
+vde extract --config examples/vde.dev.yaml \
+  --document examples/samples/booking.eml \
+  --extractor-instructions examples/samples/extractor.md \
+  --judge-instructions examples/samples/judge.md \
+  --provider-script testdata/scenarios/accept-first-try.yaml --verbose
+
+vde extract --config examples/vde.dev.yaml \
+  --document examples/samples/booking.txt --schema examples/samples/schema.json \
+  --extractor-instructions examples/samples/extractor.md \
+  --judge-instructions examples/samples/judge.md \
+  --provider-script testdata/scenarios/three-rejections.yaml   # exits 2, rejected
+```
+
+The fake's answers are scripted, not read from the document. `make scenarios` runs every
+scenario and checks its outcome.
 
 ## Samples
 

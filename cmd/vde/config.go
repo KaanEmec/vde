@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/extract"
+	"github.com/kaanemec/vde/internal/version"
 )
 
 const defaultConfigPath = "vde.yaml"
@@ -77,7 +80,16 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 // configuration (config check, serve, extract) goes through it and refuses to run when it
 // returns an error.
 func loadConfig(path string, strict bool) (*config.Config, config.Issues, error) {
-	cfg, err := config.Load(path)
+	return loadConfigEnv(path, strict, os.Getenv)
+}
+
+// loadConfigEnv is loadConfig with the endpoint keys resolved through getenv.
+func loadConfigEnv(path string, strict bool, getenv func(string) string) (*config.Config, config.Issues, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("config: %w", err)
+	}
+	cfg, err := config.Parse(data, getenv)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -137,7 +149,7 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 		l.MaxAttempts, l.JobTimeout, l.JudgeReparseTries)
 	fmt.Fprintf(tw, "  document_bytes %d, page_bytes %d, pages %d\n", l.DocumentBytes, l.PageBytes, l.Pages)
 	fmt.Fprintf(tw, "\napplications %d, documents.html %s\n", len(cfg.Applications), cfg.Documents.HTML)
-	fmt.Fprintln(tw, "service_version: not computed yet (v0.1 epic 05, job 07)")
+	fmt.Fprintf(tw, "service_version: %s\n", extract.ServiceVersion(cfg, version.Version))
 	tw.Flush()
 }
 

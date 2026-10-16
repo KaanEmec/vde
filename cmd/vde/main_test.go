@@ -2,9 +2,42 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// vdeBinary is the vde binary built by TestMain, for the tests that run the command as a
+// process (TestScenarios).
+var vdeBinary string
+
+// TestMain builds the binary once and keeps the extraction loop's warnings out of the
+// test output.
+func TestMain(m *testing.M) {
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	os.Exit(buildAndRun(m))
+}
+
+func buildAndRun(m *testing.M) int {
+	dir, err := os.MkdirTemp("", "vde-test-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer os.RemoveAll(dir)
+	vdeBinary = filepath.Join(dir, "vde")
+	build := exec.Command("go", "build", "-o", vdeBinary, ".")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "building vde: %v\n%s", err, out)
+		return 1
+	}
+	return m.Run()
+}
 
 func TestRun(t *testing.T) {
 	t.Parallel()

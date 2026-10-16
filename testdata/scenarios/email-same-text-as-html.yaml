@@ -1,0 +1,21 @@
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
+description: an .eml document is read as its header block plus the text of its HTML body
+steps:
+  - role: extractor
+    answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}, {"name": "Example Travel Desk", "role": "booked by"}], "total": {"amount": 412.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}, {"description": "Breakfast", "quantity": 3, "unit_amount": 15.00, "amount": 45.00}, {"description": "City tax", "quantity": 3, "unit_amount": 2.50, "amount": 7.50}]}'
+  - role: judge
+    answer: '{"verdict": "accept", "feedback": {}}'
+---
+input:
+  document: examples/samples/booking.eml
+  schema: examples/samples/schema.json
+expect:
+  status: accepted
+  attempts: 1
+  judge_calls: 1
+  extractor_calls: {primary: 1}
+  judge_confidence: null
+  feedback: []
+  document_parts: [text/plain]
+  same_text_as: examples/samples/booking.html

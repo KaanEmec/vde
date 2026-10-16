@@ -1,0 +1,24 @@
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
+description: the judge rejects all three candidates; the job ends rejected with the last feedback
+steps:
+  - {role: extractor, answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 421.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}'}
+  - {role: judge, answer: '{"verdict": "reject", "feedback": {"/total/amount": "The document says 412.50."}}'}
+  - {role: extractor, answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 421.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}'}
+  - {role: judge, answer: '{"verdict": "reject", "feedback": {"/total/amount": "Still wrong: the document says 412.50."}}'}
+  - {role: extractor, answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 421.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}'}
+  - {role: judge, answer: '{"verdict": "reject", "feedback": {"/line_items": "Breakfast and city tax are missing."}}'}
+---
+input:
+  document: examples/samples/booking.txt
+  schema: examples/samples/schema.json
+  max_attempts: 3
+expect:
+  status: rejected
+  attempts: 3
+  judge_calls: 3
+  extractor_calls: {primary: 3}
+  judge_confidence: null
+  feedback:
+    - {pointer: /line_items, message: Breakfast and city tax are missing., source: judge}
+  result: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 421.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}'
