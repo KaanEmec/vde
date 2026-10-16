@@ -6,3 +6,6 @@
 coverage.*
 /vde.yaml
 .env
+
+# User-supplied documents for local smoke tests; may contain personal data, never committed
+testdata/user-docs/
