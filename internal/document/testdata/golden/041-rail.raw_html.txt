@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ihre Buchungsbestätigung</title>
+</head>
+<body style="margin:0;padding:0;background:#f0f3f5;font-family:Arial,Helvetica,sans-serif;color:#282d37;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f3f5;">
+<tr><td align="center" style="padding:20px 8px;">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:640px;background:#ffffff;">
+  <tr>
+    <td style="padding:18px 28px;border-bottom:1px solid #d7dce1;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td><span style="display:inline-block;border:2px solid #ec0016;border-radius:4px;color:#ec0016;font-weight:bold;font-size:18px;padding:1px 6px;">DB</span></td>
+        <td style="text-align:right;font-size:12px;color:#646973;">Buchungsdatum: 02.02.2027</td>
+      </tr></table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:28px 28px 4px 28px;">
+      <h1 style="font-size:24px;margin:0 0 18px 0;color:#282d37;">Ihre Buchungsbestätigung</h1>
+      <p style="font-size:15px;line-height:22px;margin:0 0 12px 0;">Hallo Elif Yilmaz,</p>
+      <p style="font-size:15px;line-height:22px;margin:0 0 12px 0;">vielen Dank für Ihre Buchung. Ihr Online-Ticket finden Sie als PDF im Anhang dieser E-Mail. Bitte zeigen Sie das Ticket bei der Kontrolle im Zug digital oder ausgedruckt vor.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:8px 28px 20px 28px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f3f5;border-left:4px solid #ec0016;">
+        <tr>
+          <td style="padding:12px 16px;font-size:14px;">Auftragsnummer</td>
+          <td style="padding:12px 16px;font-size:20px;font-weight:bold;text-align:right;letter-spacing:1px;">150163649771</td>
+        </tr>
+      </table>
+      <p style="font-size:12px;line-height:17px;margin:6px 0 0 0;color:#646973;">Mit der Auftragsnummer und Ihrem Nachnamen finden Sie Ihre Buchung jederzeit unter „Meine Reisen“.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 28px;">
+      <h2 style="font-size:17px;margin:0 0 10px 0;">Hinfahrt am Do, 18.03.2027</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;line-height:19px;border-collapse:collapse;">
+        <tr style="background:#646973;color:#ffffff;">
+          <td style="padding:6px 8px;">Halt</td>
+          <td style="padding:6px 8px;">Datum</td>
+          <td style="padding:6px 8px;">Zeit</td>
+          <td style="padding:6px 8px;">Gleis</td>
+          <td style="padding:6px 8px;">Produkte</td>
+          <td style="padding:6px 8px;">Reservierung</td>
+        </tr>
+        <tr style="border-bottom:1px solid #d7dce1;">
+          <td style="padding:8px;font-weight:bold;">Berlin Hbf</td>
+          <td style="padding:8px;">Do, 18.03.27</td>
+          <td style="padding:8px;">ab 10:29</td>
+          <td style="padding:8px;">1</td>
+          <td style="padding:8px;">ICE 1007</td>
+          <td style="padding:8px;">Wg. 7, Pl. 61, 63</td>
+        </tr>
+        <tr style="border-bottom:1px solid #d7dce1;">
+          <td style="padding:8px;font-weight:bold;">München Hbf</td>
+          <td style="padding:8px;">Do, 18.03.27</td>
+          <td style="padding:8px;">an 14:27</td>
+          <td style="padding:8px;">19</td>
+          <td style="padding:8px;"></td>
+          <td style="padding:8px;"></td>
+        </tr>
+      </table>
+      <p style="font-size:12px;line-height:17px;margin:6px 0 0 0;color:#646973;">Dauer: 3:58 h · Umstiege: 0 · Gleisangaben ohne Gewähr. Bitte beachten Sie die aktuellen Anzeigen am Bahnhof.</p>
+      <p style="font-size:13px;line-height:19px;margin:12px 0 0 0;"><b>Sitzplatzreservierung:</b> ICE 1007, 2 Sitzplätze, Wg. 7, Pl. 61, 63, 1 Tisch, Großraum, 2. Klasse</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 28px 0 28px;">
+      <h2 style="font-size:17px;margin:0 0 10px 0;">Ihr Ticket</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:22px;">
+        <tr><td width="38%" style="color:#646973;">Angebot</td><td>Sparpreis (Fernverkehr)</td></tr>
+        <tr><td style="color:#646973;">Reisende</td><td>2 Erwachsene</td></tr>
+        <tr><td style="color:#646973;">Ticket gültig für</td><td>Elif Yilmaz</td></tr>
+        <tr><td style="color:#646973;">Klasse</td><td>2. Klasse</td></tr>
+        <tr><td style="color:#646973;">Strecke</td><td>Berlin Hbf &rarr; München Hbf</td></tr>
+        <tr><td style="color:#646973;">Gültigkeit</td><td>Fahrtantritt am 18.03.2027</td></tr>
+        <tr><td style="color:#646973;">Zugbindung</td><td>Das Ticket gilt nur im gebuchten Zug ICE 1007.</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 28px 0 28px;">
+      <h2 style="font-size:17px;margin:0 0 10px 0;">Preis</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:22px;">
+        <tr><td>Sparpreis, 2 Erwachsene</td><td style="text-align:right;">99,98 €</td></tr>
+        <tr><td>Sitzplatzreservierung, 2 Plätze</td><td style="text-align:right;">11,00 €</td></tr>
+        <tr style="font-weight:bold;font-size:16px;"><td style="padding-top:8px;border-top:2px solid #282d37;">Gesamtpreis</td><td style="text-align:right;padding-top:8px;border-top:2px solid #282d37;">110,98 €</td></tr>
+        <tr style="font-size:12px;color:#646973;"><td>Enthaltene MwSt. 7 %</td><td style="text-align:right;">7,26 €</td></tr>
+        <tr style="font-size:12px;color:#646973;"><td colspan="2">Zahlungsmittel: Mastercard •••• 4242</td></tr>
+      </table>
+      <p style="font-size:12px;line-height:17px;margin:8px 0 0 0;color:#646973;">Die Rechnung zu Ihrer Buchung können Sie unter „Meine Reisen“ herunterladen.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 28px 0 28px;">
+      <h2 style="font-size:17px;margin:0 0 10px 0;">Umtausch und Erstattung</h2>
+      <p style="font-size:13px;line-height:19px;margin:0;">Bis einschließlich 1 Tag vor dem 1. Geltungstag ist der Umtausch oder die Erstattung gegen ein Entgelt von 10 Euro möglich. Ab dem 1. Geltungstag ist kein Umtausch und keine Erstattung möglich.</p>
+      <p style="font-size:12px;line-height:17px;margin:8px 0 0 0;color:#646973;">Bei einer zu erwartenden Verspätung am Zielort von mindestens 20 Minuten ist die Zugbindung aufgehoben. Informationen zu Ihren Fahrgastrechten finden Sie unter <a href="https://www.bahn.de/fahrgastrechte" style="color:#ec0016;">bahn.de/fahrgastrechte</a>.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 28px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:#ec0016;border-radius:4px;padding:11px 22px;"><a href="https://www.bahn.de/buchung/reiseuebersicht" style="color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;">Meine Reisen</a></td>
+        <td style="width:12px;"></td>
+        <td style="border:1px solid #282d37;border-radius:4px;padding:10px 21px;"><a href="https://www.bahn.de/service/mobile/db-navigator" style="color:#282d37;text-decoration:none;font-size:14px;">Ticket in DB Navigator</a></td>
+      </tr></table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 28px 24px 28px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f3f5;">
+        <tr><td style="padding:14px 16px;font-size:13px;line-height:19px;">
+          <b>Alles im Blick mit DB Navigator</b><br>
+          Echtzeitinformationen, Komfort-Check-in und Ihr Ticket immer dabei. Mit dem Komfort-Check-in checken Sie nach Fahrtantritt selbst ein und werden im Zug nicht mehr kontrolliert.
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="background:#282d37;padding:18px 28px;font-size:11px;line-height:16px;color:#d7dce1;">
+      Wir wünschen Ihnen eine angenehme Reise.<br>Ihre Deutsche Bahn<br><br>
+      DB Fernverkehr AG · Stephensonstraße 1 · 60326 Frankfurt am Main<br>
+      Diese E-Mail wurde automatisch erstellt. Antworten auf diese E-Mail können nicht bearbeitet werden. Es gelten die Beförderungsbedingungen der Deutschen Bahn (BB DB).
+    </td>
+  </tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

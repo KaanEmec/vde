@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Flight confirmation</title>
+<style></style>
+</head>
+<body>
+<div style="display:none;max-height:0">Preheader you never see &zwnj;&nbsp;&zwnj;&nbsp;</div>
+<table role="presentation" width="100%">
+  <tr><td>
+    <table role="presentation" width="600">
+      <tr>
+        <td><img src="logo.png" alt="SkyAir"></td>
+        <td align="right">Booking reference <b>QX7PLM</b></td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <h1>Your trip to Lisbon</h1>
+          <p>Dear Ana,<br>your booking is confirmed.</p>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <table>
+            <tr><th>Flight</th><th>From</th><th>To</th></tr>
+            <tr><td>SA 123</td><td>Berlin BER 08:15</td><td>Lisbon LIS 10:40</td></tr>
+          </table>
+        </td>
+        <td>
+          <p>Total paid: 312,40&nbsp;&euro;</p>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <a href="https://skyair.example/manage?ref=QX7PLM">Manage booking</a> |
+          <a href="mailto:help@skyair.example">help@skyair.example</a> |
+          <a href="/relative/terms">Terms</a>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+
+<img src="https://t.example/p.gif" width="1" height="1" alt="">
+<script></script>
+</body>
+</html>

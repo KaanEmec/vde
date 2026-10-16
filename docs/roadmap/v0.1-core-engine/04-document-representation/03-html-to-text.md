@@ -1,6 +1,6 @@
 # Job: HTML policy: raw by default, visible text option
 
-Version: v0.1 · Epic: 04 Document representation · Status: planned · Depends on: 01
+Version: v0.1 · Epic: 04 Document representation · Status: done · Depends on: 01
 
 ## Goal
 
@@ -15,19 +15,19 @@ option, policy part of `service_version`. Contract §4 allows either.
 
 ## Tasks
 
-- [ ] `raw_html`: decode to UTF-8 using the declared charset or a `<meta charset>`;
+- [x] `raw_html`: decode to UTF-8 using the declared charset or a `<meta charset>`;
       strip `script` and `style` element contents and comments (no model benefit, token
       cost, injection surface); otherwise pass the source through unchanged. Cap at the
       document size limit.
-- [ ] `visible_text`: parse with `golang.org/x/net/html`; drop `script`, `style`,
+- [x] `visible_text`: parse with `golang.org/x/net/html`; drop `script`, `style`,
       `head` (keep `title`), hidden elements by the obvious attributes, comments; emit
       block elements as paragraphs, list items with a marker, table rows as
       tab-separated cells, `br` as newlines; links as `text (href)` for `http(s)` and
       `mailto`; images as `alt`; collapse whitespace; cap output (default 1 MiB) with a
       truncation marker.
-- [ ] Policy resolution: `documents.html` default, overridable per application in v0.2
+- [x] Policy resolution: `documents.html` default, overridable per application in v0.2
       (`applications[].documents.html`).
-- [ ] Golden tests with real redacted HTML email bodies from the TravelInbox corpus
+- [x] Golden tests with real redacted HTML email bodies from the TravelInbox corpus
       (`testdata/travelinbox/`, decision 11) plus a few synthetic cases, for both
       policies.
 

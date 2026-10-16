@@ -1,0 +1,17 @@
+<HTML><HEAD><TITLE>Hotel  notes</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
+<SCRIPT type="text/javascript"></SCRIPT></HEAD>
+<BODY>
+<h2>Check-in</h2>
+<p>From   15:00,
+   until 23:00.</p>
+<ol start="3"><li>Bring your <em>passport</em></li><li>Pay the city tax</li></ol>
+<ul><li>Free Wi-Fi</li><li>Breakfast <a href="https://hotel.example/breakfast">menu</a></li></ul>
+<pre>Room   412
+Floor  4</pre>
+<p hidden>Hidden paragraph</p>
+<p aria-hidden="true">Also hidden</p>
+<span style="mso-hide: all">Outlook only</span>
+<p>Contact <a href="https://hotel.example/">https://hotel.example/</a> or <a href="javascript:alert(1)">click</a>.</p>
+<a href="https://hotel.example/map"><img src="map.png"></a>
+</BODY></HTML>

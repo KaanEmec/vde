@@ -1,6 +1,6 @@
 # Job: Document model and media types
 
-Version: v0.1 · Epic: 04 Document representation · Status: planned · Depends on: 01-02
+Version: v0.1 · Epic: 04 Document representation · Status: done · Depends on: 01-02
 
 ## Goal
 
@@ -17,18 +17,18 @@ Contract §4: MUST accept `application/pdf`, `image/jpeg`, `image/png`, `text/ht
 
 ## Tasks
 
-- [ ] Media type parsing with `mime.ParseMediaType`; normalize (lowercase, keep `charset`
+- [x] Media type parsing with `mime.ParseMediaType`; normalize (lowercase, keep `charset`
       for text). Table of accepted types → category and whether it is MUST or SHOULD.
-- [ ] Sniff the first bytes with `http.DetectContentType` and refuse a mismatch between
+- [x] Sniff the first bytes with `http.DetectContentType` and refuse a mismatch between
       declared and detected type for binary types (a PNG declared as PDF) with
       `unsupported_media_type`; text types are trusted but must be valid UTF-8 after
       charset handling (decode `charset` with `golang.org/x/text` when not UTF-8).
-- [ ] Pages: validate each is PNG or JPEG by sniffing, count and size limits from config
+- [x] Pages: validate each is PNG or JPEG by sniffing, count and size limits from config
       with contract defaults; pages keep request order.
-- [ ] HEIC and WebP: accepted when some endpoint-model pair declares them; otherwise the
+- [x] HEIC and WebP: accepted when some endpoint-model pair declares them; otherwise the
       representation selection falls back to pages or refuses. Conversion to JPEG is a
       v0.3 job (server-side rendering epic).
-- [ ] Limits are configurable (`limits.document_bytes`, `limits.page_bytes`,
+- [x] Limits are configurable (`limits.document_bytes`, `limits.page_bytes`,
       `limits.pages`) and default to the contract's numbers.
 
 ## Acceptance criteria

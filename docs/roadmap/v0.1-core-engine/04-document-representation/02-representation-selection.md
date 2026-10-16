@@ -1,6 +1,6 @@
 # Job: Representation selection
 
-Version: v0.1 · Epic: 04 Document representation · Status: planned · Depends on: 01, 03, 04, 02-06, 03-01
+Version: v0.1 · Epic: 04 Document representation · Status: done · Depends on: 01, 03, 04, 02-06, 03-01
 
 ## Goal
 
@@ -20,9 +20,9 @@ rendering). Decisions 7, 8 and 13.
 
 ## Tasks
 
-- [ ] `Representation` type: one of `native` (document part), `pages` (image parts in
+- [x] `Representation` type: one of `native` (document part), `pages` (image parts in
       order), `text` (text part), with the media types the router must filter on.
-- [ ] `Select(doc, extractorGroup, judgeGroup, policy) (Representation, error)`:
+- [x] `Select(doc, extractorGroup, judgeGroup, policy) (Representation, error)`:
   1. plain text and markdown → `text`; HTML → `text` carrying the raw HTML (default
      policy `raw_html`) or the visible text (policy `visible_text`, job 03); email →
      `text` built by job 04 (headers plus body under the HTML policy);
@@ -31,11 +31,12 @@ rendering). Decisions 7, 8 and 13.
      error `unsupported_document`. No rendering step exists.
   3. the judge group must also be able to read the chosen representation; if not, try
      the next option in the same order; if none fits both roles → `unsupported_document`.
-- [ ] The representation name and the HTML policy feed the `service_version` hash
-      (epic 05 job 07).
-- [ ] The loop uses the selected representation to build identical document parts for
+- [x] The representation name and the HTML policy feed the `service_version` hash
+      (epic 05 job 07): `Kind.String()` and `HTMLPolicy.String()` are the names to hash.
+- [x] The loop uses the selected representation to build identical document parts for
       both roles; a test asserts byte-equality of the parts seen by the fake provider in
-      both roles.
+      both roles. (Asserted with a recording `provider.Provider` in the test until the
+      fake provider lands; the loop must pass `Representation.Parts` to both roles.)
 
 ## Acceptance criteria
 
