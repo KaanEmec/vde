@@ -1,6 +1,6 @@
 # Job: Endpoint group router
 
-Version: v0.1 · Epic: 03 Endpoint groups and failover · Status: planned · Depends on: 02-01
+Version: v0.1 · Epic: 03 Endpoint groups and failover · Status: done · Depends on: 02-01
 
 ## Goal
 
@@ -15,21 +15,21 @@ total time, and never crosses into the other role's group."
 
 ## Tasks
 
-- [ ] `Group` holds the ordered pairs built from config, each with its `Provider`
+- [x] `Group` holds the ordered pairs built from config, each with its `Provider`
       instance, model name and `accepts` set. `Router.Complete(ctx, role, req, mediaTypes)`
       filters pairs by the media types present in the request (a pair that cannot read a
       PDF part is skipped, not tried), then iterates.
-- [ ] Each attempt gets a child context with the endpoint's timeout; the whole call gets a
+- [x] Each attempt gets a child context with the endpoint's timeout; the whole call gets a
       context bounded by the group's `max_total_time` and the caller's deadline (the job
       deadline), whichever is earlier.
-- [ ] Return the response and which pair served it (for metrics and `service_version`
+- [x] Return the response and which pair served it (for metrics and `service_version`
       debugging; never exposed to callers).
-- [ ] If every eligible pair fails retryably, or tries are exhausted, return a
+- [x] If every eligible pair fails retryably, or tries are exhausted, return a
       `router.ErrGroupUnavailable` wrapping the last error. A permanent error from a pair
       is returned at once without trying the next pair (it would fail the same way, and
       a refusal must not be retried on another provider by default; make this a group
       option `failover_on_permanent: false`).
-- [ ] Table-driven tests with the fake provider: first succeeds; first fails retryable
+- [x] Table-driven tests with the fake provider: first succeeds; first fails retryable
       then second succeeds; all fail; permanent stops; a pair skipped for media type.
 
 ## Acceptance criteria
@@ -39,3 +39,9 @@ total time, and never crosses into the other role's group."
 ## Out of scope
 
 Load balancing or weighted selection (ordered failover only), escalation (v0.3).
+
+## Notes
+
+Built as `router.Group` per group rather than a `Router` keyed by role: the caller holds
+one group per role, so the router cannot cross roles. `(*Group).Complete(ctx, req)` reads
+the media types from `req.Parts` instead of taking a separate list.

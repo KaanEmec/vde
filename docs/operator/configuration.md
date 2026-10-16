@@ -37,6 +37,7 @@ Run `vde config check` to validate a file without starting the service.
 | `endpoints` | list | required, non-empty | Ordered failover list of `{endpoint, model}`; the model must be declared on the endpoint. |
 | `failover.max_tries` | int | `3` | Tries across the list for one role call. |
 | `failover.max_total_time` | duration | `3m` | Upper bound on the time spent on one role call including failover. |
+| `failover.failover_on_permanent` | bool | `false` | Try the next pair after a permanent failure (refusal, bad request) instead of failing the call at once. |
 
 ## `roles`
 

@@ -193,6 +193,16 @@ func TestValidate(t *testing.T) {
 			wantMessage: "must be positive",
 		},
 		{
+			name:        "failover total time not below the job timeout",
+			edit:        func(c *Config) { c.Groups["review"].Failover.MaxTotalTime = c.Limits.JobTimeout },
+			wantKey:     "groups.review.failover.max_total_time",
+			wantMessage: "less than limits.job_timeout",
+		},
+		{
+			name: "failover total time just below the job timeout",
+			edit: func(c *Config) { c.Groups["review"].Failover.MaxTotalTime = c.Limits.JobTimeout - time.Second },
+		},
+		{
 			name:        "judge reparse tries negative",
 			edit:        func(c *Config) { c.Limits.JudgeReparseTries = -1 },
 			wantKey:     "limits.judge_reparse_tries",

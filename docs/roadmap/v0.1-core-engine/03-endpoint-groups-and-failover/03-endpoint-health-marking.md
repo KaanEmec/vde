@@ -1,6 +1,6 @@
 # Job: Endpoint health marking
 
-Version: v0.1 · Epic: 03 Endpoint groups and failover · Status: planned · Depends on: 01, 02
+Version: v0.1 · Epic: 03 Endpoint groups and failover · Status: done · Depends on: 01, 02
 
 ## Goal
 
@@ -15,16 +15,16 @@ marked down".
 
 ## Tasks
 
-- [ ] Keep it simple: per endpoint-model pair, a `downUntil` timestamp set after a
+- [x] Keep it simple: per endpoint-model pair, a `downUntil` timestamp set after a
       retryable failure (default 30 s, doubling to a cap of 5 m on consecutive failures,
       reset on success). The router orders pairs: healthy first in configured order, then
       marked-down pairs in configured order. Marked-down pairs are still tried if the
       healthy ones fail.
-- [ ] Expose `Router.Health()` returning, per role, whether a healthy pair exists, and per
+- [x] Expose `Router.Health()` returning, per role, whether a healthy pair exists, and per
       pair its state (for `/healthz` and `/metrics` in v0.2).
-- [ ] In-memory only; no persistence, no distributed state (v0.3 multi-replica keeps it
+- [x] In-memory only; no persistence, no distributed state (v0.3 multi-replica keeps it
       per process by design).
-- [ ] Tests: a failure marks down; the next call prefers the other pair; after the window
+- [x] Tests: a failure marks down; the next call prefers the other pair; after the window
       the order is restored.
 
 ## Acceptance criteria
@@ -35,3 +35,8 @@ marked down".
 ## Out of scope
 
 Active health probing, shared health state between replicas.
+
+## Notes
+
+Health is per group: `(*Group).Healthy()` and `(*Group).Health()`; the caller combines
+them per role. Concurrent failures within one window count once.

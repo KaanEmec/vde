@@ -1,6 +1,6 @@
 # Job: Failover bounds and error classification
 
-Version: v0.1 · Epic: 03 Endpoint groups and failover · Status: planned · Depends on: 01
+Version: v0.1 · Epic: 03 Endpoint groups and failover · Status: done · Depends on: 01
 
 ## Goal
 
@@ -15,15 +15,15 @@ Contract §9 job error codes `provider_unavailable`, `extractor_failed`, `judge_
 
 ## Tasks
 
-- [ ] Group config: `max_tries` (default: number of pairs), `max_total_time` (default 3m,
+- [x] Group config: `max_tries` (default: number of pairs), `max_total_time` (default 3m,
       must be < job timeout; `config check` enforces), `retry_same_endpoint_once` for 429
       with a short `Retry-After` (default false; honoured only when `Retry-After` ≤ 10 s).
-- [ ] Backoff between tries: fixed short wait (250 ms) with jitter; no exponential
+- [x] Backoff between tries: fixed short wait (250 ms) with jitter; no exponential
       backoff inside a job, the job deadline is the real bound.
-- [ ] Error taxonomy returned by the router: `ErrGroupUnavailable` (all retryable
+- [x] Error taxonomy returned by the router: `ErrGroupUnavailable` (all retryable
       failures), `ErrPermanent` wrapping provider error (refusal, bad request), and
       context errors propagated unchanged so the loop maps deadline to `timeout`.
-- [ ] A test that a group with slow endpoints respects `max_total_time` and a test that
+- [x] A test that a group with slow endpoints respects `max_total_time` and a test that
       the job deadline cuts a call short.
 
 ## Acceptance criteria
@@ -34,3 +34,9 @@ Contract §9 job error codes `provider_unavailable`, `extractor_failed`, `judge_
 ## Out of scope
 
 Circuit breaking across jobs (next job).
+
+## Notes
+
+`max_tries` keeps the configuration default of 3 (a group built with 0 uses its number of
+pairs). There is no `retry_same_endpoint_once` key: a Retry-After of at most 10 s that fits
+in the remaining time is always waited out and the same pair retried once, as one try.
