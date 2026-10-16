@@ -1,0 +1,33 @@
+# OpenRouter through the openai_compatible adapter and its preset.
+#
+#   export OPENROUTER_API_KEY=...
+#   vde config check --config examples/vde.openrouter.yaml
+#
+# The preset sets base_url to https://openrouter.ai/api/v1, adds attribution headers and
+# asks OpenRouter to route only to upstream providers that do not store prompts or train on
+# them (provider.data_collection: deny). See docs/providers/openai-compatible.md.
+# `accepts` is YOUR declaration of the media types a model reads natively; vde never
+# probes a model. Take the list from the provider's current documentation and keep it
+# conservative: a type you list that the model cannot read makes jobs fail.
+# Reference for every key: docs/operator/configuration.md
+
+endpoints:
+  openrouter:
+    provider: openai_compatible
+    preset: openrouter
+    api_key_env: OPENROUTER_API_KEY
+    timeout: 120s
+    models:
+      anthropic/claude-sonnet-4.5:
+        # PDFs go as a file part only when application/pdf is listed here; whether the
+        # upstream route supports that depends on the model. Drop it to send page images.
+        accepts: [application/pdf, image/png, image/jpeg, text/plain, text/html]
+
+groups:
+  main:
+    endpoints:
+      - {endpoint: openrouter, model: anthropic/claude-sonnet-4.5}
+
+roles:
+  extractor: {group: main}
+  judge: {group: main}

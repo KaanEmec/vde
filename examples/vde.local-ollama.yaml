@@ -1,0 +1,32 @@
+# Fully local: an Ollama server on this machine, no key, no data leaves the host.
+#
+#   ollama pull qwen2.5vl
+#   vde config check --config examples/vde.local-ollama.yaml
+#
+# Ollama's OpenAI-compatible API lives under /v1. Local servers do not read PDF files, so
+# the model is declared for images and text only: a PDF then works only when the caller
+# supplies page images (vde never renders pages), and "config check" warns about it.
+# Change base_url if Ollama runs on another host, and protect that path with TLS or a
+# private network.
+# `accepts` is YOUR declaration of the media types a model reads natively; vde never
+# probes a model. Take the list from the provider's current documentation and keep it
+# conservative: a type you list that the model cannot read makes jobs fail.
+# Reference for every key: docs/operator/configuration.md
+
+endpoints:
+  ollama:
+    provider: openai_compatible
+    base_url: http://localhost:11434/v1
+    timeout: 300s                  # local vision models are slow on first load
+    models:
+      qwen2.5vl:
+        accepts: [image/png, image/jpeg, text/plain, text/html]
+
+groups:
+  main:
+    endpoints:
+      - {endpoint: ollama, model: qwen2.5vl}
+
+roles:
+  extractor: {group: main}
+  judge: {group: main}

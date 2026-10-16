@@ -1,0 +1,29 @@
+# Google Gemini.
+#
+#   export GEMINI_API_KEY=...
+#   vde config check --config examples/vde.gemini.yaml
+#
+# Use a key from a paid project: content sent through free-tier keys may be used to improve
+# Google's products. See docs/providers/gemini.md before approving this endpoint.
+# `accepts` is YOUR declaration of the media types a model reads natively; vde never
+# probes a model. Take the list from the provider's current documentation and keep it
+# conservative: a type you list that the model cannot read makes jobs fail.
+# Reference for every key: docs/operator/configuration.md
+
+endpoints:
+  gemini:
+    provider: gemini               # base_url defaults to https://generativelanguage.googleapis.com
+    api_key_env: GEMINI_API_KEY
+    timeout: 120s
+    models:
+      gemini-2.5-flash:
+        accepts: [application/pdf, image/png, image/jpeg, image/webp, text/plain, text/html]
+
+groups:
+  main:
+    endpoints:
+      - {endpoint: gemini, model: gemini-2.5-flash}
+
+roles:
+  extractor: {group: main}
+  judge: {group: main}
