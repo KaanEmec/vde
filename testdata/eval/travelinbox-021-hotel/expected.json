@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "Courtyard Berlin Spreeufer",
+      "provider": "Marriott",
+      "booking_ref": "44525287",
+      "status": "confirmed",
+      "starts_at_local": "2027-11-15T15:00:00",
+      "ends_at_local": "2027-11-18T12:00:00",
+      "start_place": {
+        "name": "Courtyard Berlin Spreeufer",
+        "address": "Mühlenstraße 61, Berlin, 10243 Germany",
+        "iata": null,
+        "city": "Berlin",
+        "country": "DE"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Marco Esposito", "type": null }
+      ],
+      "price": { "amount": "416.03", "currency": "EUR" },
+      "cancellation": "You may cancel your reservation for no charge before 11:59 PM local hotel time on Saturday, November 13, 2027 (2 day[s] before arrival). Please note that we will assess a fee of 138.68 EUR if you must cancel after this deadline. If you have made a prepayment, we will retain all or part of your prepayment. If not, we will charge your credit card.",
+      "details": {
+        "room": "Guest room, 1 King, Sofa bed",
+        "guests": 1,
+        "address": "Mühlenstraße 61, Berlin, 10243 Germany",
+        "phone": "+49 30 2902 7710",
+        "checkin_time": "15:00",
+        "checkout_time": "12:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Berlin",
+    "country": "DE",
+    "starts_on": "2027-11-15",
+    "ends_on": "2027-11-18"
+  },
+  "notes": "Payment is due at the hotel; the card only guarantees the reservation."
+}

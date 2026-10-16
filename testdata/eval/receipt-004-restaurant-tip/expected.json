@@ -1,0 +1,41 @@
+{
+  "merchant": {
+    "name": "The Copper Kettle",
+    "address": "88 Placeholder Avenue, Lakeview"
+  },
+  "receipt_number": "8812",
+  "date": "2027-08-21",
+  "time": "20:47",
+  "currency": "CAD",
+  "items": [
+    {
+      "description": "Tomato soup",
+      "quantity": 2,
+      "unit_price": 6.5,
+      "amount": 13.0
+    },
+    {
+      "description": "Fish and chips",
+      "quantity": 1,
+      "unit_price": null,
+      "amount": 14.95
+    },
+    {
+      "description": "Garden salad",
+      "quantity": 1,
+      "unit_price": null,
+      "amount": 9.5
+    },
+    {
+      "description": "Sparkling water",
+      "quantity": 2,
+      "unit_price": 2.75,
+      "amount": 5.5
+    }
+  ],
+  "subtotal": 42.95,
+  "tax": 5.58,
+  "tip": 8.0,
+  "total": 56.53,
+  "payment_method": "card"
+}

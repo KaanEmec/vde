@@ -1,0 +1,35 @@
+{
+  "merchant": {
+    "name": "Café Lumen",
+    "address": "Rue de l'Exemple 8, 1000 Bruxelles"
+  },
+  "receipt_number": "2027-118",
+  "date": "2027-05-12",
+  "time": "09:41",
+  "currency": "EUR",
+  "items": [
+    {
+      "description": "Cappuccino",
+      "quantity": 2,
+      "unit_price": 3.2,
+      "amount": 6.4
+    },
+    {
+      "description": "Croissant",
+      "quantity": 2,
+      "unit_price": 1.9,
+      "amount": 3.8
+    },
+    {
+      "description": "Jus d'orange",
+      "quantity": 1,
+      "unit_price": 3.5,
+      "amount": 3.5
+    }
+  ],
+  "subtotal": null,
+  "tax": 0.78,
+  "tip": null,
+  "total": 13.7,
+  "payment_method": "cash"
+}

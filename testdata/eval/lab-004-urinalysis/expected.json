@@ -1,0 +1,56 @@
+{
+  "laboratory": "Northgate Diagnostics",
+  "report_id": "ND-2027-007730",
+  "patient": {
+    "name": "Sasha Mockridge",
+    "date_of_birth": "2001-01-30",
+    "sex": null
+  },
+  "collected_on": "2027-10-11",
+  "reported_on": "2027-10-12",
+  "ordering_clinician": null,
+  "results": [
+    {
+      "test": "Colour",
+      "value": "Yellow",
+      "unit": null,
+      "reference_range": null,
+      "flag": null
+    },
+    {
+      "test": "pH",
+      "value": 6.0,
+      "unit": null,
+      "reference_range": "5.0-8.0",
+      "flag": null
+    },
+    {
+      "test": "Protein",
+      "value": "Negative",
+      "unit": null,
+      "reference_range": "Negative",
+      "flag": null
+    },
+    {
+      "test": "Glucose",
+      "value": "Negative",
+      "unit": null,
+      "reference_range": "Negative",
+      "flag": null
+    },
+    {
+      "test": "Leukocytes",
+      "value": "2+",
+      "unit": null,
+      "reference_range": "Negative",
+      "flag": "abnormal"
+    },
+    {
+      "test": "Nitrite",
+      "value": "Positive",
+      "unit": null,
+      "reference_range": "Negative",
+      "flag": "abnormal"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Laboratory report",
+  "description": "A laboratory test report: who was tested, when, and each result with its unit, reference range and flag.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["laboratory", "report_id", "patient", "collected_on", "reported_on", "ordering_clinician", "results"],
+  "properties": {
+    "laboratory": {"type": "string", "minLength": 1, "description": "The laboratory that issued the report, as printed."},
+    "report_id": {"type": ["string", "null"], "description": "The report, accession or order number as printed, without its label."},
+    "patient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "date_of_birth", "sex"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "description": "Given name then family name, natural capitalisation."},
+        "date_of_birth": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "sex": {"enum": ["female", "male", "other", null]}
+      }
+    },
+    "collected_on": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "reported_on": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "ordering_clinician": {"type": ["string", "null"], "description": "The requesting clinician's name without titles."},
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per reported test, in printed order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["test", "value", "unit", "reference_range", "flag"],
+        "properties": {
+          "test": {"type": "string", "minLength": 1, "description": "The test name as printed."},
+          "value": {"type": ["number", "string"], "description": "A number when the result is a plain number, else the result as printed."},
+          "unit": {"type": ["string", "null"]},
+          "reference_range": {"type": ["string", "null"], "description": "As printed."},
+          "flag": {"enum": ["high", "low", "abnormal", null], "description": "Only as the report marks the result."}
+        }
+      }
+    }
+  }
+}

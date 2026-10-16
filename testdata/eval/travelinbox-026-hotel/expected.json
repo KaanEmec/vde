@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "lodging",
+      "title": "Sathorn Garden Hotel Bangkok",
+      "provider": "Agoda",
+      "booking_ref": "9809515007",
+      "status": "confirmed",
+      "starts_at_local": "2027-02-15T14:00:00",
+      "ends_at_local": "2027-02-19T12:00:00",
+      "start_place": {
+        "name": "Sathorn Garden Hotel Bangkok",
+        "address": "88 Soi Sathorn 10, Silom, Bang Rak, Bangkok, Thailand, 10500",
+        "iata": null,
+        "city": "Bangkok",
+        "country": "TH"
+      },
+      "end_place": null,
+      "travellers": [
+        { "name": "Nadia Haddad", "type": null }
+      ],
+      "price": { "amount": "11581.68", "currency": "THB" },
+      "cancellation": "Free cancellation before February 12, 2027 23:59 (property local time). If cancelled or modified after that, 100% of the total booking price will be charged. In case of no-show, 100% of the total booking price will be charged.",
+      "details": {
+        "room": "Deluxe Double Room - City View",
+        "guests": 2,
+        "address": "88 Soi Sathorn 10, Silom, Bang Rak, Bangkok, Thailand, 10500",
+        "phone": "+66 2 234 7781",
+        "checkin_time": "14:00",
+        "checkout_time": "12:00"
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Bangkok",
+    "country": "TH",
+    "starts_on": "2027-02-15",
+    "ends_on": "2027-02-19"
+  },
+  "notes": null
+}

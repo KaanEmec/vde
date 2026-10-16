@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "car_rental",
+      "title": "Car rental in Orlando",
+      "provider": "Hertz",
+      "booking_ref": "X7883431751",
+      "status": "confirmed",
+      "starts_at_local": "2027-02-14T14:15:00",
+      "ends_at_local": "2027-02-21T11:00:00",
+      "start_place": {
+        "name": "Orlando International Airport",
+        "address": "1 Jeff Fuqua Blvd, Orlando, FL 32827",
+        "iata": "MCO",
+        "city": "Orlando",
+        "country": "US"
+      },
+      "end_place": {
+        "name": "Orlando International Airport",
+        "address": "1 Jeff Fuqua Blvd, Orlando, FL 32827",
+        "iata": "MCO",
+        "city": "Orlando",
+        "country": "US"
+      },
+      "travellers": [
+        { "name": "Kai Okafor", "type": null }
+      ],
+      "price": { "amount": "396.03", "currency": "USD" },
+      "cancellation": "This is a Pay Later reservation. You may modify or cancel it at any time before pick-up at no charge.",
+      "details": {
+        "vehicle": "Toyota Camry or similar",
+        "pickup": "Hertz counters are located on Level 1 (Ground Transportation) of Terminal A and Terminal B. Gold Plus Rewards members may proceed directly to the Gold Canopy in the Terminal A parking garage.",
+        "dropoff": "Follow signs for Rental Car Return as you approach the airport. Return your vehicle to the Hertz area of the Terminal A/B parking garage, Level 1."
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "Orlando",
+    "country": "US",
+    "starts_on": "2027-02-14",
+    "ends_on": "2027-02-21"
+  },
+  "notes": null
+}

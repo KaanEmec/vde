@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://travelinbox.app/schemas/extraction/v1",
+  "title": "TravelInbox extraction result",
+  "description": "What the extraction service returns for one document. Unknown values are null or omitted, never guessed. Local times are wall-clock times in the zone of the place they belong to.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "reservations"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "reservations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reservation" }
+    },
+    "trip_hint": {
+      "description": "Where and when the trip this document belongs to takes place, as far as the document says.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "destination": { "$ref": "#/$defs/text" },
+        "country": { "$ref": "#/$defs/country" },
+        "starts_on": { "$ref": "#/$defs/date" },
+        "ends_on": { "$ref": "#/$defs/date" }
+      }
+    },
+    "notes": {
+      "description": "Anything the extractor could not fit into the schema or found ambiguous.",
+      "$ref": "#/$defs/text"
+    }
+  },
+  "$defs": {
+    "text": { "type": ["string", "null"], "minLength": 1 },
+    "country": {
+      "description": "ISO 3166-1 alpha-2.",
+      "type": ["string", "null"],
+      "pattern": "^[A-Z]{2}$"
+    },
+    "iata": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+    "date": {
+      "description": "Calendar date, YYYY-MM-DD.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "local_datetime": {
+      "description": "RFC 3339 date-time without offset, YYYY-MM-DDTHH:MM:SS, in the zone of the place. A bare date when the document gives no time.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2})?$"
+    },
+    "local_time": {
+      "description": "Wall-clock time, HH:MM.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{2}:[0-9]{2}$"
+    },
+    "count": { "type": ["integer", "null"], "minimum": 1 },
+    "place": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/text" },
+        "address": { "$ref": "#/$defs/text" },
+        "iata": { "$ref": "#/$defs/iata" },
+        "city": { "$ref": "#/$defs/text" },
+        "country": { "$ref": "#/$defs/country" }
+      }
+    },
+    "traveller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["adult", "child", "infant", null] }
+      }
+    },
+    "price": {
+      "description": "Total price as printed. amount is a decimal string to avoid floating point.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,3})?$" },
+        "currency": { "description": "ISO 4217.", "type": "string", "pattern": "^[A-Z]{3}$" }
+      }
+    },
+    "confidence": {
+      "description": "Extractor confidence per reservation field, 0 to 1. Required for every field that is present and not null.",
+      "type": "object",
+      "required": ["kind", "title"],
+      "propertyNames": {
+        "enum": [
+          "kind", "title", "provider", "booking_ref", "status",
+          "starts_at_local", "ends_at_local", "start_place", "end_place",
+          "travellers", "price", "cancellation", "details"
+        ]
+      },
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "reservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "title", "confidence"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "flight", "lodging", "transfer", "car_rental", "rail", "bus",
+            "ferry", "activity", "dining", "event", "insurance", "other"
+          ]
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "provider": { "$ref": "#/$defs/text" },
+        "booking_ref": { "description": "Verbatim as printed.", "$ref": "#/$defs/text" },
+        "status": { "enum": ["confirmed", "cancelled", "pending", null] },
+        "starts_at_local": { "$ref": "#/$defs/local_datetime" },
+        "ends_at_local": { "$ref": "#/$defs/local_datetime" },
+        "start_place": { "$ref": "#/$defs/place" },
+        "end_place": { "$ref": "#/$defs/place" },
+        "travellers": {
+          "type": ["array", "null"],
+          "items": { "$ref": "#/$defs/traveller" }
+        },
+        "price": { "$ref": "#/$defs/price" },
+        "cancellation": { "description": "Cancellation terms as written.", "$ref": "#/$defs/text" },
+        "details": true,
+        "confidence": { "$ref": "#/$defs/confidence" }
+      },
+      "oneOf": [
+        { "properties": { "kind": { "const": "flight" }, "details": { "$ref": "#/$defs/flight" } } },
+        { "properties": { "kind": { "const": "lodging" }, "details": { "$ref": "#/$defs/lodging" } } },
+        { "properties": { "kind": { "const": "car_rental" }, "details": { "$ref": "#/$defs/car_rental" } } },
+        { "properties": { "kind": { "const": "transfer" }, "details": { "$ref": "#/$defs/transfer" } } },
+        { "properties": { "kind": { "const": "rail" }, "details": { "$ref": "#/$defs/rail" } } },
+        { "properties": { "kind": { "const": "dining" }, "details": { "$ref": "#/$defs/dining" } } },
+        { "properties": { "kind": { "const": "event" }, "details": { "$ref": "#/$defs/event" } } },
+        { "properties": { "kind": { "const": "activity" }, "details": { "$ref": "#/$defs/activity" } } },
+        { "properties": { "kind": { "const": "insurance" }, "details": { "$ref": "#/$defs/insurance" } } },
+        { "properties": { "kind": { "enum": ["bus", "ferry", "other"] }, "details": { "$ref": "#/$defs/other" } } }
+      ],
+      "$comment": "allOf: when an optional field is present and not null, confidence must carry it.",
+      "allOf": [
+        { "if": { "required": ["provider"], "properties": { "provider": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["provider"] } } } },
+        { "if": { "required": ["booking_ref"], "properties": { "booking_ref": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["booking_ref"] } } } },
+        { "if": { "required": ["status"], "properties": { "status": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["status"] } } } },
+        { "if": { "required": ["starts_at_local"], "properties": { "starts_at_local": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["starts_at_local"] } } } },
+        { "if": { "required": ["ends_at_local"], "properties": { "ends_at_local": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["ends_at_local"] } } } },
+        { "if": { "required": ["start_place"], "properties": { "start_place": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["start_place"] } } } },
+        { "if": { "required": ["end_place"], "properties": { "end_place": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["end_place"] } } } },
+        { "if": { "required": ["travellers"], "properties": { "travellers": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["travellers"] } } } },
+        { "if": { "required": ["price"], "properties": { "price": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["price"] } } } },
+        { "if": { "required": ["cancellation"], "properties": { "cancellation": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["cancellation"] } } } },
+        { "if": { "required": ["details"], "properties": { "details": { "not": { "type": "null" } } } }, "then": { "properties": { "confidence": { "type": "object", "required": ["details"] } } } }
+      ]
+    },
+    "flight_leg": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "number": { "$ref": "#/$defs/text" },
+        "carrier": { "$ref": "#/$defs/text" },
+        "from_iata": { "$ref": "#/$defs/iata" },
+        "to_iata": { "$ref": "#/$defs/iata" },
+        "departs_at_local": { "$ref": "#/$defs/local_datetime" },
+        "arrives_at_local": { "$ref": "#/$defs/local_datetime" },
+        "seat": { "$ref": "#/$defs/text" },
+        "cabin": { "$ref": "#/$defs/text" },
+        "terminal": { "$ref": "#/$defs/text" }
+      }
+    },
+    "flight": {
+      "description": "Top-level fields describe the journey (first flight number and carrier, overall origin and destination). legs lists each segment in order when there is more than one.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "number": { "$ref": "#/$defs/text" },
+        "carrier": { "$ref": "#/$defs/text" },
+        "from_iata": { "$ref": "#/$defs/iata" },
+        "to_iata": { "$ref": "#/$defs/iata" },
+        "seat": { "$ref": "#/$defs/text" },
+        "cabin": { "$ref": "#/$defs/text" },
+        "terminal": { "$ref": "#/$defs/text" },
+        "gate": { "$ref": "#/$defs/text" },
+        "legs": { "type": ["array", "null"], "items": { "$ref": "#/$defs/flight_leg" } }
+      }
+    },
+    "lodging": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "room": { "$ref": "#/$defs/text" },
+        "guests": { "$ref": "#/$defs/count" },
+        "address": { "$ref": "#/$defs/text" },
+        "phone": { "$ref": "#/$defs/text" },
+        "checkin_time": { "$ref": "#/$defs/local_time" },
+        "checkout_time": { "$ref": "#/$defs/local_time" }
+      }
+    },
+    "car_rental": {
+      "description": "pickup and dropoff are the instructions as written (desk, shuttle); the places themselves are start_place and end_place.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "vehicle": { "$ref": "#/$defs/text" },
+        "pickup": { "$ref": "#/$defs/text" },
+        "dropoff": { "$ref": "#/$defs/text" }
+      }
+    },
+    "transfer": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "vehicle": { "$ref": "#/$defs/text" },
+        "driver_contact": { "$ref": "#/$defs/text" }
+      }
+    },
+    "rail": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "train": { "$ref": "#/$defs/text" },
+        "coach": { "$ref": "#/$defs/text" },
+        "seat": { "$ref": "#/$defs/text" },
+        "platform": { "$ref": "#/$defs/text" }
+      }
+    },
+    "dining": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "party_size": { "$ref": "#/$defs/count" },
+        "phone": { "$ref": "#/$defs/text" }
+      }
+    },
+    "event": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "venue": { "$ref": "#/$defs/text" },
+        "seat": { "$ref": "#/$defs/text" }
+      }
+    },
+    "activity": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "meeting_point": { "$ref": "#/$defs/text" }
+      }
+    },
+    "insurance": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "policy": { "$ref": "#/$defs/text" }
+      }
+    },
+    "other": {
+      "description": "Also used for bus and ferry.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {}
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "merchant": {
+    "name": "Bolt & Beam Hardware",
+    "address": "400 Sample Road, Riverton"
+  },
+  "receipt_number": "HB-55120",
+  "date": "2027-03-09",
+  "time": "14:05",
+  "currency": "USD",
+  "items": [
+    {
+      "description": "Wood screws 4x40 (box of 200)",
+      "quantity": 3,
+      "unit_price": 6.99,
+      "amount": 20.97
+    },
+    {
+      "description": "Claw hammer 16 oz",
+      "quantity": 1,
+      "unit_price": 18.5,
+      "amount": 18.5
+    },
+    {
+      "description": "Masking tape 48mm",
+      "quantity": 4,
+      "unit_price": 2.25,
+      "amount": 9.0
+    }
+  ],
+  "subtotal": 48.47,
+  "tax": 3.88,
+  "tip": null,
+  "total": 52.35,
+  "payment_method": "card"
+}

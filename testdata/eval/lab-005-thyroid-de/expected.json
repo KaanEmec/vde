@@ -1,0 +1,35 @@
+{
+  "laboratory": "Labor Musterstadt",
+  "report_id": "LM-27-55190",
+  "patient": {
+    "name": "Kai Beispielmann",
+    "date_of_birth": "1977-03-14",
+    "sex": "male"
+  },
+  "collected_on": "2027-12-08",
+  "reported_on": "2027-12-09",
+  "ordering_clinician": "Lena Probe",
+  "results": [
+    {
+      "test": "TSH basal",
+      "value": 4.9,
+      "unit": "mU/l",
+      "reference_range": "0,27–4,20",
+      "flag": "high"
+    },
+    {
+      "test": "fT4",
+      "value": 14.2,
+      "unit": "pmol/l",
+      "reference_range": "12,0–22,0",
+      "flag": null
+    },
+    {
+      "test": "fT3",
+      "value": 4.1,
+      "unit": "pmol/l",
+      "reference_range": "3,1–6,8",
+      "flag": null
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "reservations": [
+    {
+      "kind": "flight",
+      "title": "Frankfurt to New York",
+      "provider": "Lufthansa",
+      "booking_ref": "VT6Y7Y",
+      "status": "confirmed",
+      "starts_at_local": "2027-06-14T10:35:00",
+      "ends_at_local": "2027-06-14T13:20:00",
+      "start_place": {
+        "name": null,
+        "address": null,
+        "iata": "FRA",
+        "city": "Frankfurt",
+        "country": "DE"
+      },
+      "end_place": {
+        "name": null,
+        "address": null,
+        "iata": "JFK",
+        "city": "New York",
+        "country": "US"
+      },
+      "travellers": [
+        { "name": "Jana Brenner", "type": "adult" },
+        { "name": "Lukas Albrecht", "type": "adult" }
+      ],
+      "price": { "amount": "1284.52", "currency": "EUR" },
+      "cancellation": "Umbuchung: gegen eine Gebühr von 70,00 EUR pro Person zzgl. einer eventuellen Tarifdifferenz möglich. Erstattung: nicht möglich. Nicht verbrauchte Steuern und Gebühren werden auf Antrag erstattet.",
+      "details": {
+        "number": "LH 400",
+        "carrier": "Lufthansa",
+        "from_iata": "FRA",
+        "to_iata": "JFK",
+        "seat": "32A, 32B",
+        "cabin": "Economy",
+        "terminal": "1",
+        "gate": null,
+        "legs": null
+      },
+      "confidence": {
+        "kind": 1.0,
+        "title": 1.0,
+        "provider": 1.0,
+        "booking_ref": 1.0,
+        "status": 1.0,
+        "starts_at_local": 1.0,
+        "ends_at_local": 1.0,
+        "start_place": 1.0,
+        "end_place": 1.0,
+        "travellers": 1.0,
+        "price": 1.0,
+        "cancellation": 1.0,
+        "details": 1.0
+      }
+    }
+  ],
+  "trip_hint": {
+    "destination": "New York",
+    "country": "US",
+    "starts_on": "2027-06-14",
+    "ends_on": null
+  },
+  "notes": null
+}

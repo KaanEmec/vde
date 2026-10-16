@@ -1,0 +1,49 @@
+{
+  "laboratory": "Juniper Ridge Clinical Lab",
+  "report_id": "JR-3381-27",
+  "patient": {
+    "name": "Mina Exampleton",
+    "date_of_birth": "1990-11-05",
+    "sex": "female"
+  },
+  "collected_on": "2027-09-02",
+  "reported_on": "2027-09-02",
+  "ordering_clinician": "T. Notreal",
+  "results": [
+    {
+      "test": "Glucose (fasting)",
+      "value": 5.4,
+      "unit": "mmol/L",
+      "reference_range": "3.9-5.5",
+      "flag": null
+    },
+    {
+      "test": "Sodium",
+      "value": 139,
+      "unit": "mmol/L",
+      "reference_range": "135-145",
+      "flag": null
+    },
+    {
+      "test": "Potassium",
+      "value": 3.3,
+      "unit": "mmol/L",
+      "reference_range": "3.5-5.1",
+      "flag": "low"
+    },
+    {
+      "test": "Creatinine",
+      "value": 72,
+      "unit": "µmol/L",
+      "reference_range": "45-90",
+      "flag": null
+    },
+    {
+      "test": "eGFR",
+      "value": ">90",
+      "unit": "mL/min/1.73m²",
+      "reference_range": ">60",
+      "flag": null
+    }
+  ]
+}

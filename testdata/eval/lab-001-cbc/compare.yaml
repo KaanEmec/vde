@@ -1,0 +1,11 @@
+# compare.yaml of the synthetic laboratory report cases. Every value not listed is compared
+# exactly.
+default: exact
+rules:
+  - {pointer: /laboratory, mode: normalized}
+  - {pointer: /patient/name, mode: normalized}
+  - {pointer: /ordering_clinician, mode: normalized}
+  - {pointer: /results/*/test, mode: normalized}
+  - {pointer: /results/*/value, mode: numeric, tolerance: 0.0001}
+  - {pointer: /results/*/unit, mode: normalized}
+  - {pointer: /results/*/reference_range, mode: normalized}
