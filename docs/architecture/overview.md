@@ -1,13 +1,13 @@
 # Architecture overview
 
-Status: in implementation since 2026-10-16. This document describes the target shape of the
-service; the roadmap under `docs/roadmap/` says in which order it is built and which jobs are
+Status: v0.1 to v0.3 implemented (v0.3 closed 2026-10-17); v1.0 planned. This document
+describes the shape of the service; the roadmap under `docs/roadmap/` says which jobs are
 done. Each job file carries its own `Status`.
 
 ## What the service is
 
 A single Go binary, `vde`, that runs an authenticated HTTP service turning one document
-(PDF, image, HTML, text) into one JSON object. An **extractor** model produces a candidate,
+(PDF, image, HTML, text, email) into one JSON object. An **extractor** model produces a candidate,
 a **judge** model checks it against the source, and the loop repeats with the judge's
 feedback until the judge accepts or a bounded attempt limit is reached. The caller supplies
 the instructions and, optionally, a JSON Schema per request; the service holds no domain
@@ -25,11 +25,11 @@ These are deliberate constraints, not aspirations. A change that violates one ne
    not for convenience wrappers. No dependency-injection framework, no code generation
    beyond what the Go toolchain offers, no plugin system.
 2. **An interface exists only where a second implementation is planned.** Today that is:
-   `Provider` (Anthropic, OpenAI-compatible, Gemini, a fake for tests), `JobStore` and `BlobStore`
-   (SQLite plus local files first, Postgres plus S3 later). Everything else is concrete code.
+   `Provider` (Anthropic, OpenAI-compatible, Gemini, Bedrock, Vertex, a classifier judge, a fake
+   for tests), `JobStore` and `BlobStore` (SQLite plus local files by default, Postgres plus S3). Everything else is concrete code.
 3. **One process, one binary.** API, worker and sweeper run in the same process by default.
-   Horizontal scaling is a v0.3 concern and is designed so that it does not change the
-   single-process code path (DB leases, not a message broker).
+   `serve --role api|worker` splits them for several replicas without changing the
+   single-process code path (DB leases, not a message broker; ADR 0007).
 4. **The contract is the spec.** Where the project brief and the TravelInbox contract both
    speak, the contract's MUSTs decide the first release. The service may be a superset
    (schema optional, extra endpoints), never a deviation.
@@ -51,8 +51,8 @@ flowchart LR
     subgraph vde["vde process"]
         API[HTTP API<br/>net/http]
         Auth[Auth and quota<br/>middleware]
-        Store[(JobStore<br/>SQLite)]
-        Blobs[(BlobStore<br/>local files)]
+        Store[(JobStore<br/>SQLite or Postgres)]
+        Blobs[(BlobStore<br/>local files or S3)]
         Worker[Worker pool]
         Loop[Extraction loop]
         Router[Endpoint groups<br/>and failover]
@@ -70,29 +70,44 @@ flowchart LR
     Router -->|Provider adapter| P3[Google Gemini endpoint]
 ```
 
-### Packages (target layout)
+Other adapters (Bedrock, Vertex, classifier) sit behind the same Router. Everything inside the
+box can run as one process or as `api` and `worker` processes sharing Postgres and S3; the
+sweeper runs on workers only, holding a Postgres advisory lock so one sweeps at a time. The
+webhook sender runs where the worker does.
+
+### Packages
 
 ```
-cmd/vde/                 main: serve, token, app, config check, extract
+cmd/vde/                 main: serve (--role), extract, eval, config check, app, token, audit, migrate, healthcheck, version
+api/                     OpenAPI documents (public and admin), embedded
 internal/config/         YAML model, env expansion, validation, service_version hash
 internal/provider/       Provider interface, request/response types, capability model
 internal/provider/anthropic/
 internal/provider/openai/   OpenAI-compatible chat completions (OpenRouter preset)
 internal/provider/gemini/
+internal/provider/bedrock/  AWS Bedrock Converse
+internal/provider/vertex/   Vertex AI (Gemini, Anthropic)
+internal/provider/classifier/  classifier-style judge (generic classify contract)
 internal/provider/fake/     scripted provider for tests
 internal/router/         endpoint groups, ordered failover, per-endpoint health
-internal/document/       document model, media types, representation selection, HTML to text, email parsing
-internal/extract/        prompt framings, JSON answer parsing, schema validation, judge verdict, loop
-internal/api/            handlers, middleware (auth, request id, limits), quota windows and rate limiting, errors, admin routes
+internal/document/       document model, media types, representation selection, image conversion, HTML to text, email parsing
+internal/extract/        prompt framings, JSON answer parsing, schema validation, judge verdict, loop, escalation
+internal/api/            handlers, middleware (auth, request id, limits), quota windows and rate limiting, errors, admin routes, sync endpoint, JSON submission and URL fetch
 internal/auth/           applications, tokens (hashing, expiry, revocation, scopes)
-internal/job/            job model, state machine, JobStore interface, SQLite implementation
-internal/blob/           BlobStore interface, filesystem implementation
+internal/job/            job model, state machine, JobStore, SQLite and Postgres implementations, migrations and migrations_postgres
+internal/blob/           BlobStore interface, filesystem and S3 implementations
 internal/worker/         pool, leasing, job deadline, retention actions
+internal/sweeper/        expiry sweeper, advisory-locked across processes
+internal/webhook/        signed completion webhooks
+internal/eval/           evaluation harness: corpus, comparison, report
 internal/audit/          audit events (never content)
+internal/logging/        slog setup and redaction
+internal/metrics/        Prometheus metrics
 internal/version/        build info
+test/conformance/        black-box suite for the TravelInbox contract's acceptance items
 docs/                    architecture, roadmap, operator and API docs
-examples/                dev config, docker compose, curl examples
-testdata/                fixtures, fake provider scripts, corpus (when licensed)
+examples/                dev config, docker compose (single and scaled), samples
+testdata/                fixtures, fake provider scripts, evaluation corpus
 ```
 
 `internal/extract` must be usable without the HTTP layer: the `vde extract` CLI command
@@ -145,7 +160,7 @@ itself (ADR 0006). Text, HTML and email bodies are given as text; HTML is sent r
 default, with a per-application `visible_text` option. The judge always sees the same
 representation from the same bytes. The policy is part of `service_version`.
 
-## Data model (v0.2)
+## Data model
 
 - `applications`: id, name, attempt limit, quota limit and window, rate limits, retention
   policy, forced retention flag, HTML policy, enabled, source (`config` or `admin`),
@@ -156,14 +171,19 @@ representation from the same bytes. The policy is part of `service_version`.
 - `jobs`: id (ULID, `j_` prefix), application_id, status, attempts, result (JSON),
   feedback (JSON), error (JSON), service_version, representation, media type, size, page
   count, retention, idempotency key and body hash, attachment list (JSON, email only),
-  created_at, started_at, finished_at, expires_at, lease_until, content_deleted_at.
+  input_tokens and output_tokens (provider usage, summed over attempts and re-leases),
+  created_at, started_at, finished_at, expires_at, lease_until, content_deleted_at (set when
+  content was deleted; a replay of the job's idempotency key reports it).
 - `quota_usage`: application_id, window_start, count.
+- `rate_windows`: application_id, kind (`requests` or `submits`), window_start (UTC minute),
+  count; used only with `rate.shared: true`, pruned by the sweeper.
 - Blobs: `document` and `page-N` per job, keyed by job id, in the blob store.
-- Audit: append-only table or structured log stream; never content.
+- Audit: the append-only `audit_events` table (and optionally `audit.log`); never content.
 
 SQLite in WAL mode is the default and is sufficient for one VM. The store interface is
-small (create, lease next, update state, get, delete content, sweep, idempotency lookup) so
-a Postgres implementation in v0.3 is a second file, not a redesign.
+small (create, lease next, update state, get, delete content, sweep, idempotency lookup);
+Postgres is a second driver over the same statements (`FOR UPDATE SKIP LOCKED` for leasing),
+and S3 a second blob implementation. See ADR 0007.
 
 ## Security model
 
@@ -201,6 +221,8 @@ first releases:
 - [0004 Provider adapters: Anthropic and OpenAI-compatible first](decisions/0004-provider-adapters.md)
 - [0005 Contract-first: the TravelInbox contract is the acceptance test](decisions/0005-contract-first.md)
 - [0006 Representation policy: raw HTML by default, no server-side rendering](decisions/0006-representation-policy.md)
+- [0007 Storage drivers and process roles](decisions/0007-storage-drivers-and-process-roles.md)
+- [0008 Judge quality is measured, not assumed](decisions/0008-judge-quality-measurement.md)
 
 ## Implementation decisions (build start, 2026-10-16)
 

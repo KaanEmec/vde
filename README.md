@@ -6,14 +6,20 @@ judge model checks it against the source, and the loop repeats with the judge's 
 until the judge accepts or a bounded attempt limit is reached. Callers supply the
 instructions and, optionally, a JSON Schema per request; the service holds no domain
 knowledge. Providers: Anthropic, OpenAI-compatible endpoints (OpenAI, OpenRouter, Ollama,
-vLLM) and Google Gemini, with ordered failover per role.
+vLLM), Google Gemini, AWS Bedrock and Vertex AI (not yet verified live) and a classifier-style
+judge, with ordered failover per role.
 
 ## Status
 
-v0.2 (the service) is implemented: engine, CLI, HTTP API, jobs, retention, operations, admin
-API, container image and compose example. It is pending live verification: it has not yet been
-run against real providers or the TravelInbox contract's live evaluation, so do not treat it as
-production-ready. The [roadmap](docs/roadmap/README.md) says what is done and what is next.
+v0.1 to v0.3 are implemented: engine, CLI, HTTP API, jobs, retention, operations, admin API,
+container image and compose example, plus Postgres and S3 storage, Bedrock and Vertex
+adapters, a classifier judge adapter, escalation, image conversion, synchronous and webhook
+delivery, an evaluation harness and multi-replica operation. Verified against the fake
+provider, the TravelInbox contract's live test and one real model; the Bedrock and Vertex
+adapters have not run live, and the first evaluation shows a high false-accept rate that needs
+instruction work (see [quality](docs/quality.md)). Do not treat it as production-ready. v1.0
+(API freeze, security review) is planned. The [roadmap](docs/roadmap/README.md) says what is
+done and what is next.
 
 ## Quick start
 
@@ -33,7 +39,10 @@ bin/vde token create --config vde.yaml --app <app id> --scope jobs --expires 30d
 
 Declaring an application is described in
 [applications and tokens](docs/operator/applications-and-tokens.md); submit a document with
-`curl` as shown in the [API guide](docs/api/guide.md). For Docker, follow the
+`curl` as shown in the [API guide](docs/api/guide.md). To measure quality, run
+`bin/vde eval --corpus testdata/eval --config vde.yaml` ([evaluation](docs/operator/evaluation.md)).
+With Postgres and S3, run `bin/vde migrate --config vde.yaml` once, then start processes with
+`bin/vde serve --role api|worker|all` ([storage](docs/operator/storage.md)). For Docker, follow the
 [compose example](examples/compose/README.md). Other commands: `make check` (vet, lint, race
 tests), `make cross`, `bin/vde version`.
 

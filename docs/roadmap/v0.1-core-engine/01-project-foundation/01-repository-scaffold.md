@@ -10,7 +10,7 @@ repository files an open-source project needs on day one.
 
 ## Context
 
-Architecture overview, "Packages (target layout)". ADR 0001. Decision 1 (Apache-2.0; module path still open,
+Architecture overview, "Packages". ADR 0001. Decision 1 (Apache-2.0; module path still open,
 licence). The contract (§12) wants one binary offering `serve`, `token` and `config check`;
 subcommands are added by later jobs, this job creates the command skeleton.
 
