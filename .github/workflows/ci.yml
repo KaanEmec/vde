@@ -89,3 +89,16 @@ jobs:
             test -s "$f"
             file "$f" | grep -q 'statically linked'
           done
+
+  conformance:
+    name: conformance (TravelInbox contract v1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Contract §14 items 1-9 against the binary and a fake provider
+        run: make conformance
