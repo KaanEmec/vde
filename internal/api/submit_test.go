@@ -116,6 +116,8 @@ type submitRigOptions struct {
 	// candidate when nil). It needs the real clock.
 	pool       bool
 	ext, judge fake.Script
+	// notify wires a worker.Notifier between the pool and POST /v1/extract.
+	notify bool
 }
 
 type submitRig struct {
@@ -184,7 +186,13 @@ func newSubmitRig(t *testing.T, o submitRigOptions) *submitRig {
 		if err != nil {
 			t.Fatal(err)
 		}
-		pool := worker.New(db, blobs, cfg, roles, worker.Options{Size: 2, PollInterval: 20 * time.Millisecond, Logger: logger})
+		popts := worker.Options{Size: 2, PollInterval: 20 * time.Millisecond, Logger: logger}
+		if o.notify {
+			n := worker.NewNotifier()
+			deps.Completions = n
+			popts.OnFinish = func(j job.Job) { n.Notify(j.ID) }
+		}
+		pool := worker.New(db, blobs, cfg, roles, popts)
 		pool.Start(t.Context())
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

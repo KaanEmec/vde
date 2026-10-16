@@ -59,6 +59,10 @@ type Options struct {
 	Logger   *slog.Logger
 	// Audit receives job.finished events; nil records none.
 	Audit *audit.Recorder
+	// OnFinish, when set, is called with the job after its terminal state was written,
+	// audited and its retention applied: the completion hook that wakes POST
+	// /v1/extract waiters (Notifier) and queues webhooks. It must not block.
+	OnFinish func(job.Job)
 }
 
 // Pool is a fixed set of workers leasing jobs from the store and running the
@@ -227,7 +231,8 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	// The terminal write must happen even when the shutdown grace ends right now.
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 	defer cancel()
-	switch err := p.store.Finish(fctx, j.ID, workerID, out, time.Now()); {
+	finishedAt := time.Now()
+	switch err := p.store.Finish(fctx, j.ID, workerID, out, finishedAt); {
 	case errors.Is(err, job.ErrConflict):
 		log.Warn("worker: finish refused, job already terminal or leased elsewhere")
 		return
@@ -237,9 +242,12 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	}
 	log.Info("worker: job finished", "status", string(out.Status), "attempts", out.Attempts, "error_code", errorCode(out))
 	p.opts.Observer.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
-	j.Status, j.Attempts, j.Error, j.FinishedAt = out.Status, out.Attempts, out.Error, time.Now()
+	j.Status, j.Attempts, j.Error, j.FinishedAt = out.Status, out.Attempts, out.Error, finishedAt
 	p.opts.Audit.JobFinished(fctx, j)
 	p.applyRetention(fctx, log, app, j)
+	if p.opts.OnFinish != nil {
+		p.opts.OnFinish(j)
+	}
 }
 
 // extract runs the loop for the remaining attempts. ok is false when the job must be

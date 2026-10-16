@@ -13,6 +13,7 @@ import (
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/metrics"
+	"github.com/kaanemec/vde/internal/worker"
 )
 
 // HealthChecker reports whether a role's group has a pair not marked down;
@@ -51,6 +52,9 @@ type Deps struct {
 	Metrics *metrics.Metrics
 	// Audit records job events; nil records nothing.
 	Audit *audit.Recorder
+	// Completions wakes POST /v1/extract when the pool finished its job; nil leaves it
+	// to poll the store (sync.go).
+	Completions *worker.Notifier
 }
 
 type server struct {
@@ -59,6 +63,7 @@ type server struct {
 	mux    *http.ServeMux
 	limits *rateLimiter // in memory, one per handler (ADR 0003)
 	admin  bool         // the admin API's handler (admin.go)
+	fetch  *fetcher     // document urls of JSON submissions; nil unless documents.fetch.enabled
 }
 
 // route is one registered pattern, in the Go 1.22 ServeMux syntax.
@@ -88,6 +93,9 @@ func newServerWith(deps Deps, admin bool) *server {
 	if s.log == nil {
 		s.log = slog.Default()
 	}
+	if c := deps.Config; c != nil && c.Documents.Fetch.Enabled {
+		s.fetch = newFetcher(c.Documents.Fetch, nil, nil)
+	}
 	routes := s.routes
 	if admin {
 		routes = s.adminRoutes
@@ -105,6 +113,7 @@ func (s *server) routes() []route {
 	v1 := func(need string, h http.HandlerFunc) http.Handler { return s.authenticate(need, s.limit(h)) }
 	return []route{
 		{"POST /v1/jobs", v1(auth.ScopeJobs, s.submitJob)},        // submit.go: submission
+		{"POST /v1/extract", v1(auth.ScopeJobs, s.extractSync)},   // sync.go: submit and wait
 		{"GET /v1/jobs/{id}", v1(auth.ScopeJobsRead, s.getJob)},   // jobs_get.go: poll, first-read deletion
 		{"DELETE /v1/jobs/{id}", v1(auth.ScopeJobs, s.deleteJob)}, // jobs_get.go: early delete
 		{"GET /v1/quota", v1(auth.ScopeJobsRead, s.getQuota)},     // quota_get.go
@@ -115,10 +124,10 @@ func (s *server) routes() []route {
 }
 
 // dispatch routes r through the mux, answering unmatched requests with JSON 404 and 405
-// bodies instead of the mux's plain-text ones. Every /v1/jobs response carries
-// X-Service-Version.
+// bodies instead of the mux's plain-text ones. Every /v1/jobs and /v1/extract response
+// carries X-Service-Version.
 func (s *server) dispatch(w http.ResponseWriter, r *http.Request) {
-	if p := r.URL.Path; p == "/v1/jobs" || strings.HasPrefix(p, "/v1/jobs/") {
+	if p := r.URL.Path; p == "/v1/jobs" || p == "/v1/extract" || strings.HasPrefix(p, "/v1/jobs/") {
 		w.Header().Set(headerServiceVersion, s.deps.ServiceVersion)
 	}
 	h, pattern := s.mux.Handler(r)

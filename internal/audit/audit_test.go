@@ -44,12 +44,15 @@ var samples = map[audit.Kind]audit.Details{
 	audit.ConfigLoadedKind: audit.ConfigLoaded{
 		ServiceVersion: "vde-0.2.0+c0ffee12",
 	},
+	audit.WebhookDeliveredKind: audit.WebhookDelivered{Event: "job.finished", Attempt: 2, StatusCode: 204},
+	audit.WebhookFailedKind:    audit.WebhookFailed{Event: "job.finished", Attempt: 1, Reason: audit.WebhookStatus, StatusCode: 503},
 }
 
 func TestKindsAreFixed(t *testing.T) {
 	want := []string{
 		"token.created", "token.revoked", "app.enabled", "app.disabled", "job.created",
 		"job.finished", "job.deleted", "job.expired", "auth.failed", "config.loaded",
+		"webhook.delivered", "webhook.failed",
 	}
 	var got []string
 	for _, k := range audit.Kinds() {
