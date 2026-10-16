@@ -52,11 +52,12 @@ also uses 2 (rejected) and 3 (failed).
 
 ## What is planned
 
-These are not implemented yet and the guide marks them wherever they come up:
+Not implemented yet; the guide marks it wherever it comes up:
 
-- The admin HTTP API for applications and tokens (v0.2 epic 11). Today the `vde token` and
-  `vde app` commands are the only way.
-- `vde audit list`. Today audit events are read from the `audit_events` table with `sqlite3`
-  or from the log lines of `audit.log: true`.
 - Provider reachability probes: `vde config check --probe` reports "probe not available"
-  for every provider.
+  for every provider (planned for v0.3).
+- The `debug.log_content` sink: `serve` opens the content log file, but nothing writes to it
+  yet.
+
+The admin HTTP API (`admin.listen`, see [applications-and-tokens.md](applications-and-tokens.md)
+and [../api/admin.md](../api/admin.md)) and `vde audit list` are implemented.

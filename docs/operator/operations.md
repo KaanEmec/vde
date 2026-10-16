@@ -135,7 +135,8 @@ sqlite3 -readonly /var/lib/vde/vde.db \
    FROM audit_events WHERE application_id = 'bookings' ORDER BY id DESC LIMIT 50"
 ```
 
-A `vde audit list` command is planned and does not exist yet.
+`vde audit list [--config path] [--app id] [--since duration|RFC3339] [--kind kind] [--limit n]`
+prints the same rows without a database client.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

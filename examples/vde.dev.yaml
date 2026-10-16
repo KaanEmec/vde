@@ -32,3 +32,10 @@ groups:
 roles:
   extractor: {group: main}
   judge: {group: main}   # the same model checks its own work here; use two models for real use
+
+# One application so `vde token create --app dev-app` works right away (contract §12).
+# Limits are the defaults: quota 1000 per day, 300 requests and 30 submits per minute,
+# 20 jobs in progress, retention 24h.
+applications:
+  - id: dev-app
+    name: Development application
