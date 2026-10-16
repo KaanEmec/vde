@@ -1,6 +1,6 @@
 # Job: Provider interface and request types
 
-Version: v0.1 · Epic: 02 Provider adapters · Status: planned · Depends on: 01-02
+Version: v0.1 · Epic: 02 Provider adapters · Status: done · Depends on: 01-02
 
 ## Goal
 
@@ -40,13 +40,13 @@ type Error struct { Kind Kind; Status int; Message string; RetryAfter time.Durat
 
 ## Tasks
 
-- [ ] Define the types above; keep them in one file with doc comments. No options
+- [x] Define the types above; keep them in one file with doc comments. No options
       pattern, no builder.
-- [ ] `Error` implements `error` and `Unwrap`; helper `Classify(err) Kind` treats context
+- [x] `Error` implements `error` and `Unwrap`; helper `Classify(err) Kind` treats context
       deadline and network errors as retryable.
-- [ ] A shared `httpclient` helper: timeout from endpoint config, no redirects, response
+- [x] A shared `httpclient` helper: timeout from endpoint config, no redirects, response
       size cap, user agent `vde/<version>`.
-- [ ] Table test for `Classify`.
+- [x] Table test for `Classify`.
 
 ## Acceptance criteria
 
