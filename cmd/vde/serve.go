@@ -18,7 +18,6 @@ import (
 
 	"github.com/kaanemec/vde/internal/api"
 	"github.com/kaanemec/vde/internal/audit"
-	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
@@ -28,6 +27,7 @@ import (
 	"github.com/kaanemec/vde/internal/router"
 	"github.com/kaanemec/vde/internal/sweeper"
 	"github.com/kaanemec/vde/internal/version"
+	"github.com/kaanemec/vde/internal/webhook"
 	"github.com/kaanemec/vde/internal/worker"
 )
 
@@ -162,15 +162,16 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 			m.ObserveFailover(roleOf(req.System), from.Endpoint, to.Endpoint)
 		}
 	}
-	store, err := job.Open(cfg.Server.DatabasePath())
+	store, err := openStore(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	blobs, err := blob.NewFS(filepath.Join(cfg.Server.DataDir, "blobs"))
+	blobs, err := openBlobs(ctx, cfg)
 	if err != nil {
 		return err
 	}
+	logger.Info("storage opened", storageAttrs(cfg)...)
 
 	if len(cfg.Applications) == 0 {
 		logger.Warn("no applications are configured: every /v1 request is refused")
@@ -227,12 +228,19 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 		}
 	}
 
+	// The completion hook: wake POST /v1/extract waiters, queue the webhooks.
+	completions := worker.NewNotifier()
+	hooks := webhook.New(webhookTargets(cfg), webhook.Options{Audit: rec, Logger: logger})
 	pool := worker.New(store, blobs, cfg, roles, worker.Options{
 		Size:         cfg.Worker.Size,
 		PollInterval: cfg.Worker.PollInterval,
 		Observer:     progressObserver{Metrics: m, store: store},
 		Logger:       logger,
 		Audit:        rec.WithActor(audit.ActorWorker),
+		OnFinish: func(j job.Job) {
+			completions.Notify(j.ID)
+			hooks.JobFinished(j)
+		},
 	})
 	sweep := sweeper.New(store, blobs, sweeper.Options{
 		Interval:               cfg.Retention.SweepInterval,
@@ -255,6 +263,7 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 		Wake:              pool.Wake,
 		Metrics:           m,
 		Audit:             rec.WithActor(audit.ActorAPI),
+		Completions:       completions,
 	}
 	useTLS := cfg.Server.TLS.CertFile != ""
 	srv := newHTTPServer(api.New(deps), logger)
@@ -334,6 +343,9 @@ func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, lo
 	// rest of the drain time or keep their lease for the next start.
 	if perr := pool.Stop(drainCtx); perr != nil {
 		logger.Warn("worker pool stopped before its jobs finished; they resume after a restart", "error", perr)
+	}
+	if werr := hooks.Stop(drainCtx); werr != nil {
+		logger.Warn("webhook deliveries still pending at shutdown were dropped", "error", werr)
 	}
 	stopBackground()
 	<-sweepDone
@@ -446,4 +458,16 @@ func (p metered) Complete(ctx context.Context, req provider.Request) (provider.R
 	}
 	p.m.ObserveProviderCall(roleOf(req.System), p.endpoint, req.Model, outcome, time.Since(start))
 	return resp, err
+}
+
+// webhookTargets are the configured applications' completion webhooks, with their
+// secrets resolved from the environment at load.
+func webhookTargets(cfg *config.Config) map[string]webhook.Target {
+	targets := map[string]webhook.Target{}
+	for _, a := range cfg.Applications {
+		if a.Webhook.URL != "" {
+			targets[a.ID] = webhook.Target{URL: a.Webhook.URL, Secret: []byte(a.Webhook.Secret())}
+		}
+	}
+	return targets
 }

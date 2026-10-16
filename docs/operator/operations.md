@@ -151,7 +151,8 @@ ship the log stream (`audit.log: true`) to an external system if you need that. 
 
 ## Backups
 
-State is the SQLite database and the blobs directory, both under `server.data_dir`. The
+This section is about the defaults (SQLite and local blobs); for PostgreSQL and S3 see
+[storage](storage.md#backups). State is the SQLite database and the blobs directory, both under `server.data_dir`. The
 configuration file and the provider keys are yours to back up separately. What the database
 holds is sensitive (tokens' hashes, instructions, results of unexpired jobs), so store
 backups as protected as the live volume.
@@ -202,7 +203,8 @@ container) and start. Check `vde app list`, `vde token list --app <id>` and `/he
 
 **Migrations run at start.** `vde serve` (and the `token` and `app` commands, which open the
 same database) applies pending schema migrations in order, each in its own transaction, and
-records them in the `schema_migrations` table. There is nothing to run by hand.
+records them in the `schema_migrations` table. There is nothing to run by hand; `vde migrate`
+applies them explicitly when you prefer that (see [storage](storage.md#migrations)).
 
 **Downgrades are unsupported.** Migrations only move forward and the service does not check
 whether the database is newer than the binary, so an older binary on a migrated database may

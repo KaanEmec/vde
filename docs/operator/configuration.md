@@ -26,19 +26,22 @@ probing is planned for v0.3; until then test an endpoint with `vde extract` and 
 | `server.tls.key_file` | string | empty | TLS private key. |
 | `server.trusted_proxy` | bool | `false` | A reverse proxy terminates TLS; requests must carry `X-Forwarded-Proto: https`, from loopback too, or answer `400`. The header is believed from any peer, so make the service reachable only through the proxy. |
 | `server.insecure_http` | bool | `false` | Accept plain HTTP from any peer on any listener, for development or containers on a trusted private network only; `serve` logs a warning at start and `config check` warns. Not together with `tls`. |
-| `server.data_dir` | string | `/var/lib/vde` | Directory for the database (`vde.db`, shared by `serve`, `vde token` and `vde app`) and blobs (`blobs/`); also `content.log` when `debug.log_content` is on. Created with mode `0700` when missing. See [install](install.md#the-data-directory). |
+| `server.data_dir` | string | `/var/lib/vde` | Directory for the database (`vde.db`, shared by `serve`, `vde token` and `vde app`; not used with `storage.driver: postgres`) and blobs (`blobs/`; not used with `blobs.driver: s3`); also `content.log` when `debug.log_content` is on. Created with mode `0700` when missing. See [install](install.md#the-data-directory). |
 
 ## `endpoints.<name>`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `provider` | string | required | `anthropic`, `openai_compatible`, `gemini` or `fake` (tests). |
+| `provider` | string | required | `anthropic`, `openai_compatible`, `gemini`, `bedrock`, `vertex`, `classifier` (judge only, see [classifier](../providers/classifier.md)) or `fake` (tests). |
 | `preset` | string | empty | `openrouter` (only with `openai_compatible`): sets the base URL and attribution headers. |
-| `base_url` | string | per provider | `https://api.anthropic.com`, `https://generativelanguage.googleapis.com`, the preset's URL; required for `openai_compatible` without a preset. |
-| `api_key_env` | string | required except `openai_compatible` and `fake` | Name of the environment variable holding the key. The variable must be set when named. |
+| `base_url` | string | per provider | `https://api.anthropic.com`, `https://generativelanguage.googleapis.com`, the preset's URL; required for `openai_compatible` without a preset. Optional for `bedrock` and `vertex`, where it replaces the service endpoint (a private endpoint). |
+| `api_key_env` | string | required except `openai_compatible`, `bedrock`, `vertex`, `classifier` and `fake` | Name of the environment variable holding the key. The variable must be set when named. Rejected for `bedrock` and `vertex`, which use the cloud's default credential chain. |
+| `region` | string | required for `bedrock` and `vertex` | Cloud region that serves the calls (`us-east-1`, `us-east5`; `global` for Vertex). Not allowed on other providers. See [Bedrock](../providers/bedrock.md), [Vertex AI](../providers/vertex.md). |
+| `project` | string | required for `vertex` | Google Cloud project id. Not allowed on other providers. |
 | `timeout` | duration | `90s` | Per-call timeout of one provider request; must be positive. Local models often need more. |
 | `models.<model>.accepts` | list of media types | required, non-empty | Media types the model reads natively: `application/pdf`, `image/png`, `image/jpeg`, `image/webp`, `image/heic`, `text/plain`, `text/html`, `text/markdown`. At least one model per endpoint. You declare it; `vde` never probes the model. See [providers](providers.md#declaring-accepts). |
 | `models.<model>.max_output_tokens` | integer | `16384` | Output-token limit sent with every call to this model (`max_tokens`, `maxOutputTokens`). Raise it for large documents in schema-less mode; an answer cut off at it is retried with a request for a more compact one. Must be positive when set. |
+| `models.<model>.questions` | list | required for `classifier`, not allowed otherwise | The classifier's fixed questions, `{id, text, threshold}`, each phrased so "yes" passes; `id` unique, `threshold` above 0 and at most 1. The verdict is `accept` when every probability reaches its threshold. A classifier model's `accepts` may list text types only. Part of `service_version`. |
 
 ## `groups.<name>`
 
@@ -53,8 +56,12 @@ probing is planned for v0.3; until then test an endpoint with `vde extract` and 
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `roles.extractor.group` | string | required | Group serving the extractor. |
+| `roles.extractor.group` | string | required | Group serving the extractor. Must have no `classifier` endpoint. |
 | `roles.judge.group` | string | required | Group serving the judge; may be the extractor's group. |
+| `roles.extractor.escalation`, `roles.judge.escalation` | list of `{from_attempt, group}` | empty | Serve the role from `group` from attempt `from_attempt` on (a stronger model for later attempts); failover stays inside each group. `from_attempt` starts at 2, strictly increases and is at most `limits.max_attempts`. A resumed job counts attempts on, so it escalates on time. Every group a role may use must read the document's representation, or the submission is refused with `unsupported_document`. Invisible to callers except through `service_version`, which hashes the steps. |
+| `roles.second_judge.group` | string | empty (off) | A second, independent judge with the same request: an `accept` of the judge is confirmed by it before the job is accepted, and its `reject` feeds the next attempt like the judge's. Its failures follow the judge's rules (`judge_failed`, `provider_unavailable`; never acceptance). On acceptance the advisory entries of both judges are kept and `judge_confidence` is the second judge's. Hashed into `service_version` when set; unset changes nothing. Calls are counted as `judge` calls in metrics and `--verbose`. |
+| `roles.judge.feedback_fallback` | string | `whole_result` | What a reject from a `classifier` endpoint carries: `whole_result`, one entry at pointer `""` with a fixed message and the confidence; or `llm`, pointer-level feedback asked from `feedback_group` (one extra call per rejection). See [classifier](../providers/classifier.md#how-decisions-become-a-verdict). `llm` is hashed into `service_version`; a warning when no judge group has a classifier. |
+| `roles.judge.feedback_group` | string | required with `feedback_fallback: llm`, not allowed otherwise | The LLM group asked for feedback on classifier rejections, with the judge framing; no `classifier` endpoint. |
 
 ## `limits`
 
@@ -74,6 +81,21 @@ probing is planned for v0.3; until then test an endpoint with `vde extract` and 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `documents.html` | string | `raw_html` | HTML representation: `raw_html` or `visible_text`. |
+| `documents.images.enabled` | bool | `true` | Prepare images once at submit, for both roles: downscale, apply EXIF orientation, convert WebP. `false` sends images exactly as received. |
+| `documents.images.max_dimension` | int | `2048` | Longest side in pixels; larger images (and page images) are scaled down, keeping the aspect ratio, to save tokens. 64 to 16384. |
+| `documents.images.convert_to` | string | `image/jpeg` | Type a converted image is encoded as: `image/jpeg` or `image/png`. A PNG or JPEG that is within `max_dimension` and needs no rotation is never re-encoded. |
+| `documents.images.quality` | int | `85` | JPEG quality, 1 to 100. Ignored for `image/png`. |
+| `documents.fetch.enabled` | bool | `false` | Let JSON submissions name their document by `url` (v0.3). Off by default: a fetch is an outbound request the caller triggers (SSRF risk); turn it on only for hosts you trust. |
+| `documents.fetch.allowed_hosts` | list | empty | Exact host names (or `host:port` for a non-default port) the service may fetch from; required when enabled. Only `https`; redirects only to the same host; hosts resolving to loopback, private, link-local, shared or NAT64 addresses are refused at connect time. |
+| `documents.fetch.max_bytes` | int | `limits.document_bytes` | Largest fetched document; never above `limits.document_bytes`. Over it `413`. |
+| `documents.fetch.timeout` | duration | `10s` | Whole fetch, connect to last byte; positive and at most `1m`. |
+
+The image policy is part of `service_version`, so changing it changes the version of
+every result. A JPEG is rotated upright from its EXIF orientation tag. `image/webp` is
+decoded in the service and converted when a group's models do not accept it, so an
+endpoint that accepts only JPEG and PNG can still process a WebP document. `image/heic`
+is not converted (there is no cgo-free HEIC decoder): it is accepted only when the
+models of both groups declare `image/heic`. Images above 120 megapixels are refused with `413`.
 
 ## `applications[]` (used from v0.2)
 
@@ -91,12 +113,21 @@ probing is planned for v0.3; until then test an endpoint with `vde extract` and 
 | `retention.force_none` | bool | `false` | Treat every job as `retention: none`. |
 | `retention.delete_blobs_at_terminal` | bool | `false` | Delete the document and pages of `retention: default` jobs when they reach a terminal state instead of at expiry; the result stays readable. See [retention](retention.md). |
 | `documents.html` | string | top-level `documents.html` | Per-application HTML policy override: `raw_html` or `visible_text`. |
+| `webhook.url` | string | empty (no webhook) | Completion webhook (v0.3): the service POSTs a signed `job.finished` notice (id, status, `service_version`, `finished_at`; never content) here when a job of the application is terminal. Must be `https`, unless loopback or `server.insecure_http` is true; no credentials in the URL. Redirects are not followed. Only configured applications have webhooks, never those created over the admin API. See [the API guide](../api/guide.md#completion-webhooks). |
+| `webhook.secret_env` | string | required with `url` | Name of the environment variable holding the HMAC-SHA256 signing secret shared with the receiver; must be set; under 16 bytes is a warning. |
+| `webhook.events` | list | `[job.finished]` | Events to send; `job.finished` is the only one. |
 
 Applications are mirrored into the database when `vde serve` starts: an application
 removed from the file is disabled, its tokens stop working, and its jobs remain until they
 expire. Applications created over the [admin API](../api/admin.md) are kept as stored; for
 the applications the file declares, the file wins at every start. `vde app list` shows
 them. All counts above (`max_attempts`, `quota.limit`, `rate.*`) must be at least 1. See [applications and tokens](applications-and-tokens.md).
+
+## `sync` (used by `vde serve`)
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `sync.max_wait` | duration | `60s` | Longest time `POST /v1/extract` holds a request open for the job to finish before answering `202`; positive and at most `120s`. The handler extends the connection's read and write deadlines for the wait; a reverse proxy in front needs a read timeout above it. |
 
 ## `auth`
 
@@ -131,6 +162,29 @@ them. All counts above (`max_attempts`, `quota.limit`, `rate.*`) must be at leas
 writable at most every 30 s. Expose it to the orchestrator, not the public internet. Its reasons are explained in
 [operations](operations.md#health-healthz).
 
+## `storage` and `blobs`
+
+Where job rows and document bytes live. The defaults keep everything in `server.data_dir`;
+several replicas need `postgres` and `s3`. When to choose which, pool sizing, backups and
+the bucket lifecycle rule: [storage](storage.md). Every command that opens the store (`serve`,
+`app`, `token`, `audit`, `migrate`) uses these keys.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `storage.driver` | string | `sqlite` | `sqlite` (`server.data_dir/vde.db`, one `vde serve` process) or `postgres` (PostgreSQL 13 or later, any number of replicas). Anything else is an error. |
+| `storage.dsn_env` | string | `VDE_DATABASE_URL` with `postgres` | Name of the environment variable holding the PostgreSQL connection string, a `postgres://` URL or a `key=value` string. Must be set with `postgres`. The DSN carries the password: it is never in the file, never printed by `config check` and redacted from errors. Ignored (a warning) with `sqlite`. |
+| `storage.max_open_conns` | int | `16` (when `0`) | PostgreSQL connection pool size, 0 to 1000; half of it is kept idle, connections are recycled after 30 minutes. Fewer than `worker.size` + 2 is a warning. Ignored with `sqlite`. |
+| `blobs.driver` | string | `fs` | `fs` (files under `server.data_dir/blobs`) or `s3` (an S3-compatible bucket: AWS S3, MinIO, Cloudflare R2, Backblaze B2). `fs` with `storage.driver: postgres` is a warning, since replicas on other hosts cannot read each other's documents. |
+| `blobs.bucket` | string | required with `s3` | Bucket name (3 to 63 lowercase letters, digits, dots, hyphens). Must exist: `serve` checks it at start. Objects are `jobs/<job id>/document` and `jobs/<job id>/page-NN`. |
+| `blobs.region` | string | required with `s3` | The bucket's region (`eu-central-1`; `auto` for R2; any value for MinIO). It decides where documents are stored: see [privacy](privacy.md#data-residency). |
+| `blobs.endpoint` | string | empty (AWS S3) | S3 API URL of a non-AWS store, `https://host[:port]` without a path. Plain `http://` on a non-loopback host is a warning. |
+| `blobs.path_style` | bool | `false` | Address the bucket in the URL path instead of the host name; MinIO and most self-hosted stores need `true`. |
+| `blobs.sse` | string | `AES256` | Server-side encryption header on every upload: `AES256` (SSE-S3) or `""` for none (MinIO without a KMS refuses SSE-S3). |
+
+S3 credentials come from the AWS default chain, never from the file: `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN`), a profile in `~/.aws` (`AWS_PROFILE`),
+or the instance, task or pod role.
+
 ## The example files
 
 [`examples/`](../../examples/README.md) holds complete, valid configurations. Copy one, set
@@ -152,5 +206,5 @@ paid-tier key for confidential documents), [`vde.openrouter.yaml`](../../example
 page images).
 
 The service keys not shown in the examples (`limits`, `worker`, `retention`, `audit`,
-`metrics`, `auth`, `logging`) all have defaults and are only set when you need to change
+`metrics`, `auth`, `logging`, `storage`, `blobs`) all have defaults and are only set when you need to change
 them; the tables above are the complete list.

@@ -34,6 +34,11 @@ type Config struct {
 	Worker    Worker           `yaml:"worker"`
 	Retention ServiceRetention `yaml:"retention"`
 	Audit     Audit            `yaml:"audit"`
+	// Storage and Blobs choose the job store and blob store drivers (storage.go).
+	Storage Storage `yaml:"storage"`
+	Blobs   Blobs   `yaml:"blobs"`
+	// Sync bounds POST /v1/extract (delivery.go).
+	Sync Sync `yaml:"sync"`
 }
 
 // Server configures the HTTP listener (used from v0.2).
@@ -59,12 +64,17 @@ type TLS struct {
 
 // Endpoint is one provider endpoint and the models it serves.
 type Endpoint struct {
-	Provider  string           `yaml:"provider"` // anthropic, openai_compatible, gemini or fake
-	Preset    string           `yaml:"preset,omitempty"`
-	BaseURL   string           `yaml:"base_url"`
-	APIKeyEnv string           `yaml:"api_key_env"` // name of the environment variable holding the key
-	Timeout   time.Duration    `yaml:"timeout"`     // per call
-	Models    map[string]Model `yaml:"models"`
+	Provider  string `yaml:"provider"` // anthropic, openai_compatible, gemini, bedrock, vertex or fake
+	Preset    string `yaml:"preset,omitempty"`
+	BaseURL   string `yaml:"base_url"`
+	APIKeyEnv string `yaml:"api_key_env"` // name of the environment variable holding the key
+	// Region is the cloud region of a bedrock or vertex endpoint (for example us-east-1,
+	// us-east5). Credentials come from the cloud's default chain, not from the file.
+	Region string `yaml:"region,omitempty"`
+	// Project is the Google Cloud project id of a vertex endpoint.
+	Project string           `yaml:"project,omitempty"`
+	Timeout time.Duration    `yaml:"timeout"` // per call
+	Models  map[string]Model `yaml:"models"`
 
 	apiKey string // resolved from APIKeyEnv at load; never serialized or printed
 }
@@ -93,6 +103,18 @@ type Model struct {
 	Accepts []string `yaml:"accepts"` // media types the model reads natively
 	// MaxOutputTokens caps the tokens of one answer; 0 means DefaultMaxOutputTokens.
 	MaxOutputTokens int `yaml:"max_output_tokens"`
+	// Questions are the fixed typed questions a classifier model answers (provider
+	// classifier only; required there).
+	Questions []Question `yaml:"questions,omitempty"`
+}
+
+// Question is one typed question of a classifier model, phrased so that "yes" means the
+// candidate passes. The verdict is accept when every question's probability of "yes" is
+// at least its threshold.
+type Question struct {
+	ID        string  `yaml:"id"`
+	Text      string  `yaml:"text"`
+	Threshold float64 `yaml:"threshold"` // from 0 (exclusive) to 1
 }
 
 // DefaultMaxOutputTokens is the output limit requested from a model that sets no
@@ -130,14 +152,54 @@ type Failover struct {
 
 // Roles assigns a group to each role. One group may serve both.
 type Roles struct {
-	Extractor Role `yaml:"extractor"`
-	Judge     Role `yaml:"judge"`
+	Extractor Role      `yaml:"extractor"`
+	Judge     JudgeRole `yaml:"judge"`
+	// SecondJudge, when its group is set, must also accept a candidate the judge accepted
+	// before the job is accepted. Unset by default.
+	SecondJudge SecondJudge `yaml:"second_judge,omitempty"`
 }
 
 // Role names the group serving it.
 type Role struct {
 	Group string `yaml:"group"`
+	// Escalation moves later attempts to other groups, in increasing from_attempt order;
+	// failover stays inside each group.
+	Escalation []Escalation `yaml:"escalation,omitempty"`
 }
+
+// Escalation serves a role from Group from attempt FromAttempt on.
+type Escalation struct {
+	FromAttempt int    `yaml:"from_attempt"`
+	Group       string `yaml:"group"`
+}
+
+// JudgeRole is the judge's Role plus how a classifier judge's rejections get feedback.
+type JudgeRole struct {
+	Role `yaml:",inline"`
+	// FeedbackFallback is FeedbackWholeResult (the default when empty) or FeedbackLLM.
+	FeedbackFallback string `yaml:"feedback_fallback,omitempty"`
+	// FeedbackGroup is the LLM group asked for pointer-level feedback when a classifier
+	// endpoint rejects, with feedback_fallback: llm.
+	FeedbackGroup string `yaml:"feedback_group,omitempty"`
+}
+
+// Feedback fallback modes of a classifier judge (roles.judge.feedback_fallback).
+const (
+	// FeedbackWholeResult keeps the classifier's single entry at pointer "".
+	FeedbackWholeResult = "whole_result"
+	// FeedbackLLM asks roles.judge.feedback_group for feedback on each classifier reject.
+	FeedbackLLM = "llm"
+)
+
+// SecondJudge names the group of the optional second judge. It reads the judge's
+// instructions.
+type SecondJudge struct {
+	Group string `yaml:"group"`
+}
+
+// ProviderClassifier is the provider type of classifier endpoints, which can serve only
+// the judge role.
+const ProviderClassifier = "classifier"
 
 // Limits bounds the extraction loop and the documents accepted.
 type Limits struct {
@@ -155,7 +217,19 @@ type Limits struct {
 
 // Documents sets the representation policy.
 type Documents struct {
-	HTML string `yaml:"html"` // raw_html or visible_text
+	HTML   string `yaml:"html"` // raw_html or visible_text
+	Images Images `yaml:"images"`
+	Fetch  Fetch  `yaml:"fetch"` // document URLs in JSON submissions (delivery.go)
+}
+
+// Images is the image conversion policy (v0.3, ADR 0006): images and page images are
+// downscaled, rotated by their EXIF orientation and re-encoded once at submit, and WebP
+// is converted for endpoints that do not read it. It is part of service_version.
+type Images struct {
+	Enabled      bool   `yaml:"enabled"`
+	MaxDimension int    `yaml:"max_dimension"` // longest side in pixels; larger images are scaled down
+	ConvertTo    string `yaml:"convert_to"`    // image/jpeg or image/png
+	Quality      int    `yaml:"quality"`       // JPEG quality 1-100
 }
 
 // Application is one caller with its own limits (used from v0.2).
@@ -167,6 +241,7 @@ type Application struct {
 	Rate        Rate         `yaml:"rate"`
 	Retention   Retention    `yaml:"retention"`
 	Documents   AppDocuments `yaml:"documents"`
+	Webhook     Webhook      `yaml:"webhook,omitempty"` // completion webhook (delivery.go); empty url means none
 }
 
 // Quota is the number of submissions allowed per window.
@@ -225,6 +300,8 @@ const (
 	defaultDocumentBytes     = 25 << 20
 	defaultPageBytes         = 10 << 20
 	defaultPages             = 20
+	defaultImageMaxDimension = 2048
+	defaultImageQuality      = 85
 	defaultRequestBytes      = 128 << 20
 	defaultQuotaLimit        = 1000
 	defaultQuotaWindow       = "P1D"
@@ -258,13 +335,18 @@ func defaults() *Config {
 			Pages:             defaultPages,
 			RequestBytes:      defaultRequestBytes,
 		},
-		Documents: Documents{HTML: "raw_html"},
+		Documents: Documents{
+			HTML:   "raw_html",
+			Images: Images{Enabled: true, MaxDimension: defaultImageMaxDimension, ConvertTo: "image/jpeg", Quality: defaultImageQuality},
+		},
 		Auth:      Auth{MaxTokenTTL: defaultMaxTokenTTL},
 		Logging:   Logging{Level: "info", Format: "json"},
 		Admin:     Admin{Listen: defaultAdminListen},
 		Worker:    Worker{Size: defaultWorkerSize, PollInterval: defaultPollInterval},
 		Retention: ServiceRetention{SweepInterval: defaultSweepInterval},
 		Audit:     Audit{Retention: defaultAuditRetention},
+		Storage:   defaultStorage(),
+		Blobs:     defaultBlobs(),
 	}
 }
 
@@ -300,6 +382,8 @@ func Parse(data []byte, getenv func(string) string) (*Config, error) {
 	if cfg.Metrics.TokenEnv != "" {
 		cfg.Metrics.token = getenv(cfg.Metrics.TokenEnv)
 	}
+	cfg.resolveDelivery(getenv)
+	cfg.Storage.resolve(getenv)
 	return cfg, nil
 }
 

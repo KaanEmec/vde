@@ -54,6 +54,8 @@ func (c *Config) Validate() Issues {
 	v.other(c)
 	v.applications(c)
 	v.service(c)
+	v.storage(c)
+	v.delivery(c)
 	return v.issues
 }
 
@@ -77,7 +79,7 @@ const (
 )
 
 var (
-	providers = []string{"anthropic", "openai_compatible", "gemini", "fake"}
+	providers = []string{"anthropic", "openai_compatible", "gemini", "bedrock", "vertex", ProviderClassifier, "fake"}
 	// knownMediaTypes are the document types of contract §4, MUST and SHOULD.
 	knownMediaTypes = []string{
 		"application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic",
@@ -141,12 +143,13 @@ func (v *validator) endpoints(c *Config) {
 			}
 		}
 		switch u, err := url.Parse(e.BaseURL); {
-		case e.BaseURL == "" && e.Provider != "fake":
+		case e.BaseURL == "" && e.Provider != "fake" && !cloudProvider(e.Provider):
 			v.errorf(key+".base_url", "is required for provider %q without a preset", e.Provider)
 		case e.BaseURL != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == ""):
 			v.errorf(key+".base_url", "%q is not an absolute http or https URL", e.BaseURL)
 		}
 		v.apiKey(key, e)
+		v.cloud(key, e)
 		if e.Timeout < 0 {
 			v.errorf(key+".timeout", "must be positive")
 		}
@@ -166,17 +169,82 @@ func (v *validator) endpoints(c *Config) {
 				if !slices.Contains(knownMediaTypes, mt) {
 					v.errorf(mkey, "unknown media type %q; known: %s", mt, strings.Join(knownMediaTypes, ", "))
 				}
+				if e.Provider == ProviderClassifier && !strings.HasPrefix(mt, "text/") {
+					v.errorf(mkey, "%q: a classifier reads text only", mt)
+				}
 			}
+			v.questions(key+".models."+model+".questions", e.Provider, e.Models[model].Questions)
 		}
+	}
+}
+
+// questions checks a classifier model's questions; other providers take none.
+func (v *validator) questions(key, provider string, qs []Question) {
+	if provider != ProviderClassifier {
+		if len(qs) > 0 {
+			v.errorf(key, "apply only to classifier endpoints")
+		}
+		return
+	}
+	if len(qs) == 0 {
+		v.errorf(key, "a classifier model needs at least one question")
+	}
+	seen := map[string]bool{}
+	for i, q := range qs {
+		qkey := fmt.Sprintf("%s[%d]", key, i)
+		switch {
+		case q.ID == "":
+			v.errorf(qkey+".id", "is required")
+		case seen[q.ID]:
+			v.errorf(qkey+".id", "duplicate question id %q", q.ID)
+		}
+		seen[q.ID] = true
+		if strings.TrimSpace(q.Text) == "" {
+			v.errorf(qkey+".text", "is required")
+		}
+		if q.Threshold <= 0 || q.Threshold > 1 {
+			v.errorf(qkey+".threshold", "%g must be above 0 and at most 1", q.Threshold)
+		}
+	}
+}
+
+// cloudProvider reports whether the provider authenticates with the cloud's own
+// credential chain (AWS default chain, Google application default credentials) instead
+// of an API key, and takes its location from region (and project) instead of a base_url.
+func cloudProvider(p string) bool { return p == "bedrock" || p == "vertex" }
+
+// cloud checks the region and project of bedrock and vertex endpoints, and that no other
+// provider sets them (a silent ignore would hide a misplaced key).
+func (v *validator) cloud(key string, e *Endpoint) {
+	if cloudProvider(e.Provider) {
+		if e.Region == "" {
+			v.errorf(key+".region", "is required for provider %q", e.Provider)
+		}
+		if e.Provider == "vertex" && e.Project == "" {
+			v.errorf(key+".project", "is required for provider %q", e.Provider)
+		}
+		if e.APIKeyEnv != "" {
+			v.errorf(key+".api_key_env", "is not used by provider %q: credentials come from the cloud's default credential chain", e.Provider)
+		}
+		return
+	}
+	if e.Region != "" {
+		v.errorf(key+".region", "applies only to bedrock and vertex endpoints")
+	}
+	if e.Project != "" {
+		v.errorf(key+".project", "applies only to vertex endpoints")
 	}
 }
 
 // apiKey checks api_key_env. Only names are ever printed, never values.
 func (v *validator) apiKey(key string, e *Endpoint) {
+	if cloudProvider(e.Provider) {
+		return // v.cloud reports a key variable that is set but unused
+	}
 	key += ".api_key_env"
 	switch {
 	case e.APIKeyEnv == "":
-		if e.Provider != "openai_compatible" && e.Provider != "fake" {
+		if e.Provider != "openai_compatible" && e.Provider != "fake" && e.Provider != ProviderClassifier {
 			v.errorf(key, "is required for provider %q", e.Provider)
 		}
 	case !envNameRe.MatchString(e.APIKeyEnv):
@@ -222,37 +290,112 @@ func (v *validator) groups(c *Config) {
 }
 
 func (v *validator) roles(c *Config) {
-	for _, r := range []struct{ name, group string }{
-		{"extractor", c.Roles.Extractor.Group},
-		{"judge", c.Roles.Judge.Group},
-	} {
-		key := "roles." + r.name + ".group"
-		if r.group == "" {
-			v.errorf(key, "is required")
-			continue
+	v.role(c, "roles.extractor", c.Roles.Extractor, false)
+	v.role(c, "roles.judge", c.Roles.Judge.Role, true)
+	v.judgeFeedback(c)
+	if g := c.Roles.SecondJudge.Group; g != "" {
+		v.roleGroup(c, "roles.second_judge.group", g, true)
+	}
+}
+
+// role checks a role's group and its escalation steps: defined groups, from_attempt from
+// 2, strictly increasing and at most limits.max_attempts.
+func (v *validator) role(c *Config, base string, r Role, judge bool) {
+	v.roleGroup(c, base+".group", r.Group, judge)
+	prev := 1
+	for i, e := range r.Escalation {
+		key := fmt.Sprintf("%s.escalation[%d]", base, i)
+		v.roleGroup(c, key+".group", e.Group, judge)
+		switch {
+		case i == 0 && e.FromAttempt < 2:
+			v.errorf(key+".from_attempt", "%d must be at least 2: attempt 1 runs on %s.group", e.FromAttempt, base)
+		case e.FromAttempt <= prev:
+			v.errorf(key+".from_attempt", "%d must be greater than the previous step's %d", e.FromAttempt, prev)
+		case c.Limits.MaxAttempts > 0 && e.FromAttempt > c.Limits.MaxAttempts:
+			v.errorf(key+".from_attempt", "%d is above limits.max_attempts %d", e.FromAttempt, c.Limits.MaxAttempts)
 		}
-		g, ok := c.Groups[r.group]
-		if !ok {
-			v.errorf(key, "group %q is not defined", r.group)
-			continue
+		prev = max(prev, e.FromAttempt)
+	}
+}
+
+// roleGroup checks one group serving a role: named, defined, readable, and, for the
+// extractor, free of classifier endpoints (a classifier does not generate).
+func (v *validator) roleGroup(c *Config, key, group string, judge bool) {
+	if group == "" {
+		v.errorf(key, "is required")
+		return
+	}
+	g, ok := c.Groups[group]
+	if !ok {
+		v.errorf(key, "group %q is not defined", group)
+		return
+	}
+	if g == nil || len(g.Endpoints) == 0 {
+		return // reported by groups
+	}
+	if !judge && c.hasClassifier(group) {
+		v.errorf(key, "group %q has a classifier endpoint, which can serve only the judge", group)
+	}
+	var missing []string
+	for _, capability := range c.Capabilities(group) {
+		if capability.Required && capability.Via == "" {
+			missing = append(missing, capability.MediaType)
 		}
-		if g == nil || len(g.Endpoints) == 0 {
-			continue // reported by groups
-		}
-		var missing []string
-		for _, capability := range c.Capabilities(r.group) {
-			if capability.Required && capability.Via == "" {
-				missing = append(missing, capability.MediaType)
-			}
-			if capability.MediaType == "application/pdf" && capability.Via == ViaPages {
-				v.warnf(key, "no endpoint-model pair in group %q reads application/pdf natively; "+
-					"PDFs work only when callers send page images, since the service never renders pages", r.group)
-			}
-		}
-		if len(missing) > 0 {
-			v.warnf(key, "group %q cannot read %s, directly or via page images", r.group, strings.Join(missing, ", "))
+		if capability.MediaType == "application/pdf" && capability.Via == ViaPages {
+			v.warnf(key, "no endpoint-model pair in group %q reads application/pdf natively; "+
+				"PDFs work only when callers send page images, since the service never renders pages", group)
 		}
 	}
+	if len(missing) > 0 {
+		v.warnf(key, "group %q cannot read %s, directly or via page images", group, strings.Join(missing, ", "))
+	}
+}
+
+// judgeFeedback checks roles.judge.feedback_fallback and feedback_group.
+func (v *validator) judgeFeedback(c *Config) {
+	j := c.Roles.Judge
+	switch j.FeedbackFallback {
+	case "", FeedbackWholeResult:
+		if j.FeedbackGroup != "" {
+			v.errorf("roles.judge.feedback_group", "is used only with feedback_fallback: %s", FeedbackLLM)
+		}
+	case FeedbackLLM:
+		if j.FeedbackGroup == "" {
+			v.errorf("roles.judge.feedback_group", "is required with feedback_fallback: %s", FeedbackLLM)
+			break
+		}
+		v.roleGroup(c, "roles.judge.feedback_group", j.FeedbackGroup, true)
+		if c.hasClassifier(j.FeedbackGroup) {
+			v.errorf("roles.judge.feedback_group", "group %q has a classifier endpoint; feedback needs an LLM group", j.FeedbackGroup)
+		}
+	default:
+		v.errorf("roles.judge.feedback_fallback", "%q is not one of %s, %s", j.FeedbackFallback, FeedbackWholeResult, FeedbackLLM)
+		return
+	}
+	if j.FeedbackFallback == "" {
+		return
+	}
+	classifier := c.hasClassifier(j.Group) || c.hasClassifier(c.Roles.SecondJudge.Group)
+	for _, e := range j.Escalation {
+		classifier = classifier || c.hasClassifier(e.Group)
+	}
+	if !classifier {
+		v.warnf("roles.judge.feedback_fallback", "has no effect: no judge group has a classifier endpoint")
+	}
+}
+
+// hasClassifier reports whether group has an endpoint of provider classifier.
+func (c *Config) hasClassifier(group string) bool {
+	g := c.Groups[group]
+	if g == nil {
+		return false
+	}
+	for _, entry := range g.Endpoints {
+		if e := c.Endpoints[entry.Endpoint]; e != nil && e.Provider == ProviderClassifier {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *validator) limits(c *Config) {
@@ -284,10 +427,32 @@ func (v *validator) limits(c *Config) {
 	}
 }
 
+// Bounds of documents.images: below the minimum a page is unreadable; above the maximum
+// the decoded image no longer fits a sensible memory budget.
+const (
+	minImageDimension = 64
+	maxImageDimension = 16384
+)
+
+var imageTargets = []string{"image/jpeg", "image/png"}
+
+func (v *validator) images(i Images) {
+	if i.MaxDimension < minImageDimension || i.MaxDimension > maxImageDimension {
+		v.errorf("documents.images.max_dimension", "%d must be between %d and %d", i.MaxDimension, minImageDimension, maxImageDimension)
+	}
+	if !slices.Contains(imageTargets, i.ConvertTo) {
+		v.errorf("documents.images.convert_to", "%q is not one of %s", i.ConvertTo, strings.Join(imageTargets, ", "))
+	}
+	if i.Quality < 1 || i.Quality > 100 {
+		v.errorf("documents.images.quality", "%d must be between 1 and 100", i.Quality)
+	}
+}
+
 func (v *validator) other(c *Config) {
 	if !slices.Contains(htmlPolicies, c.Documents.HTML) {
 		v.errorf("documents.html", "%q is not one of %s", c.Documents.HTML, strings.Join(htmlPolicies, ", "))
 	}
+	v.images(c.Documents.Images)
 	if !slices.Contains([]string{"debug", "info", "warn", "error"}, c.Logging.Level) {
 		v.errorf("logging.level", "%q is not one of debug, info, warn, error", c.Logging.Level)
 	}

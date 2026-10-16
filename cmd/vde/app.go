@@ -55,12 +55,6 @@ func loadOperatorConfig(path string) (*config.Config, error) {
 	return config.Parse(data, os.Getenv)
 }
 
-// openStore opens the database serve uses, server.data_dir/vde.db. SQLite in WAL mode
-// lets a command write while serve runs.
-func openStore(cfg *config.Config) (*job.SQLite, error) {
-	return job.Open(cfg.Server.DatabasePath())
-}
-
 // cliAudit is the recorder of the operator commands: the store, actor cli.
 func cliAudit(store job.Store) *audit.Recorder {
 	return audit.New(store, audit.Options{}).WithActor(audit.ActorCLI)
@@ -150,7 +144,7 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return exitFailure
 	}
-	store, err := openStore(cfg)
+	store, err := openStore(context.Background(), cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "vde app list: %v\n", err)
 		return exitFailure

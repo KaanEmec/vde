@@ -149,6 +149,7 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 		l.MaxAttempts, l.JobTimeout, l.JudgeReparseTries)
 	fmt.Fprintf(tw, "  document_bytes %d, page_bytes %d, pages %d\n", l.DocumentBytes, l.PageBytes, l.Pages)
 	fmt.Fprintf(tw, "\napplications %d, documents.html %s\n", len(cfg.Applications), cfg.Documents.HTML)
+	fmt.Fprintf(tw, "%s\n", storageSummary(cfg))
 	fmt.Fprintf(tw, "service_version: %s\n", extract.ServiceVersion(cfg, version.Version))
 	tw.Flush()
 }

@@ -23,6 +23,24 @@ func openTest(t *testing.T) *SQLite {
 	return s
 }
 
+// testDrivers are the drivers the shared store tests run on. PostgreSQL needs
+// VDE_TEST_POSTGRES (a DSN of a throwaway database) and is skipped without it.
+var testDrivers = []struct {
+	name string
+	open func(t *testing.T) *sqlStore
+}{
+	{"sqlite", func(t *testing.T) *sqlStore { return &openTest(t).sqlStore }},
+	{"postgres", func(t *testing.T) *sqlStore { return &openTestPostgres(t).sqlStore }},
+}
+
+// forEachDriver runs fn as a subtest per driver, each with a fresh, empty store.
+func forEachDriver(t *testing.T, fn func(t *testing.T, s *sqlStore)) {
+	t.Helper()
+	for _, d := range testDrivers {
+		t.Run(d.name, func(t *testing.T) { fn(t, d.open(t)) })
+	}
+}
+
 func testApp(id string) Application {
 	return Application{
 		ID: id, Name: id, MaxAttempts: 3, QuotaLimit: 1000, QuotaWindow: "P1D",
@@ -30,7 +48,7 @@ func testApp(id string) Application {
 	}
 }
 
-func seedApp(t *testing.T, s *SQLite, a Application) {
+func seedApp(t *testing.T, s Store, a Application) {
 	t.Helper()
 	if err := s.UpsertApplication(t.Context(), a, t0); err != nil {
 		t.Fatal(err)
@@ -46,7 +64,7 @@ func newJob(app string) *Job {
 	}
 }
 
-func createJob(t *testing.T, s *SQLite, j *Job) *Job {
+func createJob(t *testing.T, s Store, j *Job) *Job {
 	t.Helper()
 	if err := s.CreateJob(t.Context(), j); err != nil {
 		t.Fatal(err)
@@ -96,406 +114,415 @@ func TestOpenPermissionsAndPragmas(t *testing.T) {
 }
 
 func TestApplications(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	a := testApp("travelinbox-dev")
-	a.ForceNone, a.HTMLPolicy = true, "visible_text"
-	seedApp(t, s, a)
-	seedApp(t, s, testApp("other"))
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		a := testApp("travelinbox-dev")
+		a.ForceNone, a.HTMLPolicy = true, "visible_text"
+		seedApp(t, s, a)
+		seedApp(t, s, testApp("other"))
 
-	got, err := s.GetApplication(ctx, a.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !got.Enabled || !got.ForceNone || got.HTMLPolicy != "visible_text" || !got.CreatedAt.Equal(t0) {
-		t.Errorf("GetApplication = %+v", got)
-	}
+		got, err := s.GetApplication(ctx, a.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.Enabled || !got.ForceNone || got.HTMLPolicy != "visible_text" || !got.CreatedAt.Equal(t0) {
+			t.Errorf("GetApplication = %+v", got)
+		}
 
-	a.Name = "renamed"
-	if err := s.UpsertApplication(ctx, a, t0.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	got, _ = s.GetApplication(ctx, a.ID)
-	if got.Name != "renamed" || !got.CreatedAt.Equal(t0) || !got.UpdatedAt.Equal(t0.Add(time.Hour)) {
-		t.Errorf("after upsert = %+v", got)
-	}
+		a.Name = "renamed"
+		if err := s.UpsertApplication(ctx, a, t0.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		got, _ = s.GetApplication(ctx, a.ID)
+		if got.Name != "renamed" || !got.CreatedAt.Equal(t0) || !got.UpdatedAt.Equal(t0.Add(time.Hour)) {
+			t.Errorf("after upsert = %+v", got)
+		}
 
-	disabled, err := s.DisableApplicationsNotIn(ctx, []string{a.ID}, t0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(disabled, []string{"other"}) {
-		t.Errorf("disabled = %v, want [other]", disabled)
-	}
-	if disabled, _ := s.DisableApplicationsNotIn(ctx, []string{a.ID}, t0); len(disabled) != 0 {
-		t.Errorf("second disable = %v, want none", disabled)
-	}
-	list, err := s.ListApplications(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(list) != 2 || list[0].ID != "other" || list[0].Enabled || !list[1].Enabled {
-		t.Errorf("ListApplications = %+v", list)
-	}
-	seedApp(t, s, testApp("other")) // back in the configuration: enabled again
-	if got, _ := s.GetApplication(ctx, "other"); !got.Enabled {
-		t.Error("upsert did not re-enable")
-	}
-	if _, err := s.GetApplication(ctx, "missing"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("missing application: %v, want ErrNotFound", err)
-	}
+		disabled, err := s.DisableApplicationsNotIn(ctx, []string{a.ID}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(disabled, []string{"other"}) {
+			t.Errorf("disabled = %v, want [other]", disabled)
+		}
+		if disabled, _ := s.DisableApplicationsNotIn(ctx, []string{a.ID}, t0); len(disabled) != 0 {
+			t.Errorf("second disable = %v, want none", disabled)
+		}
+		list, err := s.ListApplications(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 2 || list[0].ID != "other" || list[0].Enabled || !list[1].Enabled {
+			t.Errorf("ListApplications = %+v", list)
+		}
+		seedApp(t, s, testApp("other")) // back in the configuration: enabled again
+		if got, _ := s.GetApplication(ctx, "other"); !got.Enabled {
+			t.Error("upsert did not re-enable")
+		}
+		if _, err := s.GetApplication(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("missing application: %v, want ErrNotFound", err)
+		}
+	})
 }
 
 func TestTokens(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	tok := Token{
-		ID: "abcd1234", ApplicationID: "app", Hash: bytes.Repeat([]byte{7}, 32),
-		Scopes: []string{"jobs", "jobs:read"}, Label: "ci", ExpiresAt: t0.AddDate(1, 0, 0), CreatedAt: t0,
-	}
-	if err := s.CreateToken(ctx, tok); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.CreateToken(ctx, tok); !errors.Is(err, ErrDuplicate) {
-		t.Errorf("duplicate token: %v, want ErrDuplicate", err)
-	}
-	bad := tok
-	bad.ID, bad.ApplicationID = "other", "missing"
-	if err := s.CreateToken(ctx, bad); err == nil {
-		t.Error("token for an unknown application was stored")
-	}
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		tok := Token{
+			ID: "abcd1234", ApplicationID: "app", Hash: bytes.Repeat([]byte{7}, 32),
+			Scopes: []string{"jobs", "jobs:read"}, Label: "ci", ExpiresAt: t0.AddDate(1, 0, 0), CreatedAt: t0,
+		}
+		if err := s.CreateToken(ctx, tok); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.CreateToken(ctx, tok); !errors.Is(err, ErrDuplicate) {
+			t.Errorf("duplicate token: %v, want ErrDuplicate", err)
+		}
+		bad := tok
+		bad.ID, bad.ApplicationID = "other", "missing"
+		if err := s.CreateToken(ctx, bad); err == nil {
+			t.Error("token for an unknown application was stored")
+		}
 
-	got, err := s.GetTokenByID(ctx, tok.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got.Hash, tok.Hash) || !slices.Equal(got.Scopes, tok.Scopes) || !got.ExpiresAt.Equal(tok.ExpiresAt) ||
-		!got.RevokedAt.IsZero() || !got.LastUsedAt.IsZero() {
-		t.Errorf("GetTokenByID = %+v", got)
-	}
+		got, err := s.GetTokenByID(ctx, tok.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got.Hash, tok.Hash) || !slices.Equal(got.Scopes, tok.Scopes) || !got.ExpiresAt.Equal(tok.ExpiresAt) ||
+			!got.RevokedAt.IsZero() || !got.LastUsedAt.IsZero() {
+			t.Errorf("GetTokenByID = %+v", got)
+		}
 
-	if err := s.TouchTokenLastUsed(ctx, tok.ID, t0.Add(time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.TouchTokenLastUsed(ctx, tok.ID, t0.Add(90*time.Second)); err != nil { // within a minute: no write
-		t.Fatal(err)
-	}
-	got, _ = s.GetTokenByID(ctx, tok.ID)
-	if !got.LastUsedAt.Equal(t0.Add(time.Minute)) {
-		t.Errorf("last_used_at = %v, want %v", got.LastUsedAt, t0.Add(time.Minute))
-	}
-	if err := s.TouchTokenLastUsed(ctx, tok.ID, t0.Add(2*time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	got, _ = s.GetTokenByID(ctx, tok.ID)
-	if !got.LastUsedAt.Equal(t0.Add(2 * time.Minute)) {
-		t.Errorf("last_used_at = %v, want %v", got.LastUsedAt, t0.Add(2*time.Minute))
-	}
+		if err := s.TouchTokenLastUsed(ctx, tok.ID, t0.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.TouchTokenLastUsed(ctx, tok.ID, t0.Add(90*time.Second)); err != nil { // within a minute: no write
+			t.Fatal(err)
+		}
+		got, _ = s.GetTokenByID(ctx, tok.ID)
+		if !got.LastUsedAt.Equal(t0.Add(time.Minute)) {
+			t.Errorf("last_used_at = %v, want %v", got.LastUsedAt, t0.Add(time.Minute))
+		}
+		if err := s.TouchTokenLastUsed(ctx, tok.ID, t0.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		got, _ = s.GetTokenByID(ctx, tok.ID)
+		if !got.LastUsedAt.Equal(t0.Add(2 * time.Minute)) {
+			t.Errorf("last_used_at = %v, want %v", got.LastUsedAt, t0.Add(2*time.Minute))
+		}
 
-	if err := s.RevokeToken(ctx, tok.ID, t0.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RevokeToken(ctx, tok.ID, t0.Add(2*time.Hour)); err != nil { // keeps the first time
-		t.Fatal(err)
-	}
-	got, _ = s.GetTokenByID(ctx, tok.ID)
-	if !got.RevokedAt.Equal(t0.Add(time.Hour)) {
-		t.Errorf("revoked_at = %v", got.RevokedAt)
-	}
-	if err := s.RevokeToken(ctx, "missing", t0); !errors.Is(err, ErrNotFound) {
-		t.Errorf("revoke missing: %v", err)
-	}
-	if _, err := s.GetTokenByID(ctx, "missing"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("get missing: %v", err)
-	}
+		if err := s.RevokeToken(ctx, tok.ID, t0.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.RevokeToken(ctx, tok.ID, t0.Add(2*time.Hour)); err != nil { // keeps the first time
+			t.Fatal(err)
+		}
+		got, _ = s.GetTokenByID(ctx, tok.ID)
+		if !got.RevokedAt.Equal(t0.Add(time.Hour)) {
+			t.Errorf("revoked_at = %v", got.RevokedAt)
+		}
+		if err := s.RevokeToken(ctx, "missing", t0); !errors.Is(err, ErrNotFound) {
+			t.Errorf("revoke missing: %v", err)
+		}
+		if _, err := s.GetTokenByID(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("get missing: %v", err)
+		}
 
-	second := tok
-	second.ID, second.CreatedAt = "efgh5678", t0.Add(time.Second)
-	if err := s.CreateToken(ctx, second); err != nil {
-		t.Fatal(err)
-	}
-	list, err := s.ListTokens(ctx, "app")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(list) != 2 || list[0].ID != tok.ID || list[1].ID != second.ID {
-		t.Errorf("ListTokens = %+v", list)
-	}
+		second := tok
+		second.ID, second.CreatedAt = "efgh5678", t0.Add(time.Second)
+		if err := s.CreateToken(ctx, second); err != nil {
+			t.Fatal(err)
+		}
+		list, err := s.ListTokens(ctx, "app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 2 || list[0].ID != tok.ID || list[1].ID != second.ID {
+			t.Errorf("ListTokens = %+v", list)
+		}
+	})
 }
 
 func TestQuota(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	window := t0.Truncate(24 * time.Hour)
-	if n, err := s.GetQuota(ctx, "app", window); err != nil || n != 0 {
-		t.Fatalf("GetQuota before = %d, %v", n, err)
-	}
-	for want := 1; want <= 3; want++ {
-		n, err := s.IncrementQuota(ctx, "app", window, 3)
-		if err != nil || n != want {
-			t.Fatalf("IncrementQuota = %d, %v; want %d", n, err, want)
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		window := t0.Truncate(24 * time.Hour)
+		if n, err := s.GetQuota(ctx, "app", window); err != nil || n != 0 {
+			t.Fatalf("GetQuota before = %d, %v", n, err)
 		}
-	}
-	if _, err := s.IncrementQuota(ctx, "app", window, 3); !errors.Is(err, ErrQuotaExhausted) {
-		t.Errorf("over limit: %v, want ErrQuotaExhausted", err)
-	}
-	if _, err := s.IncrementQuota(ctx, "app", window.Add(24*time.Hour), 0); !errors.Is(err, ErrQuotaExhausted) {
-		t.Errorf("limit 0: %v, want ErrQuotaExhausted", err)
-	}
-	if n, _ := s.GetQuota(ctx, "app", window); n != 3 {
-		t.Errorf("GetQuota = %d, want 3", n)
-	}
-	if n, _ := s.IncrementQuota(ctx, "app", window.Add(24*time.Hour), 3); n != 1 {
-		t.Errorf("next window = %d, want 1", n)
-	}
+		for want := 1; want <= 3; want++ {
+			n, err := s.IncrementQuota(ctx, "app", window, 3)
+			if err != nil || n != want {
+				t.Fatalf("IncrementQuota = %d, %v; want %d", n, err, want)
+			}
+		}
+		if _, err := s.IncrementQuota(ctx, "app", window, 3); !errors.Is(err, ErrQuotaExhausted) {
+			t.Errorf("over limit: %v, want ErrQuotaExhausted", err)
+		}
+		if _, err := s.IncrementQuota(ctx, "app", window.Add(24*time.Hour), 0); !errors.Is(err, ErrQuotaExhausted) {
+			t.Errorf("limit 0: %v, want ErrQuotaExhausted", err)
+		}
+		if n, _ := s.GetQuota(ctx, "app", window); n != 3 {
+			t.Errorf("GetQuota = %d, want 3", n)
+		}
+		if n, _ := s.IncrementQuota(ctx, "app", window.Add(24*time.Hour), 3); n != 1 {
+			t.Errorf("next window = %d, want 1", n)
+		}
+	})
 }
 
 func TestAppendAudit(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	id1, err := s.AppendAudit(ctx, AuditEvent{At: t0, Kind: "token.created", ApplicationID: "app", Actor: "cli"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	id2, err := s.AppendAudit(ctx, AuditEvent{At: t0, Kind: "job.finished", JobID: "j_1", Details: json.RawMessage(`{"status":"accepted"}`)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id2 <= id1 {
-		t.Errorf("ids %d then %d, want increasing", id1, id2)
-	}
-	if _, err := s.AppendAudit(ctx, AuditEvent{At: t0, Kind: "x", Details: json.RawMessage(`not json`)}); err == nil {
-		t.Error("invalid details accepted")
-	}
-	if _, err := s.AppendAudit(ctx, AuditEvent{Kind: "x"}); err == nil {
-		t.Error("event without time accepted")
-	}
-	var details string
-	if err := s.db.QueryRowContext(ctx, `SELECT details FROM audit_events WHERE id = ?`, id1).Scan(&details); err != nil || details != "{}" {
-		t.Errorf("default details = %q, %v", details, err)
-	}
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		id1, err := s.AppendAudit(ctx, AuditEvent{At: t0, Kind: "token.created", ApplicationID: "app", Actor: "cli"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id2, err := s.AppendAudit(ctx, AuditEvent{At: t0, Kind: "job.finished", JobID: "j_1", Details: json.RawMessage(`{"status":"accepted"}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id2 <= id1 {
+			t.Errorf("ids %d then %d, want increasing", id1, id2)
+		}
+		if _, err := s.AppendAudit(ctx, AuditEvent{At: t0, Kind: "x", Details: json.RawMessage(`not json`)}); err == nil {
+			t.Error("invalid details accepted")
+		}
+		if _, err := s.AppendAudit(ctx, AuditEvent{Kind: "x"}); err == nil {
+			t.Error("event without time accepted")
+		}
+		var details string
+		if err := s.queryRow(ctx, `SELECT details FROM audit_events WHERE id = ?`, id1).Scan(&details); err != nil || details != "{}" {
+			t.Errorf("default details = %q, %v", details, err)
+		}
+	})
 }
 
 func TestCreateAndGetJob(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	seedApp(t, s, testApp("other"))
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		seedApp(t, s, testApp("other"))
 
-	j := newJob("app")
-	j.CreatedAt = t0.Add(123456789 * time.Nanosecond) // truncated to milliseconds
-	j.IdempotencyKey, j.BodyHash, j.PageCount, j.MaxAttempts = "key-1", "sha256:abc", 2, 2
-	createJob(t, s, j)
-	if len(j.ID) != 28 || j.ID[:2] != "j_" {
-		t.Errorf("id = %q, want j_<ULID>", j.ID)
-	}
-	if j.Status != StatusQueued || !j.CreatedAt.Equal(t0.Add(123*time.Millisecond)) {
-		t.Errorf("created = %+v", j)
-	}
-	if want := j.CreatedAt.Add(48 * time.Hour); !j.ExpiresAt.Equal(want) {
-		t.Errorf("expires_at = %v, want %v (application retention)", j.ExpiresAt, want)
-	}
+		j := newJob("app")
+		j.CreatedAt = t0.Add(123456789 * time.Nanosecond) // truncated to milliseconds
+		j.IdempotencyKey, j.BodyHash, j.PageCount, j.MaxAttempts = "key-1", "sha256:abc", 2, 2
+		createJob(t, s, j)
+		if len(j.ID) != 28 || j.ID[:2] != "j_" {
+			t.Errorf("id = %q, want j_<ULID>", j.ID)
+		}
+		if j.Status != StatusQueued || !j.CreatedAt.Equal(t0.Add(123*time.Millisecond)) {
+			t.Errorf("created = %+v", j)
+		}
+		if want := j.CreatedAt.Add(48 * time.Hour); !j.ExpiresAt.Equal(want) {
+			t.Errorf("expires_at = %v, want %v (application retention)", j.ExpiresAt, want)
+		}
 
-	got, err := s.GetJob(ctx, "app", j.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != StatusQueued || got.Result != nil || got.Feedback != nil || got.Error != nil ||
-		got.IdempotencyKey != "key-1" || got.PageCount != 2 || got.MaxAttempts != 2 || got.Schema != j.Schema ||
-		!got.CreatedAt.Equal(j.CreatedAt) || !got.StartedAt.IsZero() || got.JudgeConfidence != nil {
-		t.Errorf("GetJob = %+v", got)
-	}
-	if _, err := s.GetJob(ctx, "other", j.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("foreign GetJob: %v, want ErrNotFound", err)
-	}
-	if _, err := s.GetJobAny(ctx, j.ID); err != nil {
-		t.Errorf("GetJobAny: %v", err)
-	}
+		got, err := s.GetJob(ctx, "app", j.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != StatusQueued || got.Result != nil || got.Feedback != nil || got.Error != nil ||
+			got.IdempotencyKey != "key-1" || got.PageCount != 2 || got.MaxAttempts != 2 || got.Schema != j.Schema ||
+			!got.CreatedAt.Equal(j.CreatedAt) || !got.StartedAt.IsZero() || got.JudgeConfidence != nil {
+			t.Errorf("GetJob = %+v", got)
+		}
+		if _, err := s.GetJob(ctx, "other", j.ID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("foreign GetJob: %v, want ErrNotFound", err)
+		}
+		if _, err := s.GetJobAny(ctx, j.ID); err != nil {
+			t.Errorf("GetJobAny: %v", err)
+		}
 
-	found, err := s.FindByIdempotencyKey(ctx, "app", "key-1")
-	if err != nil || found.ID != j.ID {
-		t.Errorf("FindByIdempotencyKey = %v, %v", found.ID, err)
-	}
-	if _, err := s.FindByIdempotencyKey(ctx, "other", "key-1"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("foreign key lookup: %v", err)
-	}
-	dup := newJob("app")
-	dup.IdempotencyKey = "key-1"
-	if err := s.CreateJob(ctx, dup); !errors.Is(err, ErrDuplicate) {
-		t.Errorf("duplicate key: %v, want ErrDuplicate", err)
-	}
-	sameKeyOtherApp := newJob("other")
-	sameKeyOtherApp.IdempotencyKey = "key-1"
-	createJob(t, s, sameKeyOtherApp)
-	createJob(t, s, newJob("app")) // no key: many allowed
-	createJob(t, s, newJob("app"))
+		found, err := s.FindByIdempotencyKey(ctx, "app", "key-1")
+		if err != nil || found.ID != j.ID {
+			t.Errorf("FindByIdempotencyKey = %v, %v", found.ID, err)
+		}
+		if _, err := s.FindByIdempotencyKey(ctx, "other", "key-1"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("foreign key lookup: %v", err)
+		}
+		dup := newJob("app")
+		dup.IdempotencyKey = "key-1"
+		if err := s.CreateJob(ctx, dup); !errors.Is(err, ErrDuplicate) {
+			t.Errorf("duplicate key: %v, want ErrDuplicate", err)
+		}
+		sameKeyOtherApp := newJob("other")
+		sameKeyOtherApp.IdempotencyKey = "key-1"
+		createJob(t, s, sameKeyOtherApp)
+		createJob(t, s, newJob("app")) // no key: many allowed
+		createJob(t, s, newJob("app"))
 
-	if err := s.CreateJob(ctx, newJob("missing")); !errors.Is(err, ErrNotFound) {
-		t.Errorf("unknown application: %v", err)
-	}
-	if _, err := s.DisableApplicationsNotIn(ctx, []string{"app"}, t0); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.CreateJob(ctx, newJob("other")); !errors.Is(err, ErrNotFound) {
-		t.Errorf("disabled application: %v", err)
-	}
-	if err := s.CreateJob(ctx, &Job{ApplicationID: "app"}); err == nil {
-		t.Error("job without required fields stored")
-	}
+		if err := s.CreateJob(ctx, newJob("missing")); !errors.Is(err, ErrNotFound) {
+			t.Errorf("unknown application: %v", err)
+		}
+		if _, err := s.DisableApplicationsNotIn(ctx, []string{"app"}, t0); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.CreateJob(ctx, newJob("other")); !errors.Is(err, ErrNotFound) {
+			t.Errorf("disabled application: %v", err)
+		}
+		if err := s.CreateJob(ctx, &Job{ApplicationID: "app"}); err == nil {
+			t.Error("job without required fields stored")
+		}
+	})
 }
 
 func TestCreateJobRetention(t *testing.T) {
-	s := openTest(t)
-	forced := testApp("forced")
-	forced.ForceNone = true
-	noneDefault := testApp("none-default")
-	noneDefault.RetentionDefault = "none"
-	for _, a := range []Application{testApp("app"), forced, noneDefault} {
-		seedApp(t, s, a)
-	}
-	tests := []struct {
-		app       string
-		requested Retention
-		want      Retention
-		expires   time.Duration
-	}{
-		{"app", RetentionNone, RetentionNone, 24 * time.Hour},
-		{"app", RetentionDefault, RetentionDefault, 48 * time.Hour},
-		{"app", "", RetentionDefault, 48 * time.Hour},
-		{"forced", RetentionDefault, RetentionNone, 24 * time.Hour},
-		{"none-default", RetentionDefault, RetentionNone, 24 * time.Hour},
-	}
-	for _, tt := range tests {
-		j := newJob(tt.app)
-		j.Retention = tt.requested
-		createJob(t, s, j)
-		if j.Retention != tt.want || !j.ExpiresAt.Equal(t0.Add(tt.expires)) {
-			t.Errorf("%s/%q: retention %q expires %v, want %q %v", tt.app, tt.requested, j.Retention, j.ExpiresAt, tt.want, t0.Add(tt.expires))
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		forced := testApp("forced")
+		forced.ForceNone = true
+		noneDefault := testApp("none-default")
+		noneDefault.RetentionDefault = "none"
+		for _, a := range []Application{testApp("app"), forced, noneDefault} {
+			seedApp(t, s, a)
 		}
-	}
+		tests := []struct {
+			app       string
+			requested Retention
+			want      Retention
+			expires   time.Duration
+		}{
+			{"app", RetentionNone, RetentionNone, 24 * time.Hour},
+			{"app", RetentionDefault, RetentionDefault, 48 * time.Hour},
+			{"app", "", RetentionDefault, 48 * time.Hour},
+			{"forced", RetentionDefault, RetentionNone, 24 * time.Hour},
+			{"none-default", RetentionDefault, RetentionNone, 24 * time.Hour},
+		}
+		for _, tt := range tests {
+			j := newJob(tt.app)
+			j.Retention = tt.requested
+			createJob(t, s, j)
+			if j.Retention != tt.want || !j.ExpiresAt.Equal(t0.Add(tt.expires)) {
+				t.Errorf("%s/%q: retention %q expires %v, want %q %v", tt.app, tt.requested, j.Retention, j.ExpiresAt, tt.want, t0.Add(tt.expires))
+			}
+		}
+	})
 }
 
 func TestMarkContentDeletedAndDelete(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	j := createJob(t, s, newJob("app"))
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		j := createJob(t, s, newJob("app"))
 
-	if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0); !errors.Is(err, ErrConflict) {
-		t.Errorf("ContentAll on a queued job: %v, want ErrConflict", err)
-	}
-	finishJob(t, s, j.ID, StatusAccepted)
-	if err := s.MarkContentDeleted(ctx, j.ID, ContentInputs, t0.Add(time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := s.GetJobAny(ctx, j.ID)
-	if got.ExtractorInstructions != "" || got.JudgeInstructions != "" || got.Schema != "" ||
-		!got.InputsDeletedAt.Equal(t0.Add(time.Minute)) || got.Result == nil || !got.ContentDeletedAt.IsZero() {
-		t.Errorf("after ContentInputs = %+v", got)
-	}
-	if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0.Add(2*time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	got, _ = s.GetJobAny(ctx, j.ID)
-	if got.Result != nil || got.Feedback != nil || got.Error != nil || got.JudgeConfidence != nil ||
-		!got.ContentDeletedAt.Equal(t0.Add(2*time.Minute)) || !got.InputsDeletedAt.Equal(t0.Add(time.Minute)) {
-		t.Errorf("after ContentAll = %+v", got)
-	}
-	if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0); !errors.Is(err, ErrNotFound) {
-		t.Errorf("second ContentAll: %v, want ErrNotFound", err)
-	}
-	if err := s.MarkContentDeleted(ctx, "j_missing", ContentInputs, t0); !errors.Is(err, ErrNotFound) {
-		t.Errorf("missing job: %v", err)
-	}
-	if err := s.DeleteJob(ctx, j.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.DeleteJob(ctx, j.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("second delete: %v", err)
-	}
-	if _, err := s.GetJobAny(ctx, j.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("get after delete: %v", err)
-	}
+		if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0); !errors.Is(err, ErrConflict) {
+			t.Errorf("ContentAll on a queued job: %v, want ErrConflict", err)
+		}
+		finishJob(t, s, j.ID, StatusAccepted)
+		if err := s.MarkContentDeleted(ctx, j.ID, ContentInputs, t0.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := s.GetJobAny(ctx, j.ID)
+		if got.ExtractorInstructions != "" || got.JudgeInstructions != "" || got.Schema != "" ||
+			!got.InputsDeletedAt.Equal(t0.Add(time.Minute)) || got.Result == nil || !got.ContentDeletedAt.IsZero() {
+			t.Errorf("after ContentInputs = %+v", got)
+		}
+		if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		got, _ = s.GetJobAny(ctx, j.ID)
+		if got.Result != nil || got.Feedback != nil || got.Error != nil || got.JudgeConfidence != nil ||
+			!got.ContentDeletedAt.Equal(t0.Add(2*time.Minute)) || !got.InputsDeletedAt.Equal(t0.Add(time.Minute)) {
+			t.Errorf("after ContentAll = %+v", got)
+		}
+		if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0); !errors.Is(err, ErrNotFound) {
+			t.Errorf("second ContentAll: %v, want ErrNotFound", err)
+		}
+		if err := s.MarkContentDeleted(ctx, "j_missing", ContentInputs, t0); !errors.Is(err, ErrNotFound) {
+			t.Errorf("missing job: %v", err)
+		}
+		if err := s.DeleteJob(ctx, j.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.DeleteJob(ctx, j.ID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("second delete: %v", err)
+		}
+		if _, err := s.GetJobAny(ctx, j.ID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("get after delete: %v", err)
+		}
+	})
 }
 
 func TestListExpiredAndCountRunning(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	var ids []string
-	for i := range 3 {
-		j := newJob("app")
-		j.Retention = RetentionNone
-		j.CreatedAt = t0.Add(time.Duration(i) * time.Hour)
-		ids = append(ids, createJob(t, s, j).ID)
-	}
-	expired, err := s.ListExpired(ctx, t0.Add(25*time.Hour), 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(expired) != 2 || expired[0].ID != ids[0] || expired[1].ID != ids[1] {
-		t.Errorf("ListExpired = %d jobs", len(expired))
-	}
-	if expired, _ := s.ListExpired(ctx, t0.Add(48*time.Hour), 1); len(expired) != 1 {
-		t.Errorf("limit 1 = %d jobs", len(expired))
-	}
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		var ids []string
+		for i := range 3 {
+			j := newJob("app")
+			j.Retention = RetentionNone
+			j.CreatedAt = t0.Add(time.Duration(i) * time.Hour)
+			ids = append(ids, createJob(t, s, j).ID)
+		}
+		expired, err := s.ListExpired(ctx, t0.Add(25*time.Hour), 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(expired) != 2 || expired[0].ID != ids[0] || expired[1].ID != ids[1] {
+			t.Errorf("ListExpired = %d jobs", len(expired))
+		}
+		if expired, _ := s.ListExpired(ctx, t0.Add(48*time.Hour), 1); len(expired) != 1 {
+			t.Errorf("limit 1 = %d jobs", len(expired))
+		}
 
-	if n, _ := s.CountRunning(ctx, "app"); n != 0 {
-		t.Errorf("CountRunning = %d, want 0", n)
-	}
-	if _, err := s.LeaseNextQueued(ctx, "w1", t0, t0.Add(time.Minute), nil); err != nil {
-		t.Fatal(err)
-	}
-	if n, _ := s.CountRunning(ctx, "app"); n != 1 {
-		t.Errorf("CountRunning = %d, want 1", n)
-	}
+		if n, _ := s.CountRunning(ctx, "app"); n != 0 {
+			t.Errorf("CountRunning = %d, want 0", n)
+		}
+		if _, err := s.LeaseNextQueued(ctx, "w1", t0, t0.Add(time.Minute), nil); err != nil {
+			t.Fatal(err)
+		}
+		if n, _ := s.CountRunning(ctx, "app"); n != 1 {
+			t.Errorf("CountRunning = %d, want 1", n)
+		}
+	})
 }
 
 func TestListContentExpiredAndRowFloor(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	short := testApp("short")
-	short.RetentionDefault = "2s"
-	seedApp(t, s, short)
-	terminal := createJob(t, s, newJob("short")) // expires t0+2s
-	finishJob(t, s, terminal.ID, StatusAccepted)
-	queued := newJob("short")
-	queued.CreatedAt = t0.Add(time.Second) // expires t0+3s, stays queued
-	createJob(t, s, queued)
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		short := testApp("short")
+		short.RetentionDefault = "2s"
+		seedApp(t, s, short)
+		terminal := createJob(t, s, newJob("short")) // expires t0+2s
+		finishJob(t, s, terminal.ID, StatusAccepted)
+		queued := newJob("short")
+		queued.CreatedAt = t0.Add(time.Second) // expires t0+3s, stays queued
+		createJob(t, s, queued)
 
-	ids := func(jobs []Job) []string {
-		var out []string
-		for _, j := range jobs {
-			out = append(out, j.ID)
+		ids := func(jobs []Job) []string {
+			var out []string
+			for _, j := range jobs {
+				out = append(out, j.ID)
+			}
+			return out
 		}
-		return out
-	}
-	if got, err := s.ListContentExpired(ctx, t0.Add(time.Second), 10); err != nil || len(got) != 0 {
-		t.Errorf("ListContentExpired before expiry = %v, %v", ids(got), err)
-	}
-	got, err := s.ListContentExpired(ctx, t0.Add(time.Minute), 10)
-	if err != nil || !slices.Equal(ids(got), []string{terminal.ID}) {
-		t.Errorf("ListContentExpired past expiry = %v, %v; want only the terminal job", ids(got), err)
-	}
-	if err := s.MarkContentDeleted(ctx, terminal.ID, ContentAll, t0.Add(time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := s.ListContentExpired(ctx, t0.Add(time.Minute), 10); len(got) != 0 {
-		t.Errorf("a job whose content is deleted is listed again: %v", ids(got))
-	}
+		if got, err := s.ListContentExpired(ctx, t0.Add(time.Second), 10); err != nil || len(got) != 0 {
+			t.Errorf("ListContentExpired before expiry = %v, %v", ids(got), err)
+		}
+		got, err := s.ListContentExpired(ctx, t0.Add(time.Minute), 10)
+		if err != nil || !slices.Equal(ids(got), []string{terminal.ID}) {
+			t.Errorf("ListContentExpired past expiry = %v, %v; want only the terminal job", ids(got), err)
+		}
+		if err := s.MarkContentDeleted(ctx, terminal.ID, ContentAll, t0.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := s.ListContentExpired(ctx, t0.Add(time.Minute), 10); len(got) != 0 {
+			t.Errorf("a job whose content is deleted is listed again: %v", ids(got))
+		}
 
-	// Rows stay for the idempotency window although expires_at is long past.
-	if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow-time.Millisecond), 10); len(got) != 0 {
-		t.Errorf("ListExpired inside the idempotency window = %v", ids(got))
-	}
-	if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow), 10); !slices.Equal(ids(got), []string{terminal.ID}) {
-		t.Errorf("ListExpired at created_at+24h = %v, want %s", ids(got), terminal.ID)
-	}
-	if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow+time.Second), 10); len(got) != 2 {
-		t.Errorf("ListExpired past both windows = %v, want both", ids(got))
-	}
+		// Rows stay for the idempotency window although expires_at is long past.
+		if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow-time.Millisecond), 10); len(got) != 0 {
+			t.Errorf("ListExpired inside the idempotency window = %v", ids(got))
+		}
+		if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow), 10); !slices.Equal(ids(got), []string{terminal.ID}) {
+			t.Errorf("ListExpired at created_at+24h = %v, want %s", ids(got), terminal.ID)
+		}
+		if got, _ := s.ListExpired(ctx, t0.Add(IdempotencyWindow+time.Second), 10); len(got) != 2 {
+			t.Errorf("ListExpired past both windows = %v, want both", ids(got))
+		}
+	})
 }
 
 // TestDeletedContentLeavesNoTraceInDatabaseFiles: after MarkContentDeleted(ContentAll)
@@ -562,7 +589,7 @@ func TestDeletedContentLeavesNoTraceInDatabaseFiles(t *testing.T) {
 	assertGone("MARKER-DELETE")
 }
 
-func finishJob(t *testing.T, s *SQLite, id string, status Status) {
+func finishJob(t *testing.T, s Store, id string, status Status) {
 	t.Helper()
 	ctx := t.Context()
 	leased, err := s.LeaseNextQueued(ctx, "finisher", t0, t0.Add(time.Minute), nil)
@@ -580,327 +607,336 @@ func finishJob(t *testing.T, s *SQLite, id string, status Status) {
 }
 
 func TestLeaseMaxInProgress(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("busy"))
-	seedApp(t, s, testApp("calm"))
-	for i := range 3 {
-		j := newJob("busy")
-		j.CreatedAt = t0.Add(time.Duration(i) * time.Millisecond)
-		createJob(t, s, j)
-	}
-	late := newJob("calm")
-	late.CreatedAt = t0.Add(time.Second)
-	createJob(t, s, late)
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("busy"))
+		seedApp(t, s, testApp("calm"))
+		for i := range 3 {
+			j := newJob("busy")
+			j.CreatedAt = t0.Add(time.Duration(i) * time.Millisecond)
+			createJob(t, s, j)
+		}
+		late := newJob("calm")
+		late.CreatedAt = t0.Add(time.Second)
+		createJob(t, s, late)
 
-	limits := map[string]int{"busy": 2, "calm": 0}
-	lease := func() string {
-		t.Helper()
-		j, err := s.LeaseNextQueued(ctx, "w", t0.Add(2*time.Second), t0.Add(time.Minute), limits)
-		if errors.Is(err, ErrNotFound) {
-			return ""
+		limits := map[string]int{"busy": 2, "calm": 0}
+		lease := func() string {
+			t.Helper()
+			j, err := s.LeaseNextQueued(ctx, "w", t0.Add(2*time.Second), t0.Add(time.Minute), limits)
+			if errors.Is(err, ErrNotFound) {
+				return ""
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			return j.ApplicationID
 		}
-		if err != nil {
-			t.Fatal(err)
+		got := []string{lease(), lease(), lease(), lease()}
+		if want := []string{"busy", "busy", "calm", ""}; !slices.Equal(got, want) {
+			t.Errorf("lease order = %q, want %q (busy capped at 2)", got, want)
 		}
-		return j.ApplicationID
-	}
-	got := []string{lease(), lease(), lease(), lease()}
-	if want := []string{"busy", "busy", "calm", ""}; !slices.Equal(got, want) {
-		t.Errorf("lease order = %q, want %q (busy capped at 2)", got, want)
-	}
+	})
 }
 
 func TestListStaleRunning(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	var ids []string
-	for i := range 3 {
-		j := newJob("app")
-		j.CreatedAt = t0.Add(time.Duration(i) * time.Minute)
-		ids = append(ids, createJob(t, s, j).ID)
-	}
-	oldest := newJob("app")
-	oldest.CreatedAt = t0.Add(-time.Hour)
-	createJob(t, s, oldest)
-	// Leasing takes the oldest first: oldest, ids[0] and ids[1] run; ids[2] stays queued.
-	for range 3 {
-		if _, err := s.LeaseNextQueued(ctx, "w", t0.Add(time.Hour), t0.Add(2*time.Hour), nil); err != nil {
-			t.Fatal(err)
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		var ids []string
+		for i := range 3 {
+			j := newJob("app")
+			j.CreatedAt = t0.Add(time.Duration(i) * time.Minute)
+			ids = append(ids, createJob(t, s, j).ID)
 		}
-	}
-	got, err := s.ListStaleRunning(ctx, t0.Add(time.Minute), 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var gotIDs []string
-	for _, j := range got {
-		gotIDs = append(gotIDs, j.ID)
-	}
-	if want := []string{oldest.ID, ids[0], ids[1]}; !slices.Equal(gotIDs, want) {
-		t.Errorf("ListStaleRunning = %v, want %v", gotIDs, want)
-	}
-	if got, _ := s.ListStaleRunning(ctx, t0.Add(time.Minute), 1); len(got) != 1 {
-		t.Errorf("limit 1 = %d jobs", len(got))
-	}
-	if got, _ := s.ListStaleRunning(ctx, t0.Add(-2*time.Hour), 10); len(got) != 0 {
-		t.Errorf("nothing is that old, got %d jobs", len(got))
-	}
-	// A queued job is never stale.
-	fresh := createJob(t, s, newJob("app"))
-	got, _ = s.ListStaleRunning(ctx, t0.Add(24*time.Hour), 10)
-	for _, j := range got {
-		if j.ID == fresh.ID {
-			t.Error("a queued job was listed as stale running")
-		}
-	}
-}
-
-func TestDeleteQuotaBefore(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	for i := range 4 {
-		for _, app := range []string{"a", "b"} {
-			if _, err := s.IncrementQuota(ctx, app, t0.Add(time.Duration(i)*24*time.Hour), 10); err != nil {
+		oldest := newJob("app")
+		oldest.CreatedAt = t0.Add(-time.Hour)
+		createJob(t, s, oldest)
+		// Leasing takes the oldest first: oldest, ids[0] and ids[1] run; ids[2] stays queued.
+		for range 3 {
+			if _, err := s.LeaseNextQueued(ctx, "w", t0.Add(time.Hour), t0.Add(2*time.Hour), nil); err != nil {
 				t.Fatal(err)
 			}
 		}
-	}
-	n, err := s.DeleteQuotaBefore(ctx, "a", t0.Add(48*time.Hour))
-	if err != nil || n != 2 {
-		t.Fatalf("DeleteQuotaBefore = %d, %v; want 2", n, err)
-	}
-	for i, want := range map[int][2]int{0: {0, 1}, 1: {0, 1}, 2: {1, 1}, 3: {1, 1}} {
-		w := t0.Add(time.Duration(i) * 24 * time.Hour)
-		a, _ := s.GetQuota(ctx, "a", w)
-		b, _ := s.GetQuota(ctx, "b", w)
-		if a != want[0] || b != want[1] {
-			t.Errorf("window %d: a=%d b=%d, want %v", i, a, b, want)
-		}
-	}
-}
-
-func TestDeleteTokensBefore(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	mk := func(id string, expires time.Time) {
-		t.Helper()
-		if err := s.CreateToken(ctx, Token{ID: id, ApplicationID: "app", Hash: []byte("h"), ExpiresAt: expires, CreatedAt: t0.Add(-1000 * time.Hour)}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	cutoff := t0
-	mk("expired-old", cutoff.Add(-time.Hour))
-	mk("expired-recent", cutoff.Add(time.Hour))
-	mk("live", cutoff.Add(24*time.Hour))
-	mk("revoked-old", cutoff.Add(24*time.Hour))
-	mk("revoked-recent", cutoff.Add(24*time.Hour))
-	if err := s.RevokeToken(ctx, "revoked-old", cutoff.Add(-time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RevokeToken(ctx, "revoked-recent", cutoff.Add(time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	n, err := s.DeleteTokensBefore(ctx, cutoff)
-	if err != nil || n != 2 {
-		t.Fatalf("DeleteTokensBefore = %d, %v; want 2", n, err)
-	}
-	left, _ := s.ListTokens(ctx, "app")
-	var ids []string
-	for _, tok := range left {
-		ids = append(ids, tok.ID)
-	}
-	slices.Sort(ids)
-	if want := []string{"expired-recent", "live", "revoked-recent"}; !slices.Equal(ids, want) {
-		t.Errorf("tokens left = %v, want %v", ids, want)
-	}
-}
-
-func TestListAndDeleteAudit(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	events := []AuditEvent{
-		{At: t0, Kind: "token.created", ApplicationID: "a", Actor: "cli", Details: json.RawMessage(`{"token_id":"x"}`)},
-		{At: t0.Add(time.Hour), Kind: "job.finished", ApplicationID: "a", JobID: "j_1"},
-		{At: t0.Add(2 * time.Hour), Kind: "job.finished", ApplicationID: "b", JobID: "j_2"},
-	}
-	for _, e := range events {
-		if _, err := s.AppendAudit(ctx, e); err != nil {
-			t.Fatal(err)
-		}
-	}
-	list := func(f AuditFilter, limit int) []AuditEvent {
-		t.Helper()
-		got, err := s.ListAudit(ctx, f, limit)
+		got, err := s.ListStaleRunning(ctx, t0.Add(time.Minute), 10)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return got
-	}
-	all := list(AuditFilter{}, 0)
-	if len(all) != 3 || all[0].Kind != "token.created" || all[0].Actor != "cli" || !all[0].At.Equal(t0) ||
-		string(all[0].Details) != `{"token_id":"x"}` || string(all[1].Details) != `{}` || all[0].ID == 0 {
-		t.Errorf("ListAudit all = %+v", all)
-	}
-	for name, tt := range map[string]struct {
-		f    AuditFilter
-		want int
-	}{
-		"application": {AuditFilter{ApplicationID: "a"}, 2},
-		"kind":        {AuditFilter{Kind: "job.finished"}, 2},
-		"job":         {AuditFilter{JobID: "j_2"}, 1},
-		"since":       {AuditFilter{Since: t0.Add(time.Hour)}, 2},
-		"combined":    {AuditFilter{ApplicationID: "a", Kind: "job.finished", Since: t0.Add(time.Hour)}, 1},
-		"none":        {AuditFilter{ApplicationID: "zzz"}, 0},
-	} {
-		if got := list(tt.f, 0); len(got) != tt.want {
-			t.Errorf("%s: %d events, want %d", name, len(got), tt.want)
-		}
-	}
-	if got := list(AuditFilter{}, 2); len(got) != 2 {
-		t.Errorf("limit 2 = %d events", len(got))
-	}
-	n, err := s.DeleteAuditBefore(ctx, t0.Add(time.Hour))
-	if err != nil || n != 1 {
-		t.Fatalf("DeleteAuditBefore = %d, %v; want 1", n, err)
-	}
-	if got := list(AuditFilter{}, 0); len(got) != 2 {
-		t.Errorf("%d events left, want 2", len(got))
-	}
-}
-
-func TestAdminApplications(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("yaml"))
-	dyn := testApp("dyn")
-	dyn.Enabled = true
-	if err := s.CreateApplication(ctx, dyn, t0); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.CreateApplication(ctx, testApp("yaml"), t0); !errors.Is(err, ErrDuplicate) {
-		t.Errorf("CreateApplication over a configured id = %v, want ErrDuplicate", err)
-	}
-	got, err := s.GetApplication(ctx, "dyn")
-	if err != nil || got.Source != SourceAdmin || !got.Enabled {
-		t.Fatalf("dyn = %+v, %v", got, err)
-	}
-	// A restart with the YAML (only "yaml") disables no admin application.
-	if disabled, err := s.DisableApplicationsNotIn(ctx, []string{"yaml"}, t0); err != nil || len(disabled) != 0 {
-		t.Errorf("DisableApplicationsNotIn = %v, %v; want nothing disabled", disabled, err)
-	}
-	got.QuotaLimit, got.Enabled, got.Name = 7, false, "renamed"
-	if err := s.UpdateApplication(ctx, got, t0.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	after, _ := s.GetApplication(ctx, "dyn")
-	if after.QuotaLimit != 7 || after.Enabled || after.Name != "renamed" || after.Source != SourceAdmin ||
-		!after.CreatedAt.Equal(t0) || !after.UpdatedAt.Equal(t0.Add(time.Hour)) {
-		t.Errorf("after update = %+v", after)
-	}
-	if err := s.UpdateApplication(ctx, testApp("nope"), t0); !errors.Is(err, ErrNotFound) {
-		t.Errorf("UpdateApplication of an unknown id = %v, want ErrNotFound", err)
-	}
-	// The YAML declaring the id takes the row over: source config, every field rewritten.
-	seedApp(t, s, testApp("dyn"))
-	if again, _ := s.GetApplication(ctx, "dyn"); again.Source != SourceConfig || !again.Enabled || again.QuotaLimit != 1000 {
-		t.Errorf("after the YAML declared it = %+v", again)
-	}
-}
-
-func TestAdminTokenRows(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	admin := Token{ID: "admin001", Hash: []byte("h"), Scopes: []string{"admin"}, ExpiresAt: t0.Add(time.Hour), CreatedAt: t0}
-	if err := s.CreateToken(ctx, admin); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := s.GetTokenByID(ctx, "admin001"); err != nil || got.ApplicationID != "" {
-		t.Errorf("admin token = %+v, %v", got, err)
-	}
-	for _, bad := range []Token{
-		{ID: "bad00001", ApplicationID: "app", Scopes: []string{"admin"}},
-		{ID: "bad00002", Scopes: []string{"jobs"}},
-	} {
-		bad.Hash, bad.ExpiresAt, bad.CreatedAt = []byte("h"), t0.Add(time.Hour), t0
-		if err := s.CreateToken(ctx, bad); err == nil {
-			t.Errorf("token %+v stored: the admin scope and a missing application go together", bad)
-		}
-	}
-	if tokens, err := s.ListTokens(ctx, ""); err != nil || len(tokens) != 1 {
-		t.Errorf("ListTokens(\"\") = %v, %v", tokens, err)
-	}
-	if tokens, err := s.ListTokens(ctx, "app"); err != nil || len(tokens) != 0 {
-		t.Errorf("ListTokens(app) = %v, %v", tokens, err)
-	}
-}
-
-func TestAttachmentsColumn(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("app"))
-	j := newJob("app")
-	j.Attachments = []Attachment{{Name: "ticket.pdf", MediaType: "application/pdf", Bytes: 9}}
-	createJob(t, s, j)
-	plain := createJob(t, s, newJob("app"))
-	got, _ := s.GetJob(ctx, "app", j.ID)
-	if len(got.Attachments) != 1 || got.Attachments[0] != j.Attachments[0] {
-		t.Errorf("attachments = %+v", got.Attachments)
-	}
-	if got, _ := s.GetJob(ctx, "app", plain.ID); got.Attachments != nil {
-		t.Errorf("attachments of a plain document = %+v, want nil", got.Attachments)
-	}
-	finishJob(t, s, j.ID, StatusAccepted)
-	if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := s.GetJobAny(ctx, j.ID); got.Attachments != nil {
-		t.Errorf("attachments after the content deletion = %+v", got.Attachments)
-	}
-}
-
-func TestCountInProgressAndListJobs(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	seedApp(t, s, testApp("a"))
-	seedApp(t, s, testApp("b"))
-	var ids []string
-	for i, app := range []string{"a", "a", "a", "b"} {
-		j := newJob(app)
-		j.CreatedAt = t0.Add(time.Duration(i) * time.Minute)
-		ids = append(ids, createJob(t, s, j).ID)
-	}
-	finishJob(t, s, ids[0], StatusFailed)
-	if _, err := s.LeaseNextQueued(ctx, "w", t0, t0.Add(time.Minute), nil); err != nil { // ids[1] runs
-		t.Fatal(err)
-	}
-	if n, err := s.CountInProgress(ctx, "a"); err != nil || n != 2 {
-		t.Errorf("CountInProgress(a) = %d, %v; want 2 (one queued, one running)", n, err)
-	}
-	all, err := s.ListJobs(ctx, JobFilter{}, 0)
-	if err != nil || len(all) != 4 || all[0].ID != ids[3] || all[3].ID != ids[0] {
-		t.Fatalf("ListJobs = %d jobs, %v; want 4 newest first", len(all), err)
-	}
-	for _, tt := range []struct {
-		f     JobFilter
-		limit int
-		want  []string
-	}{
-		{JobFilter{ApplicationID: "a"}, 0, []string{ids[2], ids[1], ids[0]}},
-		{JobFilter{Status: StatusFailed}, 0, []string{ids[0]}},
-		{JobFilter{Since: t0.Add(2 * time.Minute)}, 0, []string{ids[3], ids[2]}},
-		{JobFilter{ApplicationID: "a"}, 1, []string{ids[2]}},
-	} {
-		got, err := s.ListJobs(ctx, tt.f, tt.limit)
 		var gotIDs []string
 		for _, j := range got {
 			gotIDs = append(gotIDs, j.ID)
 		}
-		if err != nil || !slices.Equal(gotIDs, tt.want) {
-			t.Errorf("ListJobs(%+v, %d) = %v, %v; want %v", tt.f, tt.limit, gotIDs, err, tt.want)
+		if want := []string{oldest.ID, ids[0], ids[1]}; !slices.Equal(gotIDs, want) {
+			t.Errorf("ListStaleRunning = %v, want %v", gotIDs, want)
 		}
-	}
+		if got, _ := s.ListStaleRunning(ctx, t0.Add(time.Minute), 1); len(got) != 1 {
+			t.Errorf("limit 1 = %d jobs", len(got))
+		}
+		if got, _ := s.ListStaleRunning(ctx, t0.Add(-2*time.Hour), 10); len(got) != 0 {
+			t.Errorf("nothing is that old, got %d jobs", len(got))
+		}
+		// A queued job is never stale.
+		fresh := createJob(t, s, newJob("app"))
+		got, _ = s.ListStaleRunning(ctx, t0.Add(24*time.Hour), 10)
+		for _, j := range got {
+			if j.ID == fresh.ID {
+				t.Error("a queued job was listed as stale running")
+			}
+		}
+	})
+}
+
+func TestDeleteQuotaBefore(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		for i := range 4 {
+			for _, app := range []string{"a", "b"} {
+				if _, err := s.IncrementQuota(ctx, app, t0.Add(time.Duration(i)*24*time.Hour), 10); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		n, err := s.DeleteQuotaBefore(ctx, "a", t0.Add(48*time.Hour))
+		if err != nil || n != 2 {
+			t.Fatalf("DeleteQuotaBefore = %d, %v; want 2", n, err)
+		}
+		for i, want := range map[int][2]int{0: {0, 1}, 1: {0, 1}, 2: {1, 1}, 3: {1, 1}} {
+			w := t0.Add(time.Duration(i) * 24 * time.Hour)
+			a, _ := s.GetQuota(ctx, "a", w)
+			b, _ := s.GetQuota(ctx, "b", w)
+			if a != want[0] || b != want[1] {
+				t.Errorf("window %d: a=%d b=%d, want %v", i, a, b, want)
+			}
+		}
+	})
+}
+
+func TestDeleteTokensBefore(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		mk := func(id string, expires time.Time) {
+			t.Helper()
+			if err := s.CreateToken(ctx, Token{ID: id, ApplicationID: "app", Hash: []byte("h"), ExpiresAt: expires, CreatedAt: t0.Add(-1000 * time.Hour)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cutoff := t0
+		mk("expired-old", cutoff.Add(-time.Hour))
+		mk("expired-recent", cutoff.Add(time.Hour))
+		mk("live", cutoff.Add(24*time.Hour))
+		mk("revoked-old", cutoff.Add(24*time.Hour))
+		mk("revoked-recent", cutoff.Add(24*time.Hour))
+		if err := s.RevokeToken(ctx, "revoked-old", cutoff.Add(-time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.RevokeToken(ctx, "revoked-recent", cutoff.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		n, err := s.DeleteTokensBefore(ctx, cutoff)
+		if err != nil || n != 2 {
+			t.Fatalf("DeleteTokensBefore = %d, %v; want 2", n, err)
+		}
+		left, _ := s.ListTokens(ctx, "app")
+		var ids []string
+		for _, tok := range left {
+			ids = append(ids, tok.ID)
+		}
+		slices.Sort(ids)
+		if want := []string{"expired-recent", "live", "revoked-recent"}; !slices.Equal(ids, want) {
+			t.Errorf("tokens left = %v, want %v", ids, want)
+		}
+	})
+}
+
+func TestListAndDeleteAudit(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		events := []AuditEvent{
+			{At: t0, Kind: "token.created", ApplicationID: "a", Actor: "cli", Details: json.RawMessage(`{"token_id":"x"}`)},
+			{At: t0.Add(time.Hour), Kind: "job.finished", ApplicationID: "a", JobID: "j_1"},
+			{At: t0.Add(2 * time.Hour), Kind: "job.finished", ApplicationID: "b", JobID: "j_2"},
+		}
+		for _, e := range events {
+			if _, err := s.AppendAudit(ctx, e); err != nil {
+				t.Fatal(err)
+			}
+		}
+		list := func(f AuditFilter, limit int) []AuditEvent {
+			t.Helper()
+			got, err := s.ListAudit(ctx, f, limit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return got
+		}
+		all := list(AuditFilter{}, 0)
+		if len(all) != 3 || all[0].Kind != "token.created" || all[0].Actor != "cli" || !all[0].At.Equal(t0) ||
+			string(all[0].Details) != `{"token_id":"x"}` || string(all[1].Details) != `{}` || all[0].ID == 0 {
+			t.Errorf("ListAudit all = %+v", all)
+		}
+		for name, tt := range map[string]struct {
+			f    AuditFilter
+			want int
+		}{
+			"application": {AuditFilter{ApplicationID: "a"}, 2},
+			"kind":        {AuditFilter{Kind: "job.finished"}, 2},
+			"job":         {AuditFilter{JobID: "j_2"}, 1},
+			"since":       {AuditFilter{Since: t0.Add(time.Hour)}, 2},
+			"combined":    {AuditFilter{ApplicationID: "a", Kind: "job.finished", Since: t0.Add(time.Hour)}, 1},
+			"none":        {AuditFilter{ApplicationID: "zzz"}, 0},
+		} {
+			if got := list(tt.f, 0); len(got) != tt.want {
+				t.Errorf("%s: %d events, want %d", name, len(got), tt.want)
+			}
+		}
+		if got := list(AuditFilter{}, 2); len(got) != 2 {
+			t.Errorf("limit 2 = %d events", len(got))
+		}
+		n, err := s.DeleteAuditBefore(ctx, t0.Add(time.Hour))
+		if err != nil || n != 1 {
+			t.Fatalf("DeleteAuditBefore = %d, %v; want 1", n, err)
+		}
+		if got := list(AuditFilter{}, 0); len(got) != 2 {
+			t.Errorf("%d events left, want 2", len(got))
+		}
+	})
+}
+
+func TestAdminApplications(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("yaml"))
+		dyn := testApp("dyn")
+		dyn.Enabled = true
+		if err := s.CreateApplication(ctx, dyn, t0); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.CreateApplication(ctx, testApp("yaml"), t0); !errors.Is(err, ErrDuplicate) {
+			t.Errorf("CreateApplication over a configured id = %v, want ErrDuplicate", err)
+		}
+		got, err := s.GetApplication(ctx, "dyn")
+		if err != nil || got.Source != SourceAdmin || !got.Enabled {
+			t.Fatalf("dyn = %+v, %v", got, err)
+		}
+		// A restart with the YAML (only "yaml") disables no admin application.
+		if disabled, err := s.DisableApplicationsNotIn(ctx, []string{"yaml"}, t0); err != nil || len(disabled) != 0 {
+			t.Errorf("DisableApplicationsNotIn = %v, %v; want nothing disabled", disabled, err)
+		}
+		got.QuotaLimit, got.Enabled, got.Name = 7, false, "renamed"
+		if err := s.UpdateApplication(ctx, got, t0.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		after, _ := s.GetApplication(ctx, "dyn")
+		if after.QuotaLimit != 7 || after.Enabled || after.Name != "renamed" || after.Source != SourceAdmin ||
+			!after.CreatedAt.Equal(t0) || !after.UpdatedAt.Equal(t0.Add(time.Hour)) {
+			t.Errorf("after update = %+v", after)
+		}
+		if err := s.UpdateApplication(ctx, testApp("nope"), t0); !errors.Is(err, ErrNotFound) {
+			t.Errorf("UpdateApplication of an unknown id = %v, want ErrNotFound", err)
+		}
+		// The YAML declaring the id takes the row over: source config, every field rewritten.
+		seedApp(t, s, testApp("dyn"))
+		if again, _ := s.GetApplication(ctx, "dyn"); again.Source != SourceConfig || !again.Enabled || again.QuotaLimit != 1000 {
+			t.Errorf("after the YAML declared it = %+v", again)
+		}
+	})
+}
+
+func TestAdminTokenRows(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		admin := Token{ID: "admin001", Hash: []byte("h"), Scopes: []string{"admin"}, ExpiresAt: t0.Add(time.Hour), CreatedAt: t0}
+		if err := s.CreateToken(ctx, admin); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := s.GetTokenByID(ctx, "admin001"); err != nil || got.ApplicationID != "" {
+			t.Errorf("admin token = %+v, %v", got, err)
+		}
+		for _, bad := range []Token{
+			{ID: "bad00001", ApplicationID: "app", Scopes: []string{"admin"}},
+			{ID: "bad00002", Scopes: []string{"jobs"}},
+		} {
+			bad.Hash, bad.ExpiresAt, bad.CreatedAt = []byte("h"), t0.Add(time.Hour), t0
+			if err := s.CreateToken(ctx, bad); err == nil {
+				t.Errorf("token %+v stored: the admin scope and a missing application go together", bad)
+			}
+		}
+		if tokens, err := s.ListTokens(ctx, ""); err != nil || len(tokens) != 1 {
+			t.Errorf("ListTokens(\"\") = %v, %v", tokens, err)
+		}
+		if tokens, err := s.ListTokens(ctx, "app"); err != nil || len(tokens) != 0 {
+			t.Errorf("ListTokens(app) = %v, %v", tokens, err)
+		}
+	})
+}
+
+func TestAttachmentsColumn(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		j := newJob("app")
+		j.Attachments = []Attachment{{Name: "ticket.pdf", MediaType: "application/pdf", Bytes: 9}}
+		createJob(t, s, j)
+		plain := createJob(t, s, newJob("app"))
+		got, _ := s.GetJob(ctx, "app", j.ID)
+		if len(got.Attachments) != 1 || got.Attachments[0] != j.Attachments[0] {
+			t.Errorf("attachments = %+v", got.Attachments)
+		}
+		if got, _ := s.GetJob(ctx, "app", plain.ID); got.Attachments != nil {
+			t.Errorf("attachments of a plain document = %+v, want nil", got.Attachments)
+		}
+		finishJob(t, s, j.ID, StatusAccepted)
+		if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := s.GetJobAny(ctx, j.ID); got.Attachments != nil {
+			t.Errorf("attachments after the content deletion = %+v", got.Attachments)
+		}
+	})
+}
+
+func TestCountInProgressAndListJobs(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("a"))
+		seedApp(t, s, testApp("b"))
+		var ids []string
+		for i, app := range []string{"a", "a", "a", "b"} {
+			j := newJob(app)
+			j.CreatedAt = t0.Add(time.Duration(i) * time.Minute)
+			ids = append(ids, createJob(t, s, j).ID)
+		}
+		finishJob(t, s, ids[0], StatusFailed)
+		if _, err := s.LeaseNextQueued(ctx, "w", t0, t0.Add(time.Minute), nil); err != nil { // ids[1] runs
+			t.Fatal(err)
+		}
+		if n, err := s.CountInProgress(ctx, "a"); err != nil || n != 2 {
+			t.Errorf("CountInProgress(a) = %d, %v; want 2 (one queued, one running)", n, err)
+		}
+		all, err := s.ListJobs(ctx, JobFilter{}, 0)
+		if err != nil || len(all) != 4 || all[0].ID != ids[3] || all[3].ID != ids[0] {
+			t.Fatalf("ListJobs = %d jobs, %v; want 4 newest first", len(all), err)
+		}
+		for _, tt := range []struct {
+			f     JobFilter
+			limit int
+			want  []string
+		}{
+			{JobFilter{ApplicationID: "a"}, 0, []string{ids[2], ids[1], ids[0]}},
+			{JobFilter{Status: StatusFailed}, 0, []string{ids[0]}},
+			{JobFilter{Since: t0.Add(2 * time.Minute)}, 0, []string{ids[3], ids[2]}},
+			{JobFilter{ApplicationID: "a"}, 1, []string{ids[2]}},
+		} {
+			got, err := s.ListJobs(ctx, tt.f, tt.limit)
+			var gotIDs []string
+			for _, j := range got {
+				gotIDs = append(gotIDs, j.ID)
+			}
+			if err != nil || !slices.Equal(gotIDs, tt.want) {
+				t.Errorf("ListJobs(%+v, %d) = %v, %v; want %v", tt.f, tt.limit, gotIDs, err, tt.want)
+			}
+		}
+	})
 }

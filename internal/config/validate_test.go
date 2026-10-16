@@ -267,9 +267,9 @@ func TestValidate(t *testing.T) {
 		// Endpoint shape.
 		{
 			name:        "unknown provider",
-			edit:        func(c *Config) { c.Endpoints["local"].Provider = "bedrock" },
+			edit:        func(c *Config) { c.Endpoints["local"].Provider = "cohere" },
 			wantKey:     "endpoints.local.provider",
-			wantMessage: `"bedrock" is not one of`,
+			wantMessage: `"cohere" is not one of`,
 		},
 		{
 			name:        "preset on the wrong provider",
@@ -350,6 +350,36 @@ func TestValidate(t *testing.T) {
 		{
 			name: "visible text policy",
 			edit: func(c *Config) { c.Documents.HTML = "visible_text" },
+		},
+		{
+			name:        "image max dimension too small",
+			edit:        func(c *Config) { c.Documents.Images.MaxDimension = 10 },
+			wantKey:     "documents.images.max_dimension",
+			wantMessage: "must be between 64 and 16384",
+		},
+		{
+			name:        "image max dimension too large",
+			edit:        func(c *Config) { c.Documents.Images.MaxDimension = 100000 },
+			wantKey:     "documents.images.max_dimension",
+			wantMessage: "must be between 64 and 16384",
+		},
+		{
+			name:        "image target not supported",
+			edit:        func(c *Config) { c.Documents.Images.ConvertTo = "image/webp" },
+			wantKey:     "documents.images.convert_to",
+			wantMessage: `"image/webp" is not one of image/jpeg, image/png`,
+		},
+		{
+			name:        "image quality out of range",
+			edit:        func(c *Config) { c.Documents.Images.Quality = 101 },
+			wantKey:     "documents.images.quality",
+			wantMessage: "must be between 1 and 100",
+		},
+		{
+			name: "image conversion to png",
+			edit: func(c *Config) {
+				c.Documents.Images = Images{Enabled: false, MaxDimension: 1024, ConvertTo: "image/png", Quality: 90}
+			},
 		},
 		{
 			name:        "unknown log level",
@@ -448,6 +478,195 @@ func TestValidate(t *testing.T) {
 			wantKey:     "auth.max_token_ttl",
 			wantMessage: "must be positive",
 		},
+
+		// Escalation (v0.3 03-01): defined groups, from_attempt from 2, increasing, within max_attempts.
+		{
+			name: "escalation steps",
+			edit: func(c *Config) {
+				c.Limits.MaxAttempts = 4
+				c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 2, Group: "review"}, {FromAttempt: 4, Group: "extraction"}}
+				c.Roles.Judge.Escalation = []Escalation{{FromAttempt: 3, Group: "extraction"}}
+			},
+		},
+		{
+			name:        "escalation group undefined",
+			edit:        func(c *Config) { c.Roles.Judge.Escalation = []Escalation{{FromAttempt: 3, Group: "strong"}} },
+			wantKey:     "roles.judge.escalation[0].group",
+			wantMessage: `group "strong" is not defined`,
+		},
+		{
+			name:        "escalation group missing",
+			edit:        func(c *Config) { c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 3}} },
+			wantKey:     "roles.extractor.escalation[0].group",
+			wantMessage: "is required",
+		},
+		{
+			name:        "escalation from attempt 1",
+			edit:        func(c *Config) { c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 1, Group: "review"}} },
+			wantKey:     "roles.extractor.escalation[0].from_attempt",
+			wantMessage: "must be at least 2",
+		},
+		{
+			name: "escalation not increasing",
+			edit: func(c *Config) {
+				c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 3, Group: "review"}, {FromAttempt: 3, Group: "extraction"}}
+			},
+			wantKey:     "roles.extractor.escalation[1].from_attempt",
+			wantMessage: "must be greater than the previous step's 3",
+		},
+		{
+			name:        "escalation beyond max_attempts",
+			edit:        func(c *Config) { c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 4, Group: "review"}} },
+			wantKey:     "roles.extractor.escalation[0].from_attempt",
+			wantMessage: "above limits.max_attempts 3",
+		},
+		{
+			name: "escalation group readability is checked",
+			edit: func(c *Config) {
+				c.Groups["text"] = &Group{Endpoints: []GroupEntry{{Endpoint: "local", Model: "vision"}}, Failover: c.Groups["review"].Failover}
+				c.Endpoints["local"].Models["vision"] = Model{Accepts: []string{"text/plain"}}
+				c.Groups["extraction"].Endpoints = c.Groups["extraction"].Endpoints[:1]
+				c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 2, Group: "text"}}
+			},
+			wantKey:     "roles.extractor.escalation[0].group",
+			wantMessage: `group "text" cannot read`,
+			wantWarning: true,
+		},
+
+		// Second judge (v0.3 03-02).
+		{name: "second judge", edit: func(c *Config) { c.Roles.SecondJudge.Group = "extraction" }},
+		{
+			name:        "second judge group undefined",
+			edit:        func(c *Config) { c.Roles.SecondJudge.Group = "other" },
+			wantKey:     "roles.second_judge.group",
+			wantMessage: `group "other" is not defined`,
+		},
+
+		// Classifier judge (v0.3 02-02).
+		{
+			// A classifier reads text only, so only text documents are accepted.
+			name:        "classifier judge",
+			edit:        func(c *Config) { addClassifier(c); c.Roles.Judge.Group = "classify" },
+			wantKey:     "roles.judge.group",
+			wantMessage: `group "classify" cannot read application/pdf, image/jpeg, image/png`,
+			wantWarning: true,
+		},
+		{
+			name: "classifier judge with LLM feedback",
+			edit: func(c *Config) {
+				addClassifier(c)
+				c.Roles.Judge.Group = "classify"
+				c.Roles.Judge.FeedbackFallback, c.Roles.Judge.FeedbackGroup = FeedbackLLM, "review"
+			},
+			wantKey:     "roles.judge.group",
+			wantMessage: "cannot read",
+			wantWarning: true,
+		},
+		{
+			name:        "classifier extractor",
+			edit:        func(c *Config) { addClassifier(c); c.Roles.Extractor.Group = "classify" },
+			wantKey:     "roles.extractor.group",
+			wantMessage: "can serve only the judge",
+		},
+		{
+			name: "classifier extractor escalation",
+			edit: func(c *Config) {
+				addClassifier(c)
+				c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 2, Group: "classify"}}
+			},
+			wantKey:     "roles.extractor.escalation[0].group",
+			wantMessage: "can serve only the judge",
+		},
+		{
+			name: "classifier without questions",
+			edit: func(c *Config) {
+				addClassifier(c)
+				c.Endpoints["jev"].Models["jev-1"] = Model{Accepts: []string{"text/plain"}}
+			},
+			wantKey:     "endpoints.jev.models.jev-1.questions",
+			wantMessage: "at least one question",
+		},
+		{
+			name: "classifier question threshold",
+			edit: func(c *Config) {
+				addClassifier(c)
+				m := c.Endpoints["jev"].Models["jev-1"]
+				m.Questions = append(m.Questions, Question{ID: "complete", Text: "Complete?", Threshold: 1.5})
+				c.Endpoints["jev"].Models["jev-1"] = m
+			},
+			wantKey:     "endpoints.jev.models.jev-1.questions[1].threshold",
+			wantMessage: "must be above 0 and at most 1",
+		},
+		{
+			name: "classifier duplicate question",
+			edit: func(c *Config) {
+				addClassifier(c)
+				m := c.Endpoints["jev"].Models["jev-1"]
+				m.Questions = append(m.Questions, m.Questions[0])
+				c.Endpoints["jev"].Models["jev-1"] = m
+			},
+			wantKey:     "endpoints.jev.models.jev-1.questions[1].id",
+			wantMessage: "duplicate question id",
+		},
+		{
+			name: "classifier reads text only",
+			edit: func(c *Config) {
+				addClassifier(c)
+				m := c.Endpoints["jev"].Models["jev-1"]
+				m.Accepts = []string{"text/plain", "image/png"}
+				c.Endpoints["jev"].Models["jev-1"] = m
+			},
+			wantKey:     "endpoints.jev.models.jev-1.accepts",
+			wantMessage: "a classifier reads text only",
+		},
+		{
+			name: "questions on an LLM",
+			edit: func(c *Config) {
+				c.Endpoints["local"].Models["vision"] = Model{Accepts: []string{"image/png", "image/jpeg", "text/plain"},
+					Questions: []Question{{ID: "a", Text: "A?", Threshold: 0.5}}}
+			},
+			wantKey:     "endpoints.local.models.vision.questions",
+			wantMessage: "apply only to classifier endpoints",
+		},
+		{
+			name:        "unknown feedback fallback",
+			edit:        func(c *Config) { c.Roles.Judge.FeedbackFallback = "none" },
+			wantKey:     "roles.judge.feedback_fallback",
+			wantMessage: `"none" is not one of whole_result, llm`,
+		},
+		{
+			name: "llm feedback without group",
+			edit: func(c *Config) {
+				addClassifier(c)
+				c.Roles.Judge.Group = "classify"
+				c.Roles.Judge.FeedbackFallback = FeedbackLLM
+			},
+			wantKey:     "roles.judge.feedback_group",
+			wantMessage: "is required with feedback_fallback: llm",
+		},
+		{
+			name:        "feedback group without llm",
+			edit:        func(c *Config) { c.Roles.Judge.FeedbackGroup = "review" },
+			wantKey:     "roles.judge.feedback_group",
+			wantMessage: "only with feedback_fallback: llm",
+		},
+		{
+			name: "classifier feedback group",
+			edit: func(c *Config) {
+				addClassifier(c)
+				c.Roles.Judge.Group = "classify"
+				c.Roles.Judge.FeedbackFallback, c.Roles.Judge.FeedbackGroup = FeedbackLLM, "classify"
+			},
+			wantKey:     "roles.judge.feedback_group",
+			wantMessage: "feedback needs an LLM group",
+		},
+		{
+			name:        "feedback fallback without a classifier",
+			edit:        func(c *Config) { c.Roles.Judge.FeedbackFallback = FeedbackWholeResult },
+			wantKey:     "roles.judge.feedback_fallback",
+			wantMessage: "has no effect",
+			wantWarning: true,
+		},
 		{
 			name: "two applications with retention none",
 			edit: func(c *Config) {
@@ -488,6 +707,20 @@ func TestValidate(t *testing.T) {
 			t.Errorf("Validate() = %v, want an issue at %s containing %q", issues, tt.wantKey, tt.wantMessage)
 		})
 	}
+}
+
+// addClassifier adds the classifier endpoint jev and the group classify serving it.
+func addClassifier(c *Config) {
+	c.Endpoints["jev"] = &Endpoint{
+		Provider: ProviderClassifier,
+		BaseURL:  "https://classifier.example",
+		Timeout:  time.Minute,
+		Models: map[string]Model{"jev-1": {
+			Accepts:   []string{"text/plain", "text/html"},
+			Questions: []Question{{ID: "accuracy", Text: "Is every value what the document says?", Threshold: 0.8}},
+		}},
+	}
+	c.Groups["classify"] = &Group{Endpoints: []GroupEntry{{Endpoint: "jev", Model: "jev-1"}}, Failover: c.Groups["review"].Failover}
 }
 
 func TestValidate_reportsAllErrors(t *testing.T) {

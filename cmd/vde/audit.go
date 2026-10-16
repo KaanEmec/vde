@@ -20,7 +20,7 @@ time, kind, application, actor, job and the kind's fixed details (never content)
 is a duration back from now or a time, the last 24 hours by default; --limit caps the
 rows (default 100, 0 for all). Kinds: token.created, token.revoked, app.enabled,
 app.disabled, job.created, job.finished, job.deleted, job.expired, auth.failed,
-config.loaded. The admin API serves the same listing at GET /admin/v1/audit.
+config.loaded, webhook.delivered, webhook.failed. The admin API serves the same listing at GET /admin/v1/audit.
 `
 
 func runAudit(args []string, stdout, stderr io.Writer) int {
@@ -69,7 +69,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return exitFailure
 	}
-	store, err := openStore(cfg)
+	store, err := openStore(context.Background(), cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "vde audit list: %v\n", err)
 		return exitFailure

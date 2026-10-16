@@ -21,6 +21,7 @@ Routine logs go to stderr as JSON (`logging.format: json`, the default) or text,
 | Routing | `endpoint`, `model` (configuration ids) |
 | Request and document metadata | `method`, `route`, `media_type`, `bytes`, `pages`, `duration_ms` |
 | Process | `service_version`, `version`, `component`, `listen`, `tls`, `trusted_proxy`, `drain_timeout` |
+| Storage | `storage`, `blobs` (driver names), `bucket`, `region` (never the database DSN) |
 | Diagnostics | `error`, `reason`, `panic`, `stack` |
 
 The vocabulary is enforced, not just followed: the logger drops any attribute whose key
@@ -66,3 +67,23 @@ provider bodies) for local debugging. It is **unsafe** and off by default.
   it when you finish, and never ship it to a log aggregator.
 
 Leave the switch off everywhere that handles real documents.
+
+## Data residency
+
+Where documents and job rows are stored is decided by the storage configuration, not by the
+caller (see [storage](storage.md)):
+
+- With the defaults (`storage.driver: sqlite`, `blobs.driver: fs`) everything stays in
+  `server.data_dir` on the host that runs `vde serve`.
+- With `blobs.driver: s3`, documents and page images are written to the bucket in
+  `blobs.region`. Choose a bucket and region that match your data-residency obligations (an
+  EU region for EU-only data); `vde config check` prints both. For Cloudflare R2 the region is
+  `auto` and the location is the bucket's jurisdiction setting; for MinIO it is wherever you
+  run it. Server-side encryption (`blobs.sse: AES256`, the default) encrypts each object with
+  keys the store manages.
+- With `storage.driver: postgres`, instructions, schemas, results, feedback and audit
+  events are stored in that database, so its location counts too, and so do its backups and
+  replicas.
+
+Model providers receive documents wherever their endpoints are; that is set per endpoint
+(see [providers](providers.md)) and is independent of storage.

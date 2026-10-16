@@ -34,6 +34,8 @@ var allowed = []string{
 	// Process.
 	"service_version", "version", "component", "listen", "tls", "trusted_proxy",
 	"drain_timeout",
+	// Storage drivers and the bucket's name and region, never a DSN.
+	"storage", "blobs", "bucket", "region",
 	// Diagnostics. "error" and "reason" carry messages the code controls (provider
 	// errors never quote content, contract §2); "panic" and "stack" name code.
 	"error", "reason", "panic", "stack",

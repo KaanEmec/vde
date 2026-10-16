@@ -21,8 +21,10 @@ about ten minutes from clone to a first job.
 | [operations.md](operations.md) | Health checks, metrics, audit log, logs, backups, upgrades. |
 | [troubleshooting.md](troubleshooting.md) | Look up an error code, a `config check` message or a provider failure. |
 | [retention.md](retention.md) | What is deleted, when, and what remains. |
-| [privacy.md](privacy.md) | What is logged, what never is, and the `debug.log_content` switch. |
+| [privacy.md](privacy.md) | What is logged, what never is, the `debug.log_content` switch and data residency. |
+| [storage.md](storage.md) | Choose SQLite or PostgreSQL and local files or S3; pool sizing, backups, bucket lifecycle rule, migrations. |
 | [framings.md](framings.md) | The fixed prompts of the extractor and judge roles. |
+| [evaluation.md](evaluation.md) | Measure extraction quality on a corpus with `vde eval`; build a corpus from production rejections. |
 
 Related pages outside this folder: [provider adapters](../providers/README.md),
 [security and privacy](../security.md) (threat model and the checklist before exposing the
@@ -38,11 +40,13 @@ service), [examples](../../examples/README.md) and the [changelog](../../CHANGEL
 | `vde config check [--config path] [--strict] [--probe]` | Validate a configuration without network calls and print a summary. |
 | `vde token create\|list\|revoke` | Manage access tokens. See [applications and tokens](applications-and-tokens.md). |
 | `vde app list` | List the applications in the database. |
+| `vde migrate [--config path]` | Apply pending database migrations of `storage.driver` and print the schema version (`serve` also migrates at start). See [storage](storage.md#migrations). |
 | `vde healthcheck [--config path]` | Request `/healthz` on the configured listener; exit 0 on `200`. Used by the container `HEALTHCHECK`. |
 | `vde extract` | Run one document through the extractor and judge from the command line; for trying a configuration. See [examples](../../examples/README.md#extract-a-document). |
+| `vde eval` | Run a corpus with ground truth through the engine or a deployment and report false accepts, acceptance rate and field accuracy. See [evaluation](evaluation.md). |
 | `vde version` | Print version, commit and build date. |
 
-`--config` defaults to `vde.yaml`. The commands `app`, `token` and `healthcheck` fall back
+`--config` defaults to `vde.yaml`. The commands `app`, `token`, `audit`, `migrate` and `healthcheck` fall back
 to `/etc/vde/vde.yaml` (the container path) when `--config` is not given and `vde.yaml` does
 not exist, so `docker compose exec vde vde token ...` needs no flags. `vde serve` and
 `vde config check` do not fall back.
