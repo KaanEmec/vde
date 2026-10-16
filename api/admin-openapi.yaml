@@ -436,7 +436,7 @@ components:
     AuditKind:
       type: string
       enum: [token.created, token.revoked, app.enabled, app.disabled, job.created, job.finished,
-        job.deleted, job.expired, auth.failed, config.loaded]
+        job.deleted, job.expired, auth.failed, config.loaded, webhook.delivered, webhook.failed]
 
     AuditEvent:
       type: object

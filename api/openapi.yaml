@@ -12,7 +12,7 @@ info:
     - Base path `/v1`; timestamps are RFC 3339 in UTC. `/healthz` and `/metrics` are at the root.
     - Every response carries `X-Request-Id`: the client's header when it is 1 to 128
       visible ASCII characters, else a fresh `r_<ULID>`.
-    - Every `/v1/jobs` response, errors included, carries `X-Service-Version`.
+    - Every `/v1/jobs` and `/v1/extract` response, errors included, carries `X-Service-Version`.
     - Every error response uses the `Error` schema with `Content-Type: application/json`;
       messages are fixed texts and never quote document contents, instructions, schemas
       or extraction output. An unknown route answers `404 not_found`, a known route with
@@ -56,7 +56,14 @@ paths:
         described in the contract, section 4. Refused before any model call when the
         credential, the request or the quota is not in order. Without a `schema` part
         the job runs schema-less: the judge alone decides acceptance and `result` is any
-        JSON object.
+        JSON object. The same fields may instead be sent as `application/json`
+        (`SubmitJobJSON`, v0.3): the document and pages base64-encoded, or the document by
+        `url` when the operator enabled `documents.fetch`; the limits apply to the decoded
+        bytes and the checks are the multipart ones.
+
+        When the application has a completion webhook (`applications[].webhook`, configured
+        by the operator, never per request), the service POSTs the `jobFinished` callback
+        when the job reaches a terminal status.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/RequestId"
@@ -81,6 +88,42 @@ paths:
                 contentType: text/plain
               max_attempts:
                 contentType: text/plain
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitJobJSON"
+      callbacks:
+        jobFinished:
+          "{$request.body#/webhook}":
+            post:
+              summary: Completion webhook (operator-configured URL)
+              description: |
+                Sent once per job reaching a terminal status, to the application's
+                operator-approved `webhook.url`, not to a URL from the request (the callback
+                expression is nominal). The body never carries `result` or `feedback`: fetch
+                `GET /v1/jobs/{id}`, which keeps the retention rules. `X-VDE-Signature` is
+                `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>" under the secret>`;
+                verify it with a constant-time comparison and refuse a `t` more than a few
+                minutes from your clock (replay protection); deduplicate on `job_id`. Any 2xx
+                acknowledges; anything else (redirects included, they are not followed) is
+                retried up to five attempts over about 15 minutes. Deliveries are in memory:
+                a restart can drop one, so keep polling as the fallback.
+              parameters:
+                - name: X-VDE-Signature
+                  in: header
+                  required: true
+                  schema: { type: string, example: "t=1792143123,v1=5d41402abc4b2a76b9719d911017c592ae0d5f0a6b8a2f1c3e9d7b4a6c8e0f12" }
+                - name: X-VDE-Event
+                  in: header
+                  required: true
+                  schema: { type: string, const: job.finished }
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema: { $ref: "#/components/schemas/WebhookPayload" }
+              responses:
+                "2XX":
+                  description: Delivered; no retry.
       responses:
         "202":
           description: Job created, or replayed for a repeated `Idempotency-Key`.
@@ -101,6 +144,72 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /extract:
+    post:
+      tags: [jobs]
+      operationId: extractSync
+      summary: Submit a document and wait for the result
+      description: |
+        Added by vde (contract §16, v0.3). The request is that of `POST /v1/jobs`,
+        multipart or JSON, with the same limits, quota, submission rate limit and
+        in-progress ceiling. The response is held open up to `sync.max_wait` (default 60 s,
+        at most 120 s): `200` with the terminal job, which counts as its first read (a
+        `retention: none` job's content is deleted, as by a poll), or `202` with the job
+        as it is then and `Location`, to poll as usual. A replayed `Idempotency-Key`
+        answers `202` as `POST /v1/jobs` does. For small documents and interactive
+        callers; the job keeps running when the client goes away.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SubmitJob"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitJobJSON"
+      responses:
+        "200":
+          description: The job reached its terminal status within `sync.max_wait`.
+          headers:
+            Location:
+              description: The job's URL, `/v1/jobs/{id}`.
+              schema: { type: string }
+            X-Quota-Remaining: { $ref: "#/components/headers/X-Quota-Remaining" }
+            X-Quota-Reset: { $ref: "#/components/headers/X-Quota-Reset" }
+            X-Service-Version: { $ref: "#/components/headers/X-Service-Version" }
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "202":
+          description: Still queued or running after `sync.max_wait`, or an idempotent replay; poll `Location`.
+          headers:
+            Location:
+              description: The job's URL, `/v1/jobs/{id}`.
+              schema: { type: string }
+            Idempotency-Replayed:
+              description: Present and `true` when an earlier job with the same key was returned.
+              schema: { type: boolean }
+            X-Quota-Remaining: { $ref: "#/components/headers/X-Quota-Remaining" }
+            X-Quota-Reset: { $ref: "#/components/headers/X-Quota-Reset" }
+            X-Service-Version: { $ref: "#/components/headers/X-Service-Version" }
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "422": { $ref: "#/components/responses/Unprocessable" }
@@ -355,6 +464,63 @@ components:
           description: Lowers the attempt limit for this job; higher values are clamped to the application's limit.
           type: string
           pattern: "^[1-9][0-9]*$"
+
+    SubmitJobJSON:
+      description: |
+        The `application/json` form of a submission (v0.3): the parts of `SubmitJob` as
+        fields. Limits apply to the decoded bytes; the whole body is bounded by
+        `limits.request_bytes`. Unknown fields are refused with `400`.
+      type: object
+      additionalProperties: false
+      required: [document, extractor_instructions, judge_instructions]
+      properties:
+        document:
+          type: object
+          additionalProperties: false
+          required: [media_type]
+          description: Exactly one of `data_base64` and `url`.
+          properties:
+            media_type: { type: string, description: "The document's media type, as on the multipart part." }
+            data_base64: { type: string, contentEncoding: base64, description: Standard base64 of the document, up to 25 MiB decoded. }
+            url:
+              type: string
+              format: uri
+              description: |
+                Only when the operator enabled `documents.fetch`: an `https` URL on one of its
+                `allowed_hosts`. The service fetches it under a size and time limit, follows
+                redirects only to the same host, and refuses hosts that resolve to loopback,
+                private or link-local addresses. A refused URL is `400`, an oversized
+                document `413`. The declared `media_type` is used, not the response's.
+            filename: { type: string, description: Informational only. }
+        pages:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [media_type, data_base64]
+            properties:
+              media_type: { type: string, enum: [image/png, image/jpeg] }
+              data_base64: { type: string, contentEncoding: base64, description: Up to 10 MiB decoded. }
+        extractor_instructions: { type: string, description: Up to 64 KiB. }
+        judge_instructions: { type: string, description: Up to 64 KiB. }
+        schema:
+          description: JSON Schema 2020-12 as a JSON object (not a string), up to 256 KiB. Optional, as in `SubmitJob`; a non-object is `422 invalid_schema`.
+          type: [object, "null"]
+        retention: { type: string, enum: [none, default] }
+        max_attempts: { type: integer, minimum: 1, description: A JSON integer; a string is refused. }
+
+    WebhookPayload:
+      description: The body of a completion webhook. Never `result`, `feedback` or `error`.
+      type: object
+      required: [event, job_id, application_id, status, service_version, finished_at]
+      properties:
+        event: { type: string, const: job.finished }
+        job_id: { type: string }
+        application_id: { type: string }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        service_version: { type: string }
+        finished_at: { type: string, format: date-time }
 
     JobStatus:
       type: string

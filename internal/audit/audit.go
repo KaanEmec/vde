@@ -29,6 +29,10 @@ const (
 	JobExpiredKind   Kind = "job.expired"
 	AuthFailedKind   Kind = "auth.failed"
 	ConfigLoadedKind Kind = "config.loaded"
+	// WebhookDeliveredKind and WebhookFailedKind record completion webhook attempts
+	// (internal/webhook).
+	WebhookDeliveredKind Kind = "webhook.delivered"
+	WebhookFailedKind    Kind = "webhook.failed"
 )
 
 // Kinds returns every kind, in documentation order.
@@ -36,6 +40,7 @@ func Kinds() []Kind {
 	return []Kind{
 		TokenCreatedKind, TokenRevokedKind, AppEnabledKind, AppDisabledKind, JobCreatedKind,
 		JobFinishedKind, JobDeletedKind, JobExpiredKind, AuthFailedKind, ConfigLoadedKind,
+		WebhookDeliveredKind, WebhookFailedKind,
 	}
 }
 
@@ -46,6 +51,7 @@ const (
 	ActorAPI     = "api"
 	ActorCLI     = "cli"
 	ActorConfig  = "config"
+	ActorWebhook = "webhook"
 	// ActorAdmin prefixes the admin API's events: "admin:<token id>" names the admin
 	// token that made the change (the id is the token's public prefix, never a secret).
 	ActorAdmin = "admin"
@@ -126,6 +132,29 @@ type ConfigLoaded struct {
 	ServiceVersion string `json:"service_version"`
 }
 
+// WebhookDelivered: a completion webhook was answered with a 2xx status.
+type WebhookDelivered struct {
+	Event      string `json:"event"`
+	Attempt    int    `json:"attempt"`
+	StatusCode int    `json:"status_code"`
+}
+
+// Reasons a webhook attempt failed, for WebhookFailed.
+const (
+	WebhookStatus    = "status"     // the receiver answered with a non-2xx status
+	WebhookNetwork   = "network"    // no answer: connection, TLS or timeout
+	WebhookQueueFull = "queue_full" // too many deliveries pending; not attempted
+)
+
+// WebhookFailed: one webhook attempt failed. Final is true when no retry follows.
+type WebhookFailed struct {
+	Event      string `json:"event"`
+	Attempt    int    `json:"attempt"`
+	Reason     string `json:"reason"` // WebhookStatus, WebhookNetwork or WebhookQueueFull
+	StatusCode int    `json:"status_code,omitempty"`
+	Final      bool   `json:"final"`
+}
+
 // AuditKind implements Details.
 func (TokenCreated) AuditKind() Kind { return TokenCreatedKind }
 
@@ -156,6 +185,12 @@ func (AuthFailed) AuditKind() Kind { return AuthFailedKind }
 // AuditKind implements Details.
 func (ConfigLoaded) AuditKind() Kind { return ConfigLoadedKind }
 
+// AuditKind implements Details.
+func (WebhookDelivered) AuditKind() Kind { return WebhookDeliveredKind }
+
+// AuditKind implements Details.
+func (WebhookFailed) AuditKind() Kind { return WebhookFailedKind }
+
 // ErrUnknownKind: Decode met a kind outside the fixed set.
 var ErrUnknownKind = errors.New("audit: unknown kind")
 
@@ -184,6 +219,10 @@ func Decode(e job.AuditEvent) (Details, error) {
 		d = &AuthFailed{}
 	case ConfigLoadedKind:
 		d = &ConfigLoaded{}
+	case WebhookDeliveredKind:
+		d = &WebhookDelivered{}
+	case WebhookFailedKind:
+		d = &WebhookFailed{}
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownKind, e.Kind)
 	}
@@ -219,6 +258,10 @@ func deref(d Details) Details {
 	case *JobExpired:
 		return *v
 	case *AuthFailed:
+		return *v
+	case *WebhookDelivered:
+		return *v
+	case *WebhookFailed:
 		return *v
 	default:
 		return *d.(*ConfigLoaded)

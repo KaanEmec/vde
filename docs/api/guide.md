@@ -101,6 +101,86 @@ curl -sS "$EXTRACTION_URL/v1/jobs" \
 `-F name=<file` sends the file's contents as the part's value; `-F name=@file` sends it as a
 file upload. Both work for the text parts; the examples use `<` as the contract does.
 
+### JSON instead of multipart
+
+Where multipart is awkward, send the same fields as `Content-Type: application/json` (v0.3).
+The document and pages are standard base64; `schema` is a JSON object, not a string;
+`max_attempts` is a JSON integer. The limits above apply to the decoded bytes, and the
+checks, refusals and idempotency rules are those of the multipart path (the whole JSON body
+counts against the request limit, so base64's overhead leaves less room). Unknown fields
+are `400`.
+
+```json
+{
+  "document": {"media_type": "text/plain; charset=utf-8", "data_base64": "QWRhIExvdmVsYWNl...", "filename": "booking.txt"},
+  "pages": [{"media_type": "image/png", "data_base64": "iVBORw0K..."}],
+  "extractor_instructions": "Extract the traveller's name.",
+  "judge_instructions": "The name must appear in the document.",
+  "schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
+  "retention": "none",
+  "max_attempts": 2
+}
+```
+
+Instead of `data_base64` the document may be `"url": "https://..."` when the operator turned
+on `documents.fetch`: the service fetches it once, at submit, under a size and time limit.
+Only `https` URLs on the operator's `allowed_hosts` are fetched; redirects are followed only
+to the same host; a host that resolves to a loopback, private or link-local address is
+refused, checked on the connection itself after DNS resolution. The `media_type` you declare
+is used, not the server's `Content-Type`. A refused or failed fetch is `400`, an oversized
+document `413`. The fetch happens before the submission rate limit and quota are applied, so
+each fetch costs one request against the request rate limit only, even when the
+submission is then refused.
+
+## Synchronous: `POST /v1/extract`
+
+For small documents and interactive callers (contract §16; TravelInbox does not use it).
+The request is exactly that of `POST /v1/jobs`, multipart or JSON, with the same limits,
+quota, submission rate limit and in-progress ceiling. The service holds the response open
+until the job is terminal, up to its `sync.max_wait` (60 s by default, never more than
+120 s):
+
+- `200` with the terminal job (and `Location`). This is the job's first read: a
+  `retention: none` job's content is deleted, and a later `GET` is `404`.
+- `202` with the job as it is (queued or running) and `Location` when the wait ran out;
+  poll it as usual. The job keeps running if you hang up early.
+- A repeated `Idempotency-Key` answers as `POST /v1/jobs` does: `202` with the existing
+  job and `Idempotency-Replayed: true`, without waiting.
+
+Set your client timeout above the service's `sync.max_wait`. Behind several replicas the
+wait still works: it reads the job from the store every second.
+
+## Completion webhooks
+
+The operator can give an application a webhook (`applications[].webhook`); a request
+never names a URL. When a job reaches a terminal status the service POSTs to that URL:
+
+```
+POST /hooks/vde HTTP/1.1
+Content-Type: application/json
+X-VDE-Event: job.finished
+X-VDE-Signature: t=1792143123,v1=6f1c...e2
+
+{"event":"job.finished","job_id":"j_01JA3V9Q6ZK7M4W8X2R5T1N0HB","application_id":"travelinbox",
+ "status":"accepted","service_version":"vde-0.3.0+c0ffee12","finished_at":"2026-10-16T09:12:11Z"}
+```
+
+The body never carries `result`, `feedback` or `error`: fetch `GET /v1/jobs/{id}`, so
+retention works as for a polled job. Verify every delivery before acting on it:
+
+1. Split `X-VDE-Signature` on `,` into `t=<unix seconds>` and `v1=<hex>`.
+2. Compute HMAC-SHA256 with the shared secret over the bytes `<t>.<raw body>` (the body
+   exactly as received, before any JSON parsing) and compare it to `v1` in constant time.
+3. Replay protection: refuse a delivery whose `t` is more than a few minutes (say five)
+   from your clock. The signature covers `t`, so an attacker cannot refresh it; within the
+   window, deduplicate on `job_id` (a retry of the same delivery carries the same body and
+   a new `t`).
+
+`Verify` in the service's `internal/webhook` package is a reference implementation. Answer any
+`2xx` quickly; anything else, a timeout or a redirect (not followed) is retried, up to five
+attempts over about 15 minutes. Deliveries are held in memory, so a restart of the service
+can drop one: keep polling as the fallback, at a slower pace if you like.
+
 ## Poll: `GET /v1/jobs/{id}`
 
 Polling does not count against your quota. Start at **2 seconds** and double up to a ceiling
@@ -314,7 +394,7 @@ small instructions; use `<file` for anything longer.) For the sample
 
 ## Other things worth knowing
 
-- `X-Service-Version` is on every `/v1/jobs` response, errors included.
+- `X-Service-Version` is on every `/v1/jobs` and `/v1/extract` response, errors included.
 - Responses are `Cache-Control: no-store`.
 - Clients ignore fields they do not know: changes within `/v1` are additive only.
 - `GET /healthz` is unauthenticated and answers `200 {"status":"ok"}` when the service can

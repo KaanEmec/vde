@@ -125,6 +125,8 @@ never contain document content, instructions, results or tokens.
 | `job.finished` | A job reached a terminal status | `worker` | `status`, `attempts`, `error_code`, `service_version` |
 | `job.deleted` | Content deleted before expiry | `api` | `reason` (`request` or `first_read`), `retention` |
 | `job.expired` | The sweeper removed a job | `sweeper` | `status`, `retention` |
+| `webhook.delivered` | A completion webhook was answered `2xx` | `webhook` | `event`, `attempt`, `status_code` |
+| `webhook.failed` | A webhook attempt failed (one row per attempt) | `webhook` | `event`, `attempt`, `reason` (`status`, `network` or `queue_full`), `status_code`, `final` (no retry follows) |
 
 Each row has `at` (Unix milliseconds), `kind`, `application_id`, `actor`, `job_id` and
 `details` (JSON). Read them with `sqlite3`, read-only, while the service runs:

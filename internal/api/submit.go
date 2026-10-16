@@ -100,18 +100,32 @@ type submission struct {
 	maxAttempts           *part
 }
 
-// submitJob is POST /v1/jobs (contract §4, §6 step 1). It reads the whole request
-// under the limits, then refuses or accepts in this order: parts and limits, media
-// type, schema, representation, idempotency, rate limits, quota. Nothing is stored
-// before every check passed. No content is ever logged or quoted in an error.
+// submitJob is POST /v1/jobs (contract §4, §6 step 1): createJob, then 202 with the
+// queued job.
 func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
+	j, done := s.createJob(w, r)
+	if done {
+		return
+	}
+	w.Header().Set("Location", "/v1/jobs/"+j.ID)
+	writeJSON(w, http.StatusAccepted, jobToResponse(j))
+}
+
+// createJob is the submission path POST /v1/jobs and POST /v1/extract share. It reads
+// the whole request under the limits, multipart or JSON (submit_json.go), then refuses
+// or accepts in this order: parts and limits, media type, schema, representation,
+// idempotency, rate limits, quota. Nothing is stored before every check passed. No
+// content is ever logged or quoted in an error. done is true when it has answered: a
+// refusal, or the replay of an Idempotency-Key; otherwise the job is stored and the
+// pool woken, and the caller answers.
+func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, done bool) {
 	ctx := r.Context()
 	app, _ := ApplicationFrom(ctx)
 	cfg := s.deps.Config
 	if s.deps.Blobs == nil || cfg == nil {
 		closeIfBodyPending(w, r)
 		writeError(w, r, newError(codeUnavailable, msgSubmitDisabled))
-		return
+		return nil, true
 	}
 	requestLimit := cfg.Limits.RequestBytes
 	if requestLimit <= 0 {
@@ -128,17 +142,24 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 	key := r.Header.Get(headerIdempotencyKey)
 	if utf8.RuneCountInString(key) > maxIdempotencyKeyChars {
 		refuse(newError(codeBadRequest, msgIdempotencyKeyTooLong, maxIdempotencyKeyChars))
-		return
+		return nil, true
 	}
-	sub, e, ok := readSubmission(r, cfg.Limits, requestLimit)
+	var sub *submission
+	var e apiError
+	var ok bool
+	if mediaTypeIn(r.Header.Get("Content-Type"), "", "application/json") {
+		sub, e, ok = s.readJSONSubmission(r, cfg, requestLimit)
+	} else {
+		sub, e, ok = readSubmission(r, cfg.Limits, requestLimit)
+	}
 	if !ok {
 		refuse(e)
-		return
+		return nil, true
 	}
 	retention, maxAttempts, e, ok := sub.options(app)
 	if !ok {
 		refuse(e)
-		return
+		return nil, true
 	}
 
 	pages := make([]document.Page, len(sub.pages))
@@ -150,20 +171,20 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 	}, cfg.Limits)
 	if err != nil {
 		s.refuseDocument(w, r, err)
-		return
+		return nil, true
 	}
 	var schema string
 	if sub.schema != nil {
 		if _, err := extract.CompileSchema(sub.schema.data); err != nil {
 			refuse(newError(codeInvalidSchema, msgInvalidSchema))
-			return
+			return nil, true
 		}
 		schema = string(sub.schema.data)
 	}
 	rep, err := selectRepresentation(cfg, app, doc)
 	if err != nil {
 		s.refuseDocument(w, r, err)
-		return
+		return nil, true
 	}
 
 	bodyHash := sub.hash()
@@ -171,11 +192,11 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 		unlock := s.limits.lockKey(app.ID, key)
 		defer unlock()
 		if s.replay(w, r, app, key, bodyHash) {
-			return
+			return nil, true
 		}
 	}
 	if !s.admit(w, r, app) {
-		return
+		return nil, true
 	}
 
 	j := &job.Job{
@@ -198,21 +219,20 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 	}
 	err = s.storeJob(ctx, j, doc)
 	if errors.Is(err, job.ErrDuplicate) && key != "" && s.replay(w, r, app, key, bodyHash) {
-		return // another process created the job with this key between lookup and insert
+		return nil, true // another process created the job with this key between lookup and insert
 	}
 	if err != nil {
 		s.log.LogAttrs(ctx, slog.LevelError, "job not stored",
 			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
 		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
-		return
+		return nil, true
 	}
 	s.deps.Audit.JobCreated(ctx, *j) // nil-safe
 	s.refreshInProgress(ctx, app.ID)
 	if s.deps.Wake != nil {
 		s.deps.Wake()
 	}
-	w.Header().Set("Location", "/v1/jobs/"+j.ID)
-	writeJSON(w, http.StatusAccepted, jobToResponse(j))
+	return j, false
 }
 
 // readSubmission streams the multipart body, enforcing the part rules and the per-part
@@ -435,8 +455,8 @@ func selectRepresentation(cfg *config.Config, app job.Application, doc *document
 	if err != nil {
 		return document.Representation{}, err
 	}
-	return document.Select(doc,
-		cfg.Capabilities(cfg.Roles.Extractor.Group), cfg.Capabilities(cfg.Roles.Judge.Group), policy)
+	return document.SelectWith(doc, cfg.Capabilities(cfg.Roles.Extractor.Group),
+		cfg.Capabilities(cfg.Roles.Judge.Group), policy, document.NewImagePolicy(cfg.Documents.Images))
 }
 
 // refuseDocument answers a refused document (*document.Error) with its contract code
