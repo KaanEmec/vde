@@ -221,12 +221,15 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 	if err := rec.Record(ctx, audit.ActorConfig, "", "", audit.ConfigLoaded{ServiceVersion: serviceVersion}); err != nil {
 		logger.Warn("audit event not written", "kind", string(audit.ConfigLoadedKind), "error", err)
 	}
-	// The service_version of an application's jobs follows its stored row (attempt limit
-	// and HTML policy), so applications created or changed over the admin API get theirs.
-	appVersion := func(a job.Application) string {
-		return extract.ApplicationServiceVersion(cfg, config.Application{
-			MaxAttempts: a.MaxAttempts, Documents: config.AppDocuments{HTML: a.HTMLPolicy},
-		}, version.Version)
+	// The service_version of an application's jobs follows its stored row (attempt limit,
+	// HTML policy and judge settings) and the job's judge policy, so applications created
+	// or changed over the admin API get theirs.
+	appVersion := func(a job.Application, policy config.JudgePolicy) string {
+		app := storedApplication(a)
+		if policy == "" {
+			policy = cfg.JudgePolicyOf(app)
+		}
+		return extract.ApplicationServiceVersionFor(cfg, app, policy, version.Version)
 	}
 	inputsAtTerminal := map[string]bool{}
 	for _, a := range cfg.Applications {
@@ -242,7 +245,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		if !a.Enabled {
 			continue
 		}
-		logger.Info("application enabled", "app_id", a.ID, "source", a.Source, "service_version", appVersion(a))
+		logger.Info("application enabled", "app_id", a.ID, "source", a.Source, "service_version", appVersion(a, ""))
 		if n, err := store.CountInProgress(ctx, a.ID); err == nil {
 			m.SetJobsInProgress(a.ID, n) // jobs left queued or running by a previous process
 		}

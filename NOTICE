@@ -1,0 +1,24 @@
+vde (Verified Document Extraction)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes the following third-party software, compiled into the vde binary to read and
+render PDF documents (ADR 0010):
+
+- PDFium (https://pdfium.googlesource.com/pdfium/), compiled to WebAssembly and embedded
+  through go-pdfium. Copyright 2014 The PDFium Authors. BSD 3-Clause License.
+  PDFium itself bundles third-party code (among others FreeType, libjpeg-turbo, libpng,
+  zlib, OpenJPEG, lcms2 and libtiff) under their own permissive licenses, listed in the
+  PDFium source tree.
+
+- go-pdfium (https://github.com/klippa-app/go-pdfium), v1.21.3.
+  Copyright (c) 2022 Klippa App BV. MIT License.
+
+- wazero (https://github.com/tetratelabs/wazero), v1.12.0.
+  Copyright 2020-2023 wazero authors. Apache License, Version 2.0.
+
+- go-commons-pool (https://github.com/jolestar/go-commons-pool), v2.1.2, used by
+  go-pdfium. Apache License, Version 2.0.
+
+The full license texts are in each project's repository, and in the Go module cache
+(go mod download) next to its source.
