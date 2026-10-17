@@ -11,6 +11,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/document"
+	"github.com/kaanemec/vde/internal/ground"
 )
 
 // devVersion is the semver of a build without a release version.
@@ -29,8 +30,12 @@ var semverRe = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // unset: per-attempt escalation steps, the second judge's group, a classifier judge's
 // feedback fallback (llm, with its group) and a classifier model's questions. The judge
 // policy (ADR 0009) is hashed only when it is not always, and the sample rate only under
-// auto, so a configuration that keeps the default keeps its hash. It excludes secrets,
-// listen addresses, data paths and application settings.
+// auto. The grounding rules (ground.RulesVersion) are always hashed, since every policy
+// grounds candidates (always for its one repair, ADR 0009). The PDF policy (mode, dpi,
+// minimum text characters) is hashed when it can change what is read: when a role's
+// groups do not all read PDFs natively and the mode is not native, or when the judge
+// policy is not always (natively sent PDFs are then opened for grounding). It excludes
+// secrets, listen addresses, data paths and application settings.
 //
 // For an application (v0.2) use ApplicationServiceVersion, so each application's jobs
 // carry the hash of the configuration that runs them.
@@ -48,8 +53,8 @@ func serviceVersion(cfg *config.Config, sampleRate float64, buildVersion string)
 }
 
 // ApplicationServiceVersion is ServiceVersion with the application's attempt limit, HTML
-// policy and effective judge policy (with its sample rate) in place of the global ones
-// (zero values keep the global ones).
+// policy, PDF mode and effective judge policy (with its sample rate) in place of the
+// global ones (zero values keep the global ones).
 func ApplicationServiceVersion(cfg *config.Config, app config.Application, buildVersion string) string {
 	return ApplicationServiceVersionFor(cfg, app, cfg.JudgePolicyOf(app), buildVersion)
 }
@@ -63,6 +68,9 @@ func ApplicationServiceVersionFor(cfg *config.Config, app config.Application, po
 	}
 	if app.Documents.HTML != "" {
 		c.Documents.HTML = app.Documents.HTML
+	}
+	if app.Documents.PDF.Mode != "" {
+		c.Documents.PDF.Mode = app.Documents.PDF.Mode
 	}
 	c.Roles.Judge.Policy = policy
 	return serviceVersion(&c, app.Judge.Rate(), buildVersion)
@@ -104,6 +112,8 @@ type versionedConfig struct {
 	FeedbackJudge       *versionedGroup `json:"feedback_judge,omitempty"`
 	JudgePolicy         string          `json:"judge_policy,omitempty"` // never or auto; always is the default
 	SampleRate          *float64        `json:"sample_rate,omitempty"`  // auto only
+	Grounding           string          `json:"grounding,omitempty"`    // ground.RulesVersion, always set (v0.4)
+	PDF                 string          `json:"pdf,omitempty"`          // document.PDFPolicy.String(), when it matters
 }
 
 type versionedStep struct {
@@ -158,6 +168,7 @@ func canonicalConfig(cfg *config.Config, sampleRate float64) []byte {
 		},
 		Parser:    parserLeniency,
 		Validator: validatorModule + "@" + moduleVersion(validatorModule),
+		Grounding: ground.RulesVersion,
 	}
 	v.ExtractorEscalation = versionSteps(cfg, cfg.Roles.Extractor.Escalation)
 	v.JudgeEscalation = versionSteps(cfg, cfg.Roles.Judge.Escalation)
@@ -175,11 +186,27 @@ func canonicalConfig(cfg *config.Config, sampleRate float64) []byte {
 			v.SampleRate = &sampleRate
 		}
 	}
+	if cfg.RolePolicy() != config.JudgeAlways || (cfg.Documents.PDF.Mode != config.PDFModeNative && !readsPDFNatively(cfg)) {
+		v.PDF = document.NewPDFPolicy(cfg.Documents.PDF, "", nil).String()
+	}
 	data, err := json.Marshal(v)
 	if err != nil {
 		panic("extract: service version: " + err.Error()) // strings, ints, bools and finite floats always marshal
 	}
 	return data
+}
+
+// readsPDFNatively reports whether every group of both roles reads application/pdf
+// natively, so the service never prepares a PDF itself.
+func readsPDFNatively(cfg *config.Config) bool {
+	extractor, judge := RoleCapabilities(cfg)
+	for _, caps := range [][]config.Capability{extractor, judge} {
+		i := slices.IndexFunc(caps, func(c config.Capability) bool { return c.MediaType == "application/pdf" })
+		if i < 0 || caps[i].Via != config.ViaNative {
+			return false
+		}
+	}
+	return true
 }
 
 func versionSteps(cfg *config.Config, steps []config.Escalation) []versionedStep {

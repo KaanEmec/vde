@@ -1,0 +1,25 @@
+# Judge policy scenarios (ADR 0009): the first YAML document is the fake provider script
+# (internal/provider/fake), the second the input and the expected outcome, read by
+# TestRun_judgePolicyScenarios in internal/extract. Every scenario runs with
+# testdata/scenarios/config/vde.yaml. A candidate's date 2026-04-18 and organiser
+# "Grand Gala Events" are invented: booking.txt prints neither.
+description: "never: schema violations retry up to the limit and end rejected, without a judge"
+steps:
+  - role: extractor
+    answer: '{"title": "Harbour View Hotel", "date": "20 Feb 2026", "total": 412.5}'
+  - role: extractor
+    answer: '{"title": "Harbour View Hotel", "date": "20 Feb 2026", "total": 412.5}'
+  - role: extractor
+    answer: '{"title": "Harbour View Hotel", "date": "20 Feb 2026", "total": 412.5}'
+---
+input:
+  document: examples/samples/booking.txt
+  schema: examples/samples/schema.json
+  judge: never
+expect:
+  status: rejected
+  verification: none
+  attempts: 3
+  extractor_calls: 3
+  judge_calls: 0
+  decision: ""

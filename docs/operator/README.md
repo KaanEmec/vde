@@ -53,7 +53,8 @@ not exist, so `docker compose exec vde vde token ...` needs no flags. `vde serve
 `vde config check` do not fall back.
 
 Exit codes: 0 success, 1 usage error, configuration error or any other failure. `vde extract`
-also uses 2 (rejected) and 3 (failed).
+also uses 2 (rejected), 3 (failed) and 4 (extracted: judge policy `never`, no judge asked; not
+0, because scripts read 0 as accepted).
 
 ## What is planned
 

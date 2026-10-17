@@ -475,7 +475,9 @@ func TestS04LimitsExceeded413(t *testing.T) {
 // TestS04RepresentationNativeOrPages: the service decides the representation from its
 // configuration: a PDF goes to the models natively when the extractor's endpoints accept
 // PDF, as the page images otherwise; with neither readable the submission is refused 415
-// unsupported_document. Both roles read the same bytes.
+// unsupported_document. Both roles read the same bytes. The instance without a PDF reader
+// runs documents.pdf.mode native, the setting that keeps 4.11 exactly: under the default
+// auto the service would read the PDF's text layer itself (ADR 0010).
 func TestS04RepresentationNativeOrPages(t *testing.T) {
 	requireLocal(t, "configures what the models accept")
 	loadInputs(t)
@@ -492,7 +494,7 @@ func TestS04RepresentationNativeOrPages(t *testing.T) {
 		}
 	}
 
-	inst := newInstance(t, instanceOptions{name: "no-pdf", accepts: []string{"image/png", "image/jpeg", "text/plain", "text/html"}})
+	inst := newInstance(t, instanceOptions{name: "no-pdf", accepts: []string{"image/png", "image/jpeg", "text/plain", "text/html"}, pdfMode: "native"})
 	c := inst.client()
 	created = c.submitOK(t, inst.tokens[appDev], standardParts(pdf, pagePart(t)), nil)
 	if final := c.waitTerminal(t, inst.tokens[appDev], created.ID); final.Status != "accepted" {

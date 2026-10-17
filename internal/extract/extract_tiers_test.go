@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -437,7 +438,10 @@ roles:
 // TestRun_scenarioSuiteUnchanged runs every testdata/scenarios script with the scenario
 // configuration as is and with the escalation, second judge and feedback options spelled
 // out at their off values: the outcomes, the calls and service_version are identical,
-// so the options change nothing unless configured.
+// so the options change nothing unless configured. It also runs each script with the
+// representation made ungroundable, as the v0.3 loop saw it: under judge policy always
+// the grounding repair (ADR 0009) changes no outcome and no call of the suite, whose
+// candidates are all grounded or ungroundable.
 func TestRun_scenarioSuiteUnchanged(t *testing.T) {
 	const root = "../.."
 	base, err := os.ReadFile(filepath.Join(root, "testdata/scenarios/config/vde.yaml"))
@@ -462,15 +466,24 @@ func TestRun_scenarioSuiteUnchanged(t *testing.T) {
 			in := scenarioRunInput(t, root, path, baseCfg)
 			outA, callsA := runScenario(t, path, baseCfg, in)
 			outB, callsB := runScenario(t, path, offCfg, in)
-			if !reflect.DeepEqual(outA, outB) {
-				t.Errorf("outcome with the options off = %+v, want %+v", outB, outA)
-			}
-			if len(callsA) != len(callsB) {
-				t.Fatalf("calls: %d with the options off, %d without", len(callsB), len(callsA))
-			}
-			for i := range callsA {
-				if !reflect.DeepEqual(callsA[i].Request, callsB[i].Request) {
-					t.Errorf("call %d differs", i)
+			v03 := in
+			v03.Representation.GroundText, v03.Representation.Groundable = "", false
+			outC, callsC := runScenario(t, path, baseCfg, v03)
+			for _, other := range []struct {
+				name  string
+				out   Outcome
+				calls []fake.Call
+			}{{"with the options off", outB, callsB}, {"without grounding (v0.3)", outC, callsC}} {
+				if !reflect.DeepEqual(outA, other.out) {
+					t.Errorf("outcome %s = %+v, want %+v", other.name, other.out, outA)
+				}
+				if len(callsA) != len(other.calls) {
+					t.Fatalf("calls: %d %s, %d otherwise", len(other.calls), other.name, len(callsA))
+				}
+				for i := range callsA {
+					if !reflect.DeepEqual(callsA[i].Request, other.calls[i].Request) {
+						t.Errorf("call %d differs %s", i, other.name)
+					}
 				}
 			}
 		})
@@ -562,4 +575,97 @@ func scenarioRunInput(t *testing.T, root, path string, cfg *config.Config) scena
 		sr.timeout = sc.Input.Timeout
 	}
 	return sr
+}
+
+// policyScenario is the second YAML document of a testdata/scenarios/judge-policy file:
+// the input of scenarioInput plus the judge policy and sample rate, and the expected
+// outcome with the loop's metadata.
+type policyScenario struct {
+	Input struct {
+		Document   string             `yaml:"document"`
+		Judge      config.JudgePolicy `yaml:"judge"`
+		SampleRate float64            `yaml:"sample_rate"`
+	} `yaml:"input"`
+	Expect struct {
+		Status          Status   `yaml:"status"`
+		Verification    string   `yaml:"verification"`
+		Attempts        int      `yaml:"attempts"`
+		ExtractorCalls  int      `yaml:"extractor_calls"`
+		JudgeCalls      int      `yaml:"judge_calls"`
+		Decision        string   `yaml:"decision"`
+		Disagreements   int      `yaml:"disagreements"`
+		FeedbackSources []string `yaml:"feedback_sources"` // compared when present
+	} `yaml:"expect"`
+}
+
+// TestRun_judgePolicyScenarios runs every testdata/scenarios/judge-policy script (ADR
+// 0009) with the scenario configuration: the sample key is the document's bytes, as in
+// the CLI. Under auto no candidate with an invented value is ever accepted with
+// verification grounded.
+func TestRun_judgePolicyScenarios(t *testing.T) {
+	const root = "../.."
+	base, err := os.ReadFile(filepath.Join(root, "testdata/scenarios/config/vde.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(t, string(base))
+	paths, err := filepath.Glob(filepath.Join(root, "testdata/scenarios/judge-policy/*.yaml"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no scenarios: %v", err)
+	}
+	for _, path := range paths {
+		t.Run(strings.TrimSuffix(filepath.Base(path), ".yaml"), func(t *testing.T) {
+			t.Parallel()
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dec := yaml.NewDecoder(bytes.NewReader(data))
+			var script yaml.Node
+			var sc policyScenario
+			if err := dec.Decode(&script); err != nil {
+				t.Fatal(err)
+			}
+			if err := dec.Decode(&sc); err != nil {
+				t.Fatal(err)
+			}
+			in := scenarioRunInput(t, root, path, cfg)
+			in.JudgePolicy, in.SampleRate = sc.Input.Judge, sc.Input.SampleRate
+			if in.SampleKey, err = os.ReadFile(filepath.Join(root, sc.Input.Document)); err != nil {
+				t.Fatal(err)
+			}
+			out, calls := runScenario(t, path, cfg, in)
+			var extractor, judge int
+			for _, c := range calls {
+				if strings.HasPrefix(c.Request.System, extractorFraming[:40]) {
+					extractor++
+				} else {
+					judge++
+				}
+			}
+			e := sc.Expect
+			if out.Status != e.Status || out.Verification != e.Verification || out.Attempts != e.Attempts {
+				t.Errorf("outcome %s, verification %s after %d attempt(s); want %s, %s after %d",
+					out.Status, out.Verification, out.Attempts, e.Status, e.Verification, e.Attempts)
+			}
+			if extractor != e.ExtractorCalls || judge != e.JudgeCalls || out.JudgeCalls != e.JudgeCalls {
+				t.Errorf("calls: extractor %d, judge %d (outcome %d); want %d, %d", extractor, judge, out.JudgeCalls, e.ExtractorCalls, e.JudgeCalls)
+			}
+			if out.Decision != e.Decision || out.Disagreements != e.Disagreements {
+				t.Errorf("decision %q, disagreements %d; want %q, %d", out.Decision, out.Disagreements, e.Decision, e.Disagreements)
+			}
+			if e.FeedbackSources != nil {
+				var sources []string
+				for _, f := range out.Feedback {
+					sources = append(sources, f.Source)
+				}
+				if !slices.Equal(sources, e.FeedbackSources) {
+					t.Errorf("feedback sources %v, want %v (%+v)", sources, e.FeedbackSources, out.Feedback)
+				}
+			}
+			if out.Verification == VerificationGrounded && strings.Contains(string(out.Result), "Grand Gala Events") {
+				t.Error("a candidate with invented values was accepted on grounding")
+			}
+		})
+	}
 }

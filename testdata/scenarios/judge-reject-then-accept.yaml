@@ -3,7 +3,7 @@
 description: the judge rejects the first candidate, the extractor repairs it on attempt 2
 steps:
   - role: extractor
-    answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 421.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}'
+    answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 360.00, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}'
   - role: judge
     answer: '{"verdict": "reject", "feedback": {"/total/amount": "The document says 412.50.", "/line_items": "Breakfast and city tax are missing."}}'
   - role: extractor

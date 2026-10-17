@@ -5,18 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/provider"
@@ -54,7 +58,7 @@ applications:
 const (
 	sentinel     = "SENTINEL"
 	instructions = "SENTINEL-INSTRUCTIONS: extract the name."
-	documentText = "SENTINEL-DOCUMENT: Ada Lovelace"
+	documentText = "SENTINEL-DOCUMENT: Ada Lovelace, SENTINEL-RESULT" // grounds candidate
 	schema       = `{"type":"object","required":["name"],"properties":{"name":{"type":"string","description":"SENTINEL-SCHEMA"}}}`
 	candidate    = `{"name":"SENTINEL-RESULT"}`
 	reject       = `{"verdict": "reject", "feedback": {"/name": "SENTINEL-FEEDBACK"}}`
@@ -78,9 +82,10 @@ func (s *syncBuffer) String() string {
 }
 
 type recorder struct {
-	started  chan string
-	mu       sync.Mutex
-	finished []job.Status
+	started   chan string
+	mu        sync.Mutex
+	finished  []job.Status
+	decisions []string // "policy/decision/disagreements"
 }
 
 func (r *recorder) JobStarted(app string) {
@@ -94,6 +99,18 @@ func (r *recorder) JobFinished(_ string, status job.Status, _ int, _ time.Durati
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.finished = append(r.finished, status)
+}
+
+func (r *recorder) JudgeDecision(policy, decision string, disagreements int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.decisions = append(r.decisions, fmt.Sprintf("%s/%s/%d", policy, decision, disagreements))
+}
+
+func (r *recorder) judgeDecisions() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.decisions)
 }
 
 type rig struct {
@@ -351,7 +368,8 @@ func TestJobFinishedIsAudited(t *testing.T) {
 	d, err := audit.Decode(e)
 	// The fake reports 100 input and 20 output tokens per answer: one extractor and one
 	// judge call.
-	want := audit.JobFinished{Status: "accepted", Attempts: 1, ServiceVersion: "vde-test", InputTokens: 200, OutputTokens: 40}
+	want := audit.JobFinished{Status: "accepted", Attempts: 1, ServiceVersion: "vde-test", InputTokens: 200, OutputTokens: 40,
+		Verification: "judge", JudgePolicy: "always"}
 	if e.Kind != "job.finished" || e.Actor != audit.ActorWorker || e.ApplicationID != "app" || err != nil || d != want {
 		t.Errorf("event = %+v, details %+v (%v), want %+v", e, d, err, want)
 	}
@@ -660,4 +678,195 @@ func TestLeaseLostAbandonsRun(t *testing.T) {
 	if got, _ := r.store.GetJobAny(t.Context(), j.ID); got.Status != job.StatusFailed || errorCode(t, got) != "timeout" {
 		t.Errorf("row = %+v", got)
 	}
+}
+
+// TestJudgePolicies: each job runs under its stored judge policy (ADR 0009) and ends with
+// the expected status and verification in the store, with one judge decision observed.
+// The application samples nothing (sample_rate 0) unless the case says otherwise; the
+// sample key is the job id, so a rate of 1 always samples.
+func TestJudgePolicies(t *testing.T) {
+	const ungrounded = `{"name":"SENTINEL-INVENTED"}`
+	for _, tt := range []struct {
+		name             string
+		policy           string
+		rate             float64
+		answer           string
+		wantStatus       job.Status
+		wantVerification string
+		wantExtractor    int
+		wantJudge        int
+		wantDecision     string
+	}{
+		{"always", "always", 0, candidate, job.StatusAccepted, job.VerificationJudge, 1, 1, "always/judged/0"},
+		{"never", "never", 0, candidate, job.StatusExtracted, job.VerificationNone, 1, 0, "never/skipped/0"},
+		{"auto grounded", "auto", 0, candidate, job.StatusAccepted, job.VerificationGrounded, 1, 0, "auto/grounded/0"},
+		{"auto sampled", "auto", 1, candidate, job.StatusAccepted, job.VerificationJudge, 1, 1, "auto/sampled/0"},
+		// Repair, then still ungrounded: the judge decides, never grounding.
+		{"auto ungrounded", "auto", 0, ungrounded, job.StatusAccepted, job.VerificationJudge, 2, 1, "auto/judged/0"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, fake.Script{{Answer: tt.answer, Repeat: true}}, fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{})
+			app, err := r.store.GetApplication(t.Context(), "app")
+			if err != nil {
+				t.Fatal(err)
+			}
+			app.JudgeSampleRate = &tt.rate
+			if err := r.store.UpsertApplication(t.Context(), app, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			j := r.submit(t, "app", func(j *job.Job) { j.JudgePolicy = tt.policy; j.Retention = job.RetentionDefault })
+			r.start(t)
+			got := r.waitTerminal(t, j.ID)
+			if got.Status != tt.wantStatus || got.Verification != tt.wantVerification || got.JudgePolicy != tt.policy {
+				t.Errorf("row %s, verification %q, policy %q; want %s, %s, %s", got.Status, got.Verification, got.JudgePolicy,
+					tt.wantStatus, tt.wantVerification, tt.policy)
+			}
+			if len(r.ext.Calls()) != tt.wantExtractor || len(r.judge.Calls()) != tt.wantJudge {
+				t.Errorf("calls: extractor %d, judge %d; want %d, %d", len(r.ext.Calls()), len(r.judge.Calls()), tt.wantExtractor, tt.wantJudge)
+			}
+			waitFor(t, func() bool { return len(r.obs.judgeDecisions()) == 1 })
+			if d := r.obs.judgeDecisions(); d[0] != tt.wantDecision {
+				t.Errorf("judge decision %v, want %s", d, tt.wantDecision)
+			}
+			var feedback []extract.Feedback
+			if err := json.Unmarshal(got.Feedback, &feedback); err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range feedback {
+				if f.Source == extract.SourceGrounding && tt.policy == "always" {
+					t.Errorf("grounding entry %+v in an always job's feedback", f)
+				}
+			}
+		})
+	}
+}
+
+// TestResumeAfterGroundingRepair: a job that crashed right after its grounding repair
+// was persisted resumes without a second repair (the persisted grounding entries say it
+// was made): the judge is asked on the next candidate, and the always job's final
+// feedback carries no grounding entry.
+func TestResumeAfterGroundingRepair(t *testing.T) {
+	r := newRig(t, fake.Script{{Answer: `{"name":"SENTINEL-INVENTED"}`, Repeat: true}},
+		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{})
+	j := r.submit(t, "app", func(j *job.Job) { j.Retention = job.RetentionDefault })
+	r.crash(t, j, job.Progress{Attempts: 1, Result: json.RawMessage(`{"name":"SENTINEL-INVENTED"}`),
+		Feedback: json.RawMessage(`[{"pointer":"/name","message":"value not found in the document","source":"grounding"}]`)})
+	r.start(t)
+
+	got := r.waitTerminal(t, j.ID)
+	if got.Status != job.StatusAccepted || got.Attempts != 2 || got.Verification != job.VerificationJudge {
+		t.Errorf("row %s after %d attempts, verification %q; want accepted after 2, judge", got.Status, got.Attempts, got.Verification)
+	}
+	if len(r.ext.Calls()) != 1 || len(r.judge.Calls()) != 1 {
+		t.Errorf("calls: extractor %d, judge %d; want 1, 1 (no second repair)", len(r.ext.Calls()), len(r.judge.Calls()))
+	}
+	if string(got.Feedback) != "[]" {
+		t.Errorf("feedback %s, want none", got.Feedback)
+	}
+}
+
+// TestTimeoutAfterGroundingRepairDropsEntries: an always job whose deadline passed after
+// a persisted repair ends failed without the repair's grounding entries.
+func TestTimeoutAfterGroundingRepairDropsEntries(t *testing.T) {
+	ext, judge := accepting()
+	r := newRig(t, ext, judge, worker.Options{})
+	j := r.submit(t, "app", func(j *job.Job) { j.CreatedAt = time.Now().Add(-time.Hour); j.Retention = job.RetentionDefault })
+	r.crash(t, j, job.Progress{Attempts: 1, Result: json.RawMessage(`{"name":"x"}`),
+		Feedback: json.RawMessage(`[{"pointer":"/name","message":"value not found in the document","source":"grounding"}]`)})
+	r.start(t)
+	got := r.waitTerminal(t, j.ID)
+	if got.Status != job.StatusFailed || errorCode(t, got) != extract.CodeTimeout || string(got.Feedback) != "[]" {
+		t.Errorf("row %s (%s), feedback %s; want failed timeout without grounding entries", got.Status, errorCode(t, got), got.Feedback)
+	}
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if cond() {
+			return
+		}
+	}
+	t.Fatal("condition not met in time")
+}
+
+// stubPDF is a document.PDFEngine stub: every PDF has one page whose text is text and
+// which renders to a 2x2 PNG.
+type stubPDF struct {
+	text  string
+	opens atomic.Int32
+}
+
+func (e *stubPDF) Open(context.Context, []byte) (document.PDFDoc, error) {
+	e.opens.Add(1)
+	return stubPDFDoc{e}, nil
+}
+
+type stubPDFDoc struct{ e *stubPDF }
+
+func (stubPDFDoc) PageCount() int                              { return 1 }
+func (d stubPDFDoc) Text(context.Context, int) (string, error) { return d.e.text, nil }
+func (stubPDFDoc) Render(context.Context, int, int) ([]byte, error) {
+	var b bytes.Buffer
+	err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	return b.Bytes(), err
+}
+func (stubPDFDoc) Close() {}
+
+// TestPDFPreparedByService: a PDF without pages for groups that read no application/pdf
+// is selected again with the PDF engine (ADR 0010): a text-rich one is sent as its text
+// layer, a thin one as its rendered pages, and both are grounded on the text layer, so
+// under auto the candidate is accepted without a judge.
+func TestPDFPreparedByService(t *testing.T) {
+	rich := strings.Repeat("Booking for SENTINEL-RESULT. ", 10)
+	for _, tt := range []struct {
+		name, policy, text, label string
+	}{
+		{"text layer", "always", rich, "text+text_layer"},
+		{"text layer auto", "auto", rich, "text+text_layer"},
+		{"rendered", "always", "SENTINEL-RESULT", "pages+rendered"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ext, judge := accepting()
+			engine := &stubPDF{text: tt.text}
+			r := newRig(t, ext, judge, worker.Options{PDF: engine})
+			j := r.submit(t, "app", func(j *job.Job) {
+				j.MediaType, j.Representation, j.JudgePolicy = "application/pdf", tt.label, tt.policy
+			})
+			r.start(t)
+			got := r.waitTerminal(t, j.ID)
+			wantVerification, wantJudge := job.VerificationJudge, 1
+			if tt.policy == "auto" {
+				wantVerification, wantJudge = job.VerificationGrounded, 0
+			}
+			if got.Status != job.StatusAccepted || got.Verification != wantVerification || len(r.judge.Calls()) != wantJudge {
+				t.Fatalf("row %s (%s), verification %q, %d judge call(s); want accepted, %s, %d",
+					got.Status, got.Error, got.Verification, len(r.judge.Calls()), wantVerification, wantJudge)
+			}
+			calls := r.ext.Calls()
+			if len(calls) != 1 {
+				t.Fatalf("%d extractor calls, want 1", len(calls))
+			}
+			if tt.label == "text+text_layer" && !hasPart(calls[0], "--- page 1 ---") {
+				t.Error("the extractor did not read the text layer")
+			}
+			if tt.label == "pages+rendered" && !slices.ContainsFunc(calls[0].Parts, func(p fake.PartInfo) bool {
+				return p.Kind == "image" && p.MediaType == "image/png"
+			}) {
+				t.Errorf("the extractor did not read the rendered page: %+v", calls[0].Parts)
+			}
+			if engine.opens.Load() != 1 {
+				t.Errorf("the PDF was opened %d times, want once (selection reads the text layer)", engine.opens.Load())
+			}
+		})
+	}
+}
+
+func hasPart(c fake.Call, substr string) bool {
+	for _, p := range c.Request.Parts {
+		if strings.Contains(p.Text, substr) {
+			return true
+		}
+	}
+	return false
 }

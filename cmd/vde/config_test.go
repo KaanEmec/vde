@@ -84,7 +84,7 @@ roles:
   extractor: {group: main}
   judge: {group: main, policy: never}
 applications:
-  - {id: inbox}
+  - {id: inbox, documents: {pdf: {mode: text}}}
   - {id: lab, judge: {policy: auto, allow_override: true, sample_rate: 0.2}}
 `
 
@@ -162,7 +162,8 @@ func TestRunConfigCheck(t *testing.T) {
 			wantCode: exitOK,
 			wantStdout: []string{
 				"    policy: never\n",
-				"  inbox: judge policy never (roles.judge.policy), override not allowed\n",
+				"    grounding: rules ground-1, one repair before the judge (always, auto)\n",
+				"  inbox: judge policy never (roles.judge.policy), override not allowed, documents.pdf.mode text\n",
 				"  lab: judge policy auto, override allowed, sample rate 0.2\n",
 			},
 		},

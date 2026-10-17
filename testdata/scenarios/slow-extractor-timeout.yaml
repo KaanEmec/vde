@@ -2,7 +2,7 @@
 # document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
 description: attempt 1 is rejected, attempt 2's extractor is slower than the job's time limit
 steps:
-  - {role: extractor, answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 421.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}'}
+  - {role: extractor, answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 360.00, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}'}
   - {role: judge, answer: '{"verdict": "reject", "feedback": {"/total/amount": "The document says 412.50."}}'}
   - {role: extractor, delay: 1m, answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}, {"name": "Example Travel Desk", "role": "booked by"}], "total": {"amount": 412.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}, {"description": "Breakfast", "quantity": 3, "unit_amount": 15.00, "amount": 45.00}, {"description": "City tax", "quantity": 3, "unit_amount": 2.50, "amount": 7.50}]}'}
 ---
@@ -17,6 +17,6 @@ expect:
   judge_calls: 1
   extractor_calls: {primary: 2}
   judge_confidence: null
-  result: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 421.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}' # the partial candidate of attempt 1
+  result: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}], "total": {"amount": 360.00, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}]}' # the partial candidate of attempt 1
   feedback:
     - {pointer: /total/amount, message: The document says 412.50., source: judge}

@@ -558,3 +558,15 @@ func joinPath(p string) string {
 	}
 	return "." + p
 }
+
+// PDFModeOf is applications[].documents.pdf.mode of the configured application id, ""
+// (documents.pdf.mode) when it sets none or is not configured (created over the admin
+// API, which has no PDF setting).
+func (c *Config) PDFModeOf(appID string) string {
+	for _, a := range c.Applications {
+		if a.ID == appID {
+			return a.Documents.PDF.Mode
+		}
+	}
+	return ""
+}

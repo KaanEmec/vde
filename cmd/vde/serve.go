@@ -21,10 +21,12 @@ import (
 	"github.com/kaanemec/vde/internal/api"
 	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/logging"
 	"github.com/kaanemec/vde/internal/metrics"
+	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/router"
 	"github.com/kaanemec/vde/internal/sweeper"
@@ -192,6 +194,16 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		return err
 	}
 	logger.Info("storage opened", storageAttrs(cfg)...)
+	// One pdfium engine per process (ADR 0010), started by the first PDF that needs it:
+	// submit selects with it (--role api and all), workers re-select and render with it.
+	pdfEngine, err := newPDFEngine(cfg, pdf.CacheDir(cfg.Server.DataDir))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = pdfEngine.Close() }()
+	if cerr := pdfEngine.CacheErr(); cerr != nil {
+		logger.Warn("pdfium compilation cache unavailable; PDFs are prepared uncached (slower first start)", "error", cerr)
+	}
 
 	if len(cfg.Applications) == 0 {
 		logger.Warn("no applications are configured: every /v1 request is refused")
@@ -226,6 +238,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 	// or changed over the admin API get theirs.
 	appVersion := func(a job.Application, policy config.JudgePolicy) string {
 		app := storedApplication(a)
+		app.Documents.PDF.Mode = cfg.PDFModeOf(a.ID)
 		if policy == "" {
 			policy = cfg.JudgePolicyOf(app)
 		}
@@ -268,6 +281,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 			completions.Notify(j.ID)
 			hooks.JobFinished(j)
 		},
+		PDF: document.PDFEngineOf(pdfEngine),
 	})
 	sweep := sweeper.New(store, blobs, sweeper.Options{
 		Interval:               cfg.Retention.SweepInterval,
@@ -290,6 +304,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		Blobs:             blobs,
 		Metrics:           m,
 		Audit:             rec.WithActor(audit.ActorAPI),
+		PDF:               document.PDFEngineOf(pdfEngine),
 		Role:              role,
 	}
 	if runsJobs {

@@ -17,7 +17,7 @@ Routine logs go to stderr as JSON (`logging.format: json`, the default) or text,
 | --- | --- |
 | Standard | `time`, `level`, `msg`, `source` |
 | Correlation | `job_id`, `app_id` (also `application_id`), `request_id`, `worker_id` |
-| Job state | `status`, `attempts`, `error_code`, `outcome`, `kind`, `role`, `count` |
+| Job state | `status`, `attempts`, `error_code`, `outcome`, `kind`, `role`, `count`, `verification` (`judge`, `grounded` or `none`) |
 | Routing | `endpoint`, `model` (configuration ids) |
 | Request and document metadata | `method`, `route`, `media_type`, `bytes`, `pages`, `duration_ms` |
 | Process | `service_version`, `version`, `component`, `listen`, `tls`, `trusted_proxy`, `drain_timeout` |

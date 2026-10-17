@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -13,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 )
 
@@ -82,7 +87,7 @@ func TestServeEndToEnd(t *testing.T) {
 			t.Fatalf("job still %s after 10 s", final["status"])
 		}
 	}
-	if string(final["status"]) != `"accepted"` || !strings.Contains(string(final["result"]), "Ada Lovelace") ||
+	if string(final["status"]) != `"accepted"` || !strings.Contains(string(final["result"]), "Jane Example") ||
 		string(final["attempts"]) != "1" || string(final["error"]) != "null" || string(final["feedback"]) != "[]" {
 		t.Errorf("terminal job = %s", body)
 	}
@@ -115,7 +120,7 @@ func TestServeEndToEnd(t *testing.T) {
 			t.Errorf("metrics lack %s", want)
 		}
 	}
-	if strings.Contains(metricsText, "Ada") || strings.Contains(metricsText, created.ID) {
+	if strings.Contains(metricsText, "Jane Example") || strings.Contains(metricsText, created.ID) {
 		t.Error("metrics carry content or a job id")
 	}
 	stop()
@@ -188,4 +193,181 @@ func call(t *testing.T, method, url, token string, body io.Reader, contentType s
 		t.Fatal(err)
 	}
 	return reply{status: resp.StatusCode, header: resp.Header, body: string(data)}
+}
+
+// policyServiceConfig: a text-only extractor (PDFs reach it as their text layer, ADR
+// 0010) and a judge whose every call fails, one application per judge policy.
+const policyServiceConfig = `
+server: {data_dir: "DATA"}
+endpoints:
+  ext:
+    provider: fake
+    models: {ext-model: {accepts: [text/plain]}}
+  judge:
+    provider: fake
+    models: {judge-model: {accepts: [text/plain]}}
+groups:
+  extraction: {endpoints: [{endpoint: ext, model: ext-model}]}
+  review: {endpoints: [{endpoint: judge, model: judge-model}], failover: {max_tries: 1, max_total_time: 5s}}
+roles: {extractor: {group: extraction}, judge: {group: review}}
+applications:
+  - {id: app-auto, judge: {policy: auto, sample_rate: 0}}
+  - {id: app-never, judge: {policy: never}}
+  - {id: app-always}
+`
+
+// TestServeJudgePolicies runs vde serve with an unreachable judge (ADR 0009): under auto
+// a grounded candidate is accepted without it, for a text document and for booking.pdf
+// read through its text layer; never ends extracted; always cannot accept without the
+// judge and fails. Status, verification and the judge decision metrics are checked over
+// HTTP.
+func TestServeJudgePolicies(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	path := filepath.Join(t.TempDir(), "vde.yaml")
+	if err := os.WriteFile(path, []byte(strings.ReplaceAll(policyServiceConfig, "DATA", dataDir)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := loadConfigEnv(path, false, func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := fake.New(fake.Script{{Answer: `{"guest": "Jane Example", "nights": 3}`, Repeat: true}})
+	judge := fake.New(fake.AlwaysRetryable(503))
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- serve(ctx, cfg, ln, nil, slog.New(slog.DiscardHandler), func(e *config.Endpoint) (provider.Provider, error) {
+			if e == cfg.Endpoints["judge"] {
+				return judge, nil
+			}
+			return ext, nil
+		})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve: %v", err)
+		}
+	})
+	base := "http://" + ln.Addr().String()
+	waitHealthz(t, base)
+	tokens := map[string]string{}
+	for _, app := range []string{"app-auto", "app-never", "app-always"} {
+		code, token, stderr := cli("token", "create", "--config", path, "--app", app, "--scope", "jobs", "--expires", "1d")
+		if code != exitOK {
+			t.Fatalf("token create = %d: %s", code, stderr)
+		}
+		tokens[app] = strings.TrimSpace(token)
+	}
+
+	for _, tt := range []struct {
+		app, file, mediaType     string
+		wantStatus, verification string
+	}{
+		{"app-auto", "booking.txt", "text/plain; charset=utf-8", "accepted", "grounded"},
+		{"app-auto", "booking.pdf", "application/pdf", "accepted", "grounded"},
+		{"app-never", "booking.txt", "text/plain; charset=utf-8", "extracted", "none"},
+	} {
+		final := submitAndWait(t, base, tokens[tt.app], tt.file, tt.mediaType)
+		if string(final["status"]) != `"`+tt.wantStatus+`"` || string(final["verification"]) != `"`+tt.verification+`"` ||
+			string(final["attempts"]) != "1" || string(final["feedback"]) != "[]" {
+			t.Errorf("%s %s: terminal job = %v", tt.app, tt.file, final)
+		}
+	}
+	if n := len(judge.Calls()); n != 0 {
+		t.Errorf("the judge was called %d times under auto and never", n)
+	}
+	var sawPDFText bool
+	for _, c := range ext.Calls() {
+		for _, p := range c.Request.Parts {
+			sawPDFText = sawPDFText || strings.Contains(p.Text, "--- page 1 ---")
+		}
+	}
+	if !sawPDFText {
+		t.Error("the extractor never read the PDF's text layer")
+	}
+
+	final := submitAndWait(t, base, tokens["app-always"], "booking.txt", "text/plain; charset=utf-8")
+	if string(final["status"]) != `"failed"` || string(final["verification"]) != `"none"` ||
+		!strings.Contains(string(final["error"]), "provider_unavailable") {
+		t.Errorf("always without a judge: terminal job = %v", final)
+	}
+
+	metricsText := call(t, http.MethodGet, base+"/metrics", "", nil, "").body
+	for _, want := range []string{
+		`vde_judge_decisions_total{decision="grounded",policy="auto"} 2`,
+		`vde_judge_decisions_total{decision="skipped",policy="never"} 1`,
+		`vde_judge_decisions_total{decision="judged",policy="always"} 1`,
+		`vde_grounding_disagreements_total 0`,
+	} {
+		if !strings.Contains(metricsText, want) {
+			t.Errorf("metrics lack %s", want)
+		}
+	}
+}
+
+func waitHealthz(t *testing.T, base string) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		resp, err := http.Get(base + "/healthz")
+		if err == nil {
+			resp.Body.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("service did not answer: %v", err)
+		}
+	}
+}
+
+// submitAndWait submits the sample file with the sample instructions (schema-less,
+// retention default) and polls the job to its terminal state.
+func submitAndWait(t *testing.T, base, token, file, mediaType string) map[string]json.RawMessage {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	for _, p := range []struct{ name, file, contentType string }{
+		{"document", file, mediaType},
+		{"extractor_instructions", "extractor.md", "text/markdown"},
+		{"judge_instructions", "judge.md", "text/markdown"},
+	} {
+		data, err := os.ReadFile(filepath.Join(samples, p.file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := textproto.MIMEHeader{}
+		h.Set("Content-Disposition", `form-data; name="`+p.name+`"; filename="`+p.file+`"`)
+		h.Set("Content-Type", p.contentType)
+		part, err := w.CreatePart(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write(data)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resp := call(t, http.MethodPost, base+"/v1/jobs", token, &buf, w.FormDataContentType())
+	var created struct{ ID string }
+	if err := json.Unmarshal([]byte(resp.body), &created); err != nil || created.ID == "" || resp.status >= 300 {
+		t.Fatalf("POST /v1/jobs %s = %d %s", file, resp.status, resp.body)
+	}
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		r := call(t, http.MethodGet, base+"/v1/jobs/"+created.ID, token, nil, "")
+		var final map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(r.body), &final); err != nil || r.status != http.StatusOK {
+			t.Fatalf("poll = %d %s", r.status, r.body)
+		}
+		if s := string(final["status"]); s != `"queued"` && s != `"running"` {
+			return final
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job still %s after 20 s", final["status"])
+		}
+	}
 }

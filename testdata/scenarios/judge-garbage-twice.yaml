@@ -3,7 +3,7 @@
 description: the judge answers garbage, and garbage again after the format reminder
 steps:
   - role: extractor
-    answer: '{"name": "Ada Lovelace", "born": 1815}'
+    answer: '{"guest": "Jane Example", "nights": 3}'
   - role: judge
     answer: 'Looks fine to me!'
   - role: judge

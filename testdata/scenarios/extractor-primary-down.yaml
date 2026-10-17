@@ -7,7 +7,7 @@ steps:
     delay: 10ms
     error: {kind: retryable, status: 503}
   - model: fallback-model
-    answer: '{"name": "Ada Lovelace", "born": 1815}'
+    answer: '{"guest": "Jane Example", "nights": 3}'
   - answer: '{"verdict": "accept", "feedback": {}}'
 ---
 input:

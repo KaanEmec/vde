@@ -1,6 +1,6 @@
 # Job: Text layer for grounding, samples and the owner suite
 
-Version: v0.4 · Epic: 04 PDF preprocessing · Status: in progress · Depends on: 02, 02-03
+Version: v0.4 · Epic: 04 PDF preprocessing · Status: done · Depends on: 02, 02-03
 
 ## Goal
 
@@ -28,7 +28,7 @@ the owner's runs on 2026-10-17 become obsolete.
 - [x] `internal/document/userdocs_test.go` (`VDE_USER_DOCS=1`): per PDF, report the page
       count, characters per page, the chosen representation under `auto` for a text-only
       and an image-only group, and the timings. Metadata only.
-- [ ] Note in `docs/operator/evaluation.md` (a new "Owner suite" paragraph) that the
+- [x] Note in `docs/operator/evaluation.md` (a new "Owner suite" paragraph) that the
       hand-rasterized copies in the untracked `testdata/user-docs` are obsolete and can be
       deleted, since runs use the original PDFs.
 - [x] `docs/operator/configuration.md`: `documents.pdf.*` rows, the memory budget per worker,
@@ -56,7 +56,11 @@ natively or as caller pages, the owner-suite report and the configuration rows (
 `docs/operator/pdf.md`). Open: the "Owner suite" paragraph in `docs/operator/evaluation.md`,
 the grounding acceptance checks that need `internal/ground` and the loop (a correct
 candidate for `booking.pdf` yields no entries; `vde extract --judge auto` ends `accepted`
-with `verification: grounded`), which belong to epic 03's wiring.
+with `verification: grounded`), which belong to epic 03's wiring. Both were done there
+(job 03-03): `TestExtractPDFWithoutPages` runs `booking.pdf` as text layer, rendered pages
+and native, under `always` and `auto`; under `auto` each ends `accepted`/`grounded` with
+one provider call (so no critical grounding miss), and a native PDF is grounded only under
+`auto`. `TestServeJudgePolicies` does the same over HTTP.
 
 Owner suite, `VDE_USER_DOCS=1` (2026-10-17): all 5 PDFs are selected without caller
 pages, as `text+text_layer` for a text-only group and `pages+rendered` for an image-only

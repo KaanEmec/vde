@@ -1,0 +1,27 @@
+# Judge policy scenarios (ADR 0009): the first YAML document is the fake provider script
+# (internal/provider/fake), the second the input and the expected outcome, read by
+# TestRun_judgePolicyScenarios in internal/extract. Every scenario runs with
+# testdata/scenarios/config/vde.yaml. A candidate's date 2026-04-18 and organiser
+# "Grand Gala Events" are invented: booking.txt prints neither.
+description: "auto: a schema violation, then a valid grounded candidate; a schema retry occurred, so the judge is asked"
+steps:
+  - role: extractor
+    answer: '{"title": "Harbour View Hotel", "date": "20 Feb 2026", "total": 412.5}'
+  - role: extractor
+    answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-02-20", "parties": [{"name": "Jane Example", "role": "guest"}, {"name": "Example Travel Desk", "role": "booked by"}], "total": {"amount": 412.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}, {"description": "Breakfast", "quantity": 3, "unit_amount": 15.00, "amount": 45.00}, {"description": "City tax", "quantity": 3, "unit_amount": 2.50, "amount": 7.50}]}'
+  - role: judge
+    answer: '{"verdict": "accept", "feedback": {}}'
+---
+input:
+  document: examples/samples/booking.txt
+  schema: examples/samples/schema.json
+  judge: auto
+  sample_rate: 0
+expect:
+  status: accepted
+  verification: judge
+  attempts: 2
+  extractor_calls: 2
+  judge_calls: 1
+  decision: judged
+  feedback_sources: []

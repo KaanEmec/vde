@@ -23,6 +23,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/eval"
 	"github.com/kaanemec/vde/internal/extract"
+	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 	"github.com/kaanemec/vde/internal/version"
@@ -151,6 +152,7 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 		report.Extractor = groupPairs(engine.cfg, engine.cfg.Roles.Extractor.Group)
 		report.Judge = groupPairs(engine.cfg, engine.cfg.Roles.Judge.Group)
 		runner = engine.run
+		defer func() { _ = engine.pdf.Close() }()
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -229,6 +231,7 @@ type localEngine struct {
 	serviceVersion string
 	policy         document.HTMLPolicy
 	script         fake.Script // nil for the configured providers
+	pdf            *pdf.Engine // one per process, started by the first PDF that needs it
 }
 
 func newLocalEngine(o evalOptions, stderr io.Writer) (*localEngine, error) {
@@ -259,6 +262,9 @@ func newLocalEngine(o evalOptions, stderr io.Writer) (*localEngine, error) {
 	e.cfg = cfg
 	e.serviceVersion = extract.ServiceVersion(cfg, version.Version)
 	e.policy = document.HTMLPolicy(cfg.Documents.HTML)
+	if e.pdf, err = newPDFEngine(cfg, cliPDFCacheDir()); err != nil {
+		return nil, err
+	}
 	return e, nil
 }
 
@@ -285,7 +291,7 @@ func (e *localEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error
 			return eval.Outcome{}, fmt.Errorf("%s: %w", eval.FileSchema, err)
 		}
 	}
-	rep, err := document.Select(doc, e.cfg.Capabilities(e.cfg.Roles.Extractor.Group), e.cfg.Capabilities(e.cfg.Roles.Judge.Group), e.policy)
+	rep, err := selectRepresentation(ctx, e.cfg, doc, e.policy, e.pdf, e.cfg.RolePolicy())
 	if err != nil {
 		return eval.Outcome{}, err
 	}
@@ -304,6 +310,9 @@ func (e *localEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error
 		JudgeInstructions:     string(judge),
 		Schema:                schema,
 		MaxAttempts:           e.cfg.Limits.MaxAttempts,
+		JudgePolicy:           e.cfg.RolePolicy(),
+		SampleRate:            config.DefaultSampleRate,
+		SampleKey:             doc.Data,
 		Deadline:              time.Now().Add(e.cfg.Limits.JobTimeout),
 	}, roles)
 	calls, in, out := obs.usage()

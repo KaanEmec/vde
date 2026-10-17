@@ -17,6 +17,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/extract"
+	"github.com/kaanemec/vde/internal/ground"
 	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/version"
 )
@@ -149,6 +150,7 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 		}
 		if role.name == "judge" {
 			fmt.Fprintf(tw, "    policy: %s\n", cfg.RolePolicy())
+			fmt.Fprintf(tw, "    grounding: rules %s, one repair before the judge (always, auto)\n", ground.RulesVersion)
 			if g := cfg.Roles.SecondJudge.Group; g != "" {
 				fmt.Fprintf(tw, "    second judge: group %s\n", g)
 			}
@@ -185,7 +187,11 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 		}
 	}
 	for _, a := range cfg.Applications {
-		fmt.Fprintf(tw, "  %s: %s\n", a.ID, judgeSummary(cfg, a))
+		line := judgeSummary(cfg, a)
+		if m := a.Documents.PDF.Mode; m != "" {
+			line += ", documents.pdf.mode " + m
+		}
+		fmt.Fprintf(tw, "  %s: %s\n", a.ID, line)
 	}
 	fmt.Fprintf(tw, "%s\n", storageSummary(cfg))
 	rate := "per process"

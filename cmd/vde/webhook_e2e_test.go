@@ -95,7 +95,7 @@ func TestServeSyncExtractAndWebhook(t *testing.T) {
 			p.ApplicationID != "app-hook" || p.Event != "job.finished" || p.ServiceVersion == "" || p.FinishedAt == "" {
 			t.Errorf("payload = %s (%v)", body, err)
 		}
-		if strings.Contains(string(body), "Ada") {
+		if strings.Contains(string(body), "Jane Example") {
 			t.Errorf("payload carries content: %s", body)
 		}
 	case <-time.After(10 * time.Second):

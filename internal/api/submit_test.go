@@ -29,6 +29,7 @@ import (
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/provider"
@@ -120,6 +121,8 @@ type submitRigOptions struct {
 	notify bool
 	// appVersion is Deps.AppServiceVersion; nil leaves it unset.
 	appVersion func(job.Application, config.JudgePolicy) string
+	// pdf is the PDF engine of submit and the pool (Deps.PDF, worker.Options.PDF).
+	pdf document.PDFEngine
 }
 
 type submitRig struct {
@@ -174,7 +177,7 @@ func newSubmitRig(t *testing.T, o submitRigOptions) *submitRig {
 	deps := Deps{
 		Config: cfg, Store: store, ServiceVersion: testServiceVersion, Logger: logger, Now: rg.clock.Now,
 		Extractor: fakeHealth(true), Judge: fakeHealth(true), Blobs: blobs,
-		AppServiceVersion: o.appVersion,
+		AppServiceVersion: o.appVersion, PDF: o.pdf,
 	}
 	if o.pool {
 		if o.ext == nil {
@@ -189,7 +192,7 @@ func newSubmitRig(t *testing.T, o submitRigOptions) *submitRig {
 		if err != nil {
 			t.Fatal(err)
 		}
-		popts := worker.Options{Size: 2, PollInterval: 20 * time.Millisecond, Logger: logger}
+		popts := worker.Options{Size: 2, PollInterval: 20 * time.Millisecond, Logger: logger, PDF: o.pdf}
 		if o.notify {
 			n := worker.NewNotifier()
 			deps.Completions = n
@@ -1237,4 +1240,49 @@ func TestSubmitJudgePart(t *testing.T) {
 			}
 		}
 	})
+}
+
+// stubPDF is a document.PDFEngine whose PDFs have pages pages of text that grounds
+// submitCandidate.
+type stubPDF struct{ pages int }
+
+func (e stubPDF) Open(context.Context, []byte) (document.PDFDoc, error) { return stubPDFDoc(e), nil }
+
+type stubPDFDoc stubPDF
+
+func (d stubPDFDoc) PageCount() int { return d.pages }
+func (stubPDFDoc) Text(context.Context, int) (string, error) {
+	return strings.Repeat("SENTINEL-PDF booking for Ada Lovelace. ", 8), nil
+}
+func (stubPDFDoc) Render(context.Context, int, int) ([]byte, error) {
+	return nil, errors.New("not rendered")
+}
+func (stubPDFDoc) Close() {}
+
+// TestSubmitPDFPreparedByService: with the PDF engine, a PDF without pages for groups
+// that read no application/pdf is accepted and stored as its text layer (ADR 0010), and
+// the worker runs it with the same selection; a PDF over documents.pdf.max_pages is
+// refused with 415 naming the limit.
+func TestSubmitPDFPreparedByService(t *testing.T) {
+	t.Parallel()
+	pdfParts := withPart(validParts(), mpart{name: partDocument, ctype: "application/pdf", filename: "booking.pdf",
+		data: []byte("%PDF-1.7 SENTINEL-PDF")})
+
+	rg := newSubmitRig(t, submitRigOptions{pool: true, pdf: stubPDF{pages: 2}})
+	w := rg.submit(t, pdfParts, nil)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status %d: %s", w.Code, w.Body)
+	}
+	id, _ := decodeJob(t, w)["id"].(string)
+	got := rg.waitTerminal(t, id)
+	if got.Status != job.StatusAccepted || got.Representation != "text+text_layer" {
+		t.Errorf("job %s, representation %q; want accepted, text+text_layer", got.Status, got.Representation)
+	}
+
+	long := newSubmitRig(t, submitRigOptions{pdf: stubPDF{pages: 21}})
+	w = long.submit(t, pdfParts, nil)
+	if w.Code != http.StatusUnsupportedMediaType || !strings.Contains(w.Body.String(), "unsupported_document") ||
+		!strings.Contains(w.Body.String(), "20 pages") {
+		t.Errorf("21 pages: status %d %s, want 415 naming the limit", w.Code, w.Body)
+	}
 }

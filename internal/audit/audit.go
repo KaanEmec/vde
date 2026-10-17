@@ -2,6 +2,7 @@ package audit
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -104,6 +105,10 @@ type JobFinished struct {
 	// InputTokens and OutputTokens are the provider token usage of the job, counts only.
 	InputTokens  int64 `json:"input_tokens"`
 	OutputTokens int64 `json:"output_tokens"`
+	// Verification (judge, grounded or none) and JudgePolicy (always, never or auto) are
+	// the job's (ADR 0009); empty in events written before v0.4.
+	Verification string `json:"verification,omitempty"`
+	JudgePolicy  string `json:"judge_policy,omitempty"`
 }
 
 // Reasons a job was deleted, for JobDeleted.
@@ -366,11 +371,14 @@ func (r *Recorder) JobCreated(ctx context.Context, j job.Job) {
 }
 
 // JobFinished records job.finished for a job in its terminal state (Status, Attempts
-// and Error set).
+// and Error set). A job without Verification or JudgePolicy (the sweeper's timeouts)
+// records the status-derived verification and the default policy.
 func (r *Recorder) JobFinished(ctx context.Context, j job.Job) {
 	r.warn(ctx, j.ApplicationID, j.ID, JobFinished{
 		Status: string(j.Status), Attempts: j.Attempts, ErrorCode: errorCode(j.Error), ServiceVersion: j.ServiceVersion,
 		InputTokens: j.InputTokens, OutputTokens: j.OutputTokens,
+		Verification: cmp.Or(j.Verification, job.DefaultVerification(j.Status)),
+		JudgePolicy:  cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy),
 	})
 }
 

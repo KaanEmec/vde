@@ -453,7 +453,7 @@ func TestRunExtract(t *testing.T) {
 		t.Fatal(err)
 	}
 	unknownExt := filepath.Join(t.TempDir(), "booking.xyz")
-	if err := os.WriteFile(unknownExt, []byte("text"), 0o600); err != nil {
+	if err := os.WriteFile(unknownExt, []byte("Guest: Jane Example, 3 nights"), 0o600); err != nil { // grounds the script's candidate
 		t.Fatal(err)
 	}
 
@@ -617,22 +617,29 @@ func TestMediaTypesByExtension(t *testing.T) {
 }
 
 // TestExtractJudgeFlag: --judge reaches extract.Input and the service_version of the run
-// is the policy's; the result carries verification.
+// is the policy's; the result carries verification. On booking.txt with the grounded
+// candidate of accept-first-try, always asks the judge, never ends extracted without it,
+// and auto accepts on grounding alone (the document's bytes are not sampled at 5 %).
 func TestExtractJudgeFlag(t *testing.T) {
 	t.Parallel()
 	cfg, _, err := loadConfigEnv(scenarioConfig, false, func(string) string { return "unused" })
 	if err != nil {
 		t.Fatal(err)
 	}
-	never := *cfg
+	never, auto := *cfg, *cfg
 	never.Roles.Judge.Policy = config.JudgeNever
+	auto.Roles.Judge.Policy = config.JudgeAuto
 	for _, tt := range []struct {
-		flag        string
-		wantPolicy  config.JudgePolicy
-		wantVersion string
+		flag             string
+		wantPolicy       config.JudgePolicy
+		wantVersion      string
+		wantStatus       extract.Status
+		wantVerification string
+		wantCalls        int // provider calls: the extractor's, and the judge's when asked
 	}{
-		{"", config.JudgeAlways, extract.ServiceVersion(cfg, version.Version)},
-		{"never", config.JudgeNever, extract.ServiceVersion(&never, version.Version)},
+		{"", config.JudgeAlways, extract.ServiceVersion(cfg, version.Version), extract.StatusAccepted, extract.VerificationJudge, 2},
+		{"never", config.JudgeNever, extract.ServiceVersion(&never, version.Version), extract.StatusExtracted, extract.VerificationNone, 1},
+		{"auto", config.JudgeAuto, extract.ServiceVersion(&auto, version.Version), extract.StatusAccepted, extract.VerificationGrounded, 1},
 	} {
 		t.Run("judge="+tt.flag, func(t *testing.T) {
 			t.Parallel()
@@ -659,8 +666,12 @@ func TestExtractJudgeFlag(t *testing.T) {
 			if out.ServiceVersion != tt.wantVersion {
 				t.Errorf("service_version = %s, want %s", out.ServiceVersion, tt.wantVersion)
 			}
-			if out.Status != extract.StatusAccepted || out.Verification != extract.VerificationJudge {
-				t.Errorf("status %s, verification %q; want accepted, judge", out.Status, out.Verification)
+			if out.Status != tt.wantStatus || out.Verification != tt.wantVerification || out.Usage.Calls != tt.wantCalls {
+				t.Errorf("status %s, verification %q, %d call(s); want %s, %s, %d", out.Status, out.Verification,
+					out.Usage.Calls, tt.wantStatus, tt.wantVerification, tt.wantCalls)
+			}
+			if len(out.Feedback) != 0 {
+				t.Errorf("feedback %+v, want none on a grounded candidate", out.Feedback)
 			}
 		})
 	}

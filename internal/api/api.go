@@ -11,6 +11,7 @@ import (
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/metrics"
 	"github.com/kaanemec/vde/internal/worker"
@@ -64,6 +65,10 @@ type Deps struct {
 	// Completions wakes POST /v1/extract when the pool finished its job; nil leaves it
 	// to poll the store (sync.go).
 	Completions *worker.Notifier
+	// PDF prepares PDFs that no group reads natively (ADR 0010): at submit it opens them
+	// to count pages and measure the text layer. nil keeps the v0.3 selection (such PDFs
+	// need caller pages). It must be the workers' engine configuration.
+	PDF document.PDFEngine
 	// Role is the process role, RoleAll when "". With RoleAPI, /healthz reports the
 	// queue age instead of the role groups (no provider is called here); with RoleWorker
 	// only /healthz and /metrics are served.

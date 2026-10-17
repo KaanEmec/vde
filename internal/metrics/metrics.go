@@ -31,6 +31,8 @@ type Metrics struct {
 	inProgress   *prometheus.GaugeVec
 	httpReqs     *prometheus.CounterVec
 	swept        prometheus.Counter
+	decisions    *prometheus.CounterVec
+	disagreed    prometheus.Counter
 }
 
 // Option configures New.
@@ -84,8 +86,16 @@ func New(opts ...Option) *Metrics {
 	m.swept = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "vde_swept_jobs_total", Help: "Jobs deleted by the expiry sweeper.",
 	})
+	m.decisions = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "vde_judge_decisions_total",
+		Help: "Finished jobs by judge policy and how their last schema-valid candidate was decided: judged, grounded (auto, no judge), sampled (auto, judged although grounded) or skipped (never).",
+	}, []string{"policy", "decision"})
+	m.disagreed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "vde_grounding_disagreements_total",
+		Help: "Sampled judge calls (judge policy auto) that rejected a candidate the grounding check alone would have accepted.",
+	})
 	m.reg.MustRegister(m.jobs, m.attempts, m.jobDuration, m.providerCall, m.providerLat, m.tokens,
-		m.failovers, m.quota, m.inProgress, m.httpReqs, m.swept)
+		m.failovers, m.quota, m.inProgress, m.httpReqs, m.swept, m.decisions, m.disagreed)
 	for _, o := range opts {
 		o(m)
 	}
@@ -108,6 +118,15 @@ func (m *Metrics) JobFinished(app string, status job.Status, attempts int, d tim
 	m.jobs.WithLabelValues(label(app), label(string(status))).Inc()
 	m.attempts.Observe(float64(attempts))
 	m.jobDuration.WithLabelValues(label(string(status))).Observe(d.Seconds())
+}
+
+// JudgeDecision implements worker.Observer: one finished job's judge decision under its
+// policy, and the sampled judge rejections of grounded candidates it had.
+func (m *Metrics) JudgeDecision(policy, decision string, disagreements int) {
+	m.decisions.WithLabelValues(label(policy), label(decision)).Inc()
+	if disagreements > 0 {
+		m.disagreed.Add(float64(disagreements))
+	}
 }
 
 // ObserveHTTP counts one request. route is the matched mux pattern ("" when none matched).

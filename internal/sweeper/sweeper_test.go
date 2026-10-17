@@ -399,7 +399,7 @@ func TestStaleRunningJobsAreFinishedAsTimeout(t *testing.T) {
 		t.Fatalf("job.finished events = %+v", events)
 	}
 	d, err := audit.Decode(events[0])
-	if want := (audit.JobFinished{Status: "failed", Attempts: 2, ErrorCode: "timeout", ServiceVersion: "vde-test"}); err != nil || d != want {
+	if want := (audit.JobFinished{Status: "failed", Attempts: 2, ErrorCode: "timeout", ServiceVersion: "vde-test", Verification: "none", JudgePolicy: "always"}); err != nil || d != want {
 		t.Errorf("details = %+v, %v; want %+v", d, err, want)
 	}
 

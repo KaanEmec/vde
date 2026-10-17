@@ -77,9 +77,9 @@ schemas carrying the annotation stay valid for every validator, TravelInbox's in
   `internal/extract` (this job edits only `internal/ground`). It walks the raw schema
   through `properties`, `additionalProperties`, `prefixItems`, `items` (array form
   included), local `$ref` and every `allOf`/`anyOf`/`oneOf` branch, and returns
-  `ErrUnknownRule` for an unknown annotation value. Still to do in `internal/extract`:
-  call it from `CompileSchema` (an error is `invalid_schema`) and keep the result on
-  `Schema`, so `(*Schema).GroundingRules()` returns it.
+  `ErrUnknownRule` for an unknown annotation value. `CompileSchema` calls it (an error is
+  `invalid_schema`) and keeps the result on `Schema`, so `(*Schema).GroundingRules()`
+  returns it (done in job 03-01).
 - When a schema has no `x-vde-grounding` annotation at all, leaves under a property named
   `confidence` or `notes` are skipped by default; a schema with any annotation gets no
   defaults. A nil `Rules` (schema-less) has no defaults either.

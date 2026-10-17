@@ -39,7 +39,7 @@ func TestAllowedKeys(t *testing.T) {
 	for _, want := range []string{
 		"job_id", "app_id", "application_id", "request_id", "status", "attempts", "endpoint",
 		"model", "duration_ms", "media_type", "bytes", "pages", "error_code", "method",
-		"route", "worker_id", "role", "kind", "outcome", "count", "service_version",
+		"route", "worker_id", "role", "kind", "outcome", "count", "verification", "service_version",
 		"component", "error", "reason", "panic", "stack", "version", "listen", "tls",
 		"trusted_proxy", "drain_timeout", "msg", "time", "level",
 	} {

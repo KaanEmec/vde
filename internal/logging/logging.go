@@ -26,7 +26,7 @@ var allowed = []string{
 	// Identity and correlation.
 	"job_id", "app_id", "application_id", "request_id", "worker_id",
 	// Job state.
-	"status", "attempts", "error_code", "outcome", "kind", "role", "count",
+	"status", "attempts", "error_code", "outcome", "kind", "role", "count", "verification",
 	// Provider token usage: counts only.
 	"input_tokens", "output_tokens",
 	// Provider routing: ids from configuration only.

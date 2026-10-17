@@ -234,3 +234,27 @@ func TestVerifyRefusesTamperedAndStale(t *testing.T) {
 		t.Errorf("signature = %q", sig)
 	}
 }
+
+// TestExtractedStatusPassesThrough: a job ended extracted (judge policy never, ADR 0009)
+// is notified with its status as is; the notice gains no field.
+func TestExtractedStatusPassesThrough(t *testing.T) {
+	t.Parallel()
+	rc := &receiver{statuses: []int{http.StatusNoContent}}
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+	ev := &events{}
+	d := newDispatcher(t, srv.URL, ev, nil)
+	j := finishedJob()
+	j.Status, j.Verification, j.JudgePolicy = job.StatusExtracted, job.VerificationNone, "never"
+	d.JobFinished(j)
+	ev.wait(t, 1)
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	var p map[string]any
+	if len(rc.bodies) != 1 || json.Unmarshal(rc.bodies[0], &p) != nil {
+		t.Fatalf("deliveries = %d", len(rc.bodies))
+	}
+	if p["status"] != "extracted" || len(p) != 6 {
+		t.Errorf("payload = %v, want status extracted and the six fields", p)
+	}
+}

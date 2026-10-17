@@ -18,7 +18,7 @@ service does not shorten, rewrite or translate them, and adds no domain content.
 | 2 | `Schema:`, a blank line, the caller's schema as sent | when a schema is given |
 | 3 | `Document:`, then the document parts: one text part, the document file, or the page images in order | always |
 | 4 | `Previous candidate:`, a blank line, the previous answer's JSON | on a retry after an answer that was JSON |
-| 5 | `Feedback:`, a blank line, one line per issue: `- "<JSON pointer>" (<schema or judge>): <message>` | on a retry |
+| 5 | `Feedback:`, a blank line, one line per issue: `- "<JSON pointer>" (<schema, judge or grounding>): <message>` | on a retry |
 
 The framing tells the extractor to answer with exactly one JSON value and nothing else (no
 prose, no code fences, no comments); to take every value from the document and use null or
@@ -74,6 +74,12 @@ The same judge request, framing included, goes to the second judge
 [classifier judge](../providers/classifier.md) gets the request's text parts but not the
 framing: its configured questions replace it, and the adapter renders its decisions as
 this verdict object, with one entry at pointer `""` on a reject.
+
+Grounding feedback (ADR 0009) uses the same retry framing, with no extra text: after the
+one grounding repair, each value the document does not contain is a line such as
+`- "/date" (grounding): value not found in the document`. The message never quotes the
+value. Under judge policy `always` these entries reach only the extractor, never the job's
+`feedback`; under `never` and `auto` they also appear there as advisory entries.
 
 ## Answer parsing
 

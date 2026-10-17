@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 # The binary embeds pdfium as WebAssembly (go-pdfium on wazero, ADR 0010), still cgo-free;
-# it adds about 9 MB. Its licenses are listed in NOTICE.
+# it adds about 9 MB. Its licenses are listed in NOTICE, which the image carries.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
@@ -47,6 +47,8 @@ LABEL org.opencontainers.image.title="vde" \
       org.opencontainers.image.created="${DATE}"
 
 COPY --from=builder /out/vde /usr/local/bin/vde
+# The licenses of vde and of the software it embeds (pdfium, go-pdfium, wazero).
+COPY LICENSE NOTICE /usr/share/doc/vde/
 COPY --from=builder --chown=65532:65532 /out/data/var/lib/vde /var/lib/vde
 
 USER nonroot:nonroot

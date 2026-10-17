@@ -91,8 +91,10 @@ internal/provider/vertex/   Vertex AI (Gemini, Anthropic)
 internal/provider/classifier/  classifier-style judge (generic classify contract)
 internal/provider/fake/     scripted provider for tests
 internal/router/         endpoint groups, ordered failover, per-endpoint health
-internal/document/       document model, media types, representation selection, image conversion, HTML to text, email parsing
-internal/extract/        prompt framings, JSON answer parsing, schema validation, judge verdict, loop, escalation
+internal/document/       document model, media types, representation selection, image conversion, HTML to text, email parsing, PDF text layer and rendering policy, grounding text
+internal/pdf/            pdfium on WebAssembly (go-pdfium, wazero): page count, text layer, page rendering; cgo-free, bounded (ADR 0010)
+internal/ground/         deterministic grounding check: normalization, number and date matching, x-vde-grounding rules (ADR 0009)
+internal/extract/        prompt framings, JSON answer parsing, schema validation, judge verdict, loop, escalation, judge policy (grounding repair, auto gate, sampling)
 internal/api/            handlers, middleware (auth, request id, limits), quota windows and rate limiting, errors, admin routes, sync endpoint, JSON submission and URL fetch
 internal/auth/           applications, tokens (hashing, expiry, revocation, scopes)
 internal/job/            job model, state machine, JobStore, SQLite and Postgres implementations, migrations and migrations_postgres
@@ -140,6 +142,12 @@ loop while attempt < limit and deadline not passed:
     candidate = extractor(framing + instructions + schema + representation + prior candidate + feedback)
     if not JSON after lenient cleanup: feedback = [schema: whole result]; continue
     if schema given and candidate invalid: feedback = schema violations; continue   # no judge call
+    grounding = check(candidate, document text)          # ADR 0009; none for images
+    if policy == never: extracted (grounding entries advisory)
+    if critical leaves ungrounded and no repair yet and attempt < limit:
+        feedback = grounding; continue                   # the one repair, no judge call
+    if policy == auto and grounded and candidate answers no schema/judge feedback:
+        if not sampled(job id): accepted (verification grounded)
     verdict = judge(framing + instructions + schema + same representation + candidate)
     if verdict unparseable: ask once more; still unparseable -> failed(judge_failed)
     if verdict.accept: accepted (advisory feedback and optional confidence forwarded)
@@ -241,6 +249,7 @@ Concrete choices that the ADRs left open, fixed so parallel work agrees:
 | IDs | `github.com/oklog/ulid/v2`, job ids `j_<ULID>`, tokens `vde_<prefix>_<random>` |
 | Metrics | `github.com/prometheus/client_golang` (v0.2 epic 07) |
 | HTML to text | `golang.org/x/net/html`; charsets `golang.org/x/text` |
+| PDF text and rendering | `github.com/klippa-app/go-pdfium` (MIT) on `github.com/tetratelabs/wazero` (Apache-2.0), pdfium embedded as WebAssembly (BSD-3-Clause); licenses in `NOTICE` (v0.4, ADR 0010) |
 | CLI | standard `flag` with a hand-written subcommand dispatcher, no framework |
 | Tests | standard `testing` only, table-driven, fake provider as the backbone; no testify |
 
