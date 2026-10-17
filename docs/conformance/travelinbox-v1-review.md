@@ -45,15 +45,16 @@ send or read any of it.
 | `message/rfc822` | Document media type: headers that carry meaning plus the best body become the text representation. Callers submit attachments as separate jobs. ADR 0005 first scheduled this for v0.3; decision 7 and ADR 0006 moved it to v0.1. | Parsing as implemented; intake planned |
 | `text/markdown`, `image/webp`, `image/heic` | The contract's SHOULD types, accepted. | As implemented in the media table |
 | Raw HTML by default | See section 1. | As implemented |
-| No server-side rendering | The service never renders PDF pages. A PDF that no configured endpoint can read and that comes without `page` parts is refused with `415 unsupported_document`. Operators configure a PDF-capable model, or callers send pages as the contract allows. | As implemented in representation selection; the refusal at submit is planned |
+| PDF preparation in the service (v0.4, amends "no server-side rendering") | Until v0.3 the service never rendered PDF pages. Since v0.4 ([ADR 0010](../architecture/decisions/0010-pdf-preprocessing-in-service.md)), when no model of a role reads `application/pdf` and the caller sent no `page` parts, the default `documents.pdf.mode: auto` sends the PDF's text layer (every page at least 200 characters) or its rendered pages. Only `documents.pdf.mode: native` keeps the v0.3 behaviour of refusing such a PDF with `415 unsupported_document` (contract 4.11). A PDF-capable model still gets the PDF as given, and caller pages still win. See section 6. | As implemented (`TestPDFPreparedByService`, `TestSubmitPDFPreparedByService`, `TestServeJudgePolicies`; the conformance suite's instance without a PDF reader runs `mode: native`) |
 | `content_deleted_at` | Job field, RFC 3339 or `null`; present only in an idempotent replay of a job whose content is gone (read once under `retention: none`, or expired). Absent on every pollable job. | As implemented; see ambiguity 10 |
 | `method_not_allowed` | A known route with the wrong method answers `405 method_not_allowed` with `Allow`. An added error code, as section 9 allows. | As implemented |
 | `X-Service-Version` per application | The header and the job's `service_version` use the hash of the application's own effective configuration (attempt limit, HTML policy). | As implemented |
 | `insecure_http` development switch | `server.insecure_http: true` accepts plain HTTP from any peer. Off by default; `vde serve` and `vde config check` warn; refused together with `server.tls`. It exists for containers and development on a trusted private network. It is the one setting that relaxes a contract MUST (HTTPS outside loopback), so a TravelInbox deployment must not use it. | As implemented |
-| `judge` request part (v0.4) | Optional part (and JSON field) choosing the judge policy `always`, `never` or `auto` for one job ([ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md)). Refused with `400 bad_request` unless the operator set `judge.allow_override` for the application, which TravelInbox's applications do not. Part of the idempotency body hash. | As implemented (part, validation, stored policy, per-policy `service_version`); the loop behaviour behind `never` and `auto` is planned (v0.4 epic 03) |
+| `judge` request part (v0.4) | Optional part (and JSON field) choosing the judge policy `always`, `never` or `auto` for one job ([ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md)). Refused with `400 bad_request` unless the operator set `judge.allow_override` for the application, which TravelInbox's applications do not. Part of the idempotency body hash. | As implemented (part, validation, stored policy, per-policy `service_version`, and the loop behind `never` and `auto`: `TestServeJudgePolicies`) |
 | `verification` (v0.4) | Job field: `judge`, `grounded` or `none` on terminal jobs, `null` while queued or running. Under the default `always`, `accepted` pairs with `judge` and every other status with `none`, so TravelInbox sees `judge` on its accepted jobs. Rows finished before v0.4 read the same way. | As implemented |
-| `extracted` status (v0.4) | Terminal status of a schema-valid final candidate under judge policy `never`: never acceptance. Contract section 5 has clients treat an unknown status as not accepted, so it is additive; TravelInbox's applications run `always` and never see it. | Status, store, API document and webhooks as implemented; produced only once epic 03 lands (planned) |
-| `source: "grounding"` feedback entries (v0.4) | Feedback entries of the deterministic grounding check, in the job's `feedback` only under `never` and `auto`. Under `always` they reach only the extractor, so a contract-v1 client sees only `judge` and `schema`. | Enum in the API document as implemented; entries planned (v0.4 epics 02 and 03) |
+| `extracted` status (v0.4) | Terminal status of a schema-valid final candidate under judge policy `never`: never acceptance. Contract section 5 has clients treat an unknown status as not accepted, so it is additive; TravelInbox's applications run `always` and never see it. | As implemented (`TestServeJudgePolicies`, `TestExtractSyncExtracted`, `TestExtractedStatusPassesThrough`) |
+| `source: "grounding"` feedback entries (v0.4) | Feedback entries of the deterministic grounding check, in the job's `feedback` only under `never` and `auto`. Under `always` they reach only the extractor, so a contract-v1 client sees only `judge` and `schema`. | As implemented (scenarios in `testdata/scenarios/judge-policy`; under `always` none reach the job's `feedback`, also while running or when the sweeper times a job out) |
+| Grounding repair under `always` (v0.4) | Under the default policy a candidate with critical values the document does not print goes back to the extractor once, with grounding feedback, before the judge is asked (at most one extra extractor call per job, only while an attempt remains). No new status, field or feedback source reaches the client; the change is visible only through `service_version`, which hashes the grounding rules (`ground-1`). | As implemented (`always-repair-*` scenarios; the conformance suite passes unchanged under `always`) |
 
 Deviations from the contract: none known. Where the contract says MAY or SHOULD, section
 1 and the table above say what the service chose.
@@ -160,13 +161,19 @@ What TravelInbox needs, without reading the service's code:
   ADR. (Planned: the meeting has not happened.)
 - Re-check every "planned" mark against the release candidate and remove the marks; the
   acceptance checklist tests (epic 09, job 01) are the evidence.
-- Judge policy (v0.4): TravelInbox keeps `always`; confirm the client tolerates
-  `verification` and would treat `extracted` as not accepted. Both are opt-in supersets:
-  `extracted` and `source: "grounding"` appear only for applications an operator moves to
-  `never` or `auto`, and the `judge` part only where `judge.allow_override` is set.
+- Superset statuses and fields (v0.4): TravelInbox keeps `always`; confirm the client
+  tolerates `verification` (present on every terminal job, `judge` on its accepted jobs)
+  and would treat `extracted` as not accepted and an unknown feedback `source` like
+  `judge`. All are opt-in supersets: `extracted`, `verification: grounded` and
+  `source: "grounding"` appear only for applications an operator moves to `never` or
+  `auto`, and the `judge` part only where `judge.allow_override` is set. Note also that the
+  grounding repair under `always` can add one extractor call to a job (`attempts` counts
+  it), and that its `service_version` changed with v0.4.
 - PDF preparation (v0.4, ADR 0010): with the default `documents.pdf.mode: auto`, a PDF
   without pages for models that read no `application/pdf` is no longer refused (contract
   4.11) but sent as its text layer or rendered pages. A deployment that wants 4.11's `415`
   sets `documents.pdf.mode: native`; the conformance suite's instance without a PDF reader
-  runs that mode. Confirm which TravelInbox wants; when its models read PDFs natively,
-  the mode changes nothing for it.
+  runs that mode, so contract 4.11 stays tested exactly. Confirm which TravelInbox wants;
+  when its models read PDFs natively, the mode changes nothing for it. Proposal: keep
+  `auto` (a PDF that would have been refused is now processed, a strict improvement for a
+  client that treats `415` as "send pages") unless TravelInbox depends on the refusal.

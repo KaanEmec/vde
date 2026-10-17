@@ -218,6 +218,141 @@ func TestEval_url(t *testing.T) {
 	}
 }
 
+// TestEval_judgePolicies runs a union of two globs under --judge never and auto: never
+// ends every case extracted (or rejected) without a judge call, auto accepts the cases
+// whose values the documents print as grounded, without a judge call.
+func TestEval_judgePolicies(t *testing.T) {
+	t.Parallel()
+	const cases = "receipt-00[12]*,lab-001-*"
+	wantIDs := "lab-001-cbc,receipt-001-grocery,receipt-002-cafe"
+	ids := func(r eval.Report) string {
+		var out []string
+		for _, c := range r.Results {
+			out = append(out, c.ID)
+		}
+		return strings.Join(out, ",")
+	}
+
+	never := t.TempDir()
+	code, stdout, stderr := runEvalArgs(t, "--corpus", evalCorpus, "--config", scenarioConfig,
+		"--provider-script", evalScript, "--cases", cases, "--judge", "never", "--out", never)
+	if code != exitOK {
+		t.Fatalf("never: exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	r := onlyReport(t, never)
+	if got := ids(r); got != wantIDs {
+		t.Errorf("--cases %q selected %s, want %s", cases, got, wantIDs)
+	}
+	for _, c := range r.Results {
+		if (c.Status != eval.StatusExtracted && c.Status != eval.StatusRejected) || c.JudgeCalls == nil || *c.JudgeCalls != 0 ||
+			c.Verification != eval.VerificationNone || c.JudgePolicy != "never" || c.FalseAccept || c.FalseReject {
+			t.Errorf("never: %+v", c)
+		}
+	}
+	if s := r.Summary; s.Extracted != 3 || s.JudgeCalls != 0 || s.JudgeCallCases != 3 || s.ExtractedFieldAccuracy != 1 || r.JudgePolicy != "never" {
+		t.Errorf("never: summary %+v, policy %q", s, r.JudgePolicy)
+	}
+	if !strings.Contains(stdout, "judge policy never") || !strings.Contains(stdout, "3 extracted") {
+		t.Errorf("never: stdout\n%s", stdout)
+	}
+
+	auto := t.TempDir()
+	code, stdout, stderr = runEvalArgs(t, "--corpus", evalCorpus, "--config", scenarioConfig,
+		"--provider-script", filepath.Join(evalCorpus, "fake-script-grounded.yaml"), "--cases", cases, "--judge", "auto", "--out", auto)
+	if code != exitOK {
+		t.Fatalf("auto: exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	a := onlyReport(t, auto)
+	if a.ServiceVersion == r.ServiceVersion {
+		t.Errorf("auto and never share service_version %s", a.ServiceVersion)
+	}
+	for _, c := range a.Results {
+		if c.Status != eval.StatusAccepted || c.Verification != eval.VerificationGrounded || *c.JudgeCalls != 0 || c.Decision != eval.DecisionGrounded {
+			t.Errorf("auto: %+v", c)
+		}
+	}
+	if s := a.Summary; s.VerifiedGrounded != 3 || s.GroundedShare != 1 || s.JudgeCalls != 0 {
+		t.Errorf("auto: summary %+v", s)
+	}
+	if !strings.Contains(stderr, "accepted by grounded") || !strings.Contains(stderr, "0 judge call(s)") {
+		t.Errorf("auto: progress\n%s", stderr)
+	}
+	for _, content := range []string{"Greenleaf", "Copper Kettle", "12.35"} {
+		if strings.Contains(stdout+stderr, content) {
+			t.Errorf("output carries document content %q", content)
+		}
+	}
+}
+
+// TestEval_urlJudge sends --judge as the judge part, reads extracted as terminal with its
+// verification, and names allow_override when the deployment refuses the part. Not
+// parallel: it shortens the poll timings.
+func TestEval_urlJudge(t *testing.T) {
+	pollFirst, pollMax = time.Millisecond, time.Millisecond
+	t.Cleanup(func() { pollFirst, pollMax = 2*time.Second, 30*time.Second })
+
+	var (
+		mu     sync.Mutex
+		judges []string
+		refuse bool
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/jobs":
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			judges = append(judges, r.FormValue("judge"))
+			if refuse {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"error":{"code":"bad_request","message":"The judge part is not allowed: the application does not allow a per-request judge policy."}}`)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+			fmt.Fprint(w, `{"id": "j_1", "status": "queued"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/jobs/j_1":
+			fmt.Fprint(w, `{"id": "j_1", "status": "extracted", "verification": "none", "result": {"total": 12.5, "name": "Ada"}, "attempts": 1, "service_version": "vde-9.9.9+never"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	corpus, out := t.TempDir(), t.TempDir()
+	writeCase(t, corpus, "remote")
+	t.Setenv("VDE_EVAL_TEST_TOKEN", "secret-token")
+	args := []string{"--corpus", corpus, "--url", srv.URL, "--token-env", "VDE_EVAL_TEST_TOKEN", "--judge", "never"}
+	code, stdout, stderr := runEvalArgs(t, append(args, "--out", out)...)
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	r := onlyReport(t, out)
+	c := r.Results[0]
+	if c.Status != eval.StatusExtracted || c.Verification != eval.VerificationNone || c.JudgeCalls != nil || !c.Correct ||
+		c.JudgePolicy != "never" || r.JudgePolicy != "never" || r.Summary.Extracted != 1 || r.Summary.JudgeCallCases != 0 {
+		t.Errorf("report %+v", r)
+	}
+	if !strings.Contains(stdout, "judge calls        not reported") {
+		t.Errorf("stdout:\n%s", stdout)
+	}
+
+	mu.Lock()
+	refuse = true
+	mu.Unlock()
+	code, _, stderr = runEvalArgs(t, append(args, "--out", "")...)
+	if code != exitFailure || !strings.Contains(stderr, "--judge never") || !strings.Contains(stderr, "allow_override") {
+		t.Errorf("refused judge part: exit %d\n%s", code, stderr)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(judges, ",") != "never,never" {
+		t.Errorf("judge parts %q", judges)
+	}
+}
+
 func TestEval_usageErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -235,6 +370,8 @@ func TestEval_usageErrors(t *testing.T) {
 		{"token unset", []string{"--corpus", evalCorpus, "--url", "http://127.0.0.1:1", "--token-env", "VDE_EVAL_UNSET_TOKEN"}, "is not set"},
 		{"no match", []string{"--corpus", evalCorpus, "--cases", "nothing-*"}, "no case"},
 		{"bad glob", []string{"--corpus", evalCorpus, "--cases", "["}, "syntax error"},
+		{"empty glob", []string{"--corpus", evalCorpus, "--cases", "receipt-*,,lab-*"}, "empty glob"},
+		{"bad judge", []string{"--corpus", evalCorpus, "--judge", "sometimes"}, "--judge"},
 		{"missing compare", []string{"--corpus", evalCorpus, "--compare", "missing.json"}, "--compare"},
 		{"missing config", []string{"--corpus", evalCorpus, "--config", "missing.yaml"}, "config:"},
 		{"import flags", []string{"import-travelinbox", "--from", "x"}, "--from and --to are required"},

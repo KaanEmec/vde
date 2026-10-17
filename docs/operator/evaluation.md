@@ -76,7 +76,8 @@ checks every `expected.json` against its schema.
 ## Running it
 
 ```
-vde eval --corpus testdata/eval --config vde.yaml [--cases 'travelinbox-*'] [--concurrency 2]
+vde eval --corpus testdata/eval --config vde.yaml [--cases 'travelinbox-*,receipt-*'] [--concurrency 2]
+vde eval --corpus testdata/eval --config vde.yaml --judge auto   # one judge policy for every case
 vde eval --corpus my-corpus --url https://vde.example.com --token-env VDE_TOKEN
 ```
 
@@ -86,19 +87,36 @@ vde eval --corpus my-corpus --url https://vde.example.com --token-env VDE_TOKEN
 | `--config file` | Run locally through the engine with this configuration (default `vde.yaml`): the same representation choice, loop and limits as the service, one fresh set of role groups per case. Tokens are counted per case. |
 | `--url URL --token-env NAME` | Run against a deployment instead: each case is submitted to `POST /v1/jobs` with `retention: none` and polled as the [API guide](../api/guide.md) describes (2 s doubling to 30 s, 10 minutes at most). The token is read from the named variable and never printed. The service does not report tokens, so the token columns stay empty. |
 | `--concurrency n` | Cases run at the same time (default 1). Mind the provider's rate limits, or the application's quota with `--url`. |
-| `--cases glob` | Only the cases whose id matches (shell glob, default `*`). |
+| `--cases glob,...` | Only the cases whose id matches one of a comma-separated list of shell globs (default `*`), for example `'ti-0*,receipt-*'`. An empty element (`a,,b`) is a usage error. |
+| `--judge always\|never\|auto` | Run every case under this [judge policy](judge-policy.md) instead of `roles.judge.policy`; the report's `service_version` is that policy's. With `--url` the harness sends the `judge` part, which the application must allow (`applications[].judge.allow_override`); otherwise every case fails with a message naming `allow_override`. |
 | `--out dir` | Where the JSON report goes (default `eval-reports/`, ignored by git); `""` saves none. |
-| `--compare file` | An earlier report: prints the change of every summary number and each case whose status or verdict changed. |
-| `--provider-script file` | Replace every provider with a fake replaying the script, a fresh fake per case; `{{expected}}` in an answer becomes the case's `expected.json`. For testing the harness: `make eval` runs the whole corpus this way in CI. |
+| `--compare file` | An earlier report: prints the change of every summary number (the judge-policy totals included) and each case whose status, verification or verdict changed, for example `accepted/judge correct -> accepted/grounded correct`. |
+| `--provider-script file` | Replace every provider with a fake replaying the script, a fresh fake per case; `{{expected}}` in an answer becomes the case's `expected.json`. For testing the harness: `make eval` runs the whole corpus this way in CI, once per judge policy (`testdata/eval/fake-script.yaml` for `always` and `never`, `testdata/eval/fake-script-grounded.yaml` for `auto`). |
 
 Exit codes: 0 when every case ran, whatever the quality; 1 for a usage or configuration
 error or when a case could not be run at all (unreadable file, unsupported document,
 transport failure).
 
-The local engine runs each case under `roles.judge.policy` (ADR 0009); under `auto` the
-sample of grounded cases judged anyway is decided on the document's bytes, so reruns sample
-the same cases. `vde extract` does the same and exits 4 when a case ends `extracted`
-(policy `never`).
+The local engine runs each case under `roles.judge.policy`, or `--judge` when given
+([ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md)), with the
+sample rate 0.05; under `auto` the sample of grounded cases judged anyway is decided on the
+document's bytes, so reruns sample the same cases. `vde extract` does the same and exits 4
+when a case ends `extracted` (policy `never`).
+
+### Comparing judge policies
+
+Run the same corpus once per policy and compare the reports:
+
+```
+vde eval --corpus my-corpus --config vde.yaml --judge always
+vde eval --corpus my-corpus --config vde.yaml --judge auto  --compare eval-reports/<always report>.json
+vde eval --corpus my-corpus --config vde.yaml --judge never --compare eval-reports/<always report>.json
+```
+
+Read false accepts by verification first: a grounded false accept is a wrong value the
+document prints (a wrong field, a wrong choice), which only the judge can catch; then the
+judge calls saved, then the grounded share. A low grounded share usually means derived
+fields without `x-vde-grounding` annotations ([judge policy](judge-policy.md#annotating-a-schema)).
 
 ### Owner suite
 
@@ -113,13 +131,27 @@ pointers only, never document content or result values; so does the report.
 
 | Number | Meaning |
 | --- | --- |
-| **False accepts** | Accepted cases where a compared field differs from the ground truth, and their share of the accepted cases. The headline: the judge exists to keep it at zero, because a consumer uses an accepted result without review. |
-| Acceptance rate | Accepted cases / cases. |
-| Field accuracy | Matched / compared fields over every case (a case without a result matches none), and over accepted cases only. |
+| **False accepts** | Accepted cases where a compared field differs from the ground truth, and their share of the accepted cases, split by verification: accepted by the `judge` or `grounded` (accepted by the grounding check without a judge, policy `auto`). The headline: the judge exists to keep it at zero, because a consumer uses an accepted result without review. |
+| Acceptance rate | Accepted cases / cases. The line also counts `extracted` cases (policy `never`): neither accepted nor rejected, they are never false accepts or false rejects. |
+| Verification | Cases by verification (`judge`, `grounded`, `none`) and the grounded share: grounded / accepted. |
+| Judge calls | Judge-role calls (judge, re-asks, second judge, feedback group) summed over the cases, the sampled cases (grounded, judged anyway under `auto`) and the disagreements (sampled judge calls that rejected a grounded candidate). Local runs only: over `--url` the service does not report them. |
+| Field accuracy | Matched / compared fields over every case (a case without a result matches none), over accepted cases only, and over extracted cases. |
 | False rejects | Rejected cases whose result matched on every compared field: work sent to a person that did not need one. |
 | Correct cases | Cases with a result that matched on every compared field, whatever the status. |
 | Attempts, duration | Mean extractor attempts; median and p95 wall time per case (with `--url`, queueing included). |
 | Tokens | Input and output tokens and model calls of local runs. The cost estimate is a placeholder (`cost_usd: null`) until per-model prices are configured. |
+
+Per case the table shows the status (with the job error code), `VERIFIED` (the job's
+`verification`), `DECISION` (how the last schema-valid candidate was decided: `judged`,
+`grounded`, `sampled` or `skipped`; local runs only), attempts, `JUDGE CALLS`, duration,
+tokens, fields and the verdict (`FALSE ACCEPT (grounded)` for a grounded false accept).
+
+The JSON report carries the run's `judge_policy`; each result `judge_policy`,
+`verification`, `judge_calls` (`null` over `--url`), `decision`, `disagreements` and
+`error_code`; the summary `extracted`, `extracted_field_accuracy`, `false_accepts_judge`,
+`false_accepts_grounded`, `verified_judge`, `verified_grounded`, `grounded_share`,
+`judge_calls`, `judge_call_cases`, `sampled` and `disagreements`. Reports from v0.3 load
+with these empty, so `--compare` works across versions.
 
 The report is saved as `<out>/<service_version>-<date>.json` (`-2`, `-3` ... when the file
 exists). Keep the report of every release candidate and record its summary in

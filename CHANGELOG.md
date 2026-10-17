@@ -6,30 +6,110 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-18
+
+Judge policy, a deterministic grounding check and PDF preparation in the service
+(ADR 0009, ADR 0010). Under the default judge policy `always` the TravelInbox contract
+holds exactly: the conformance suite passes unchanged. The other policies are opt-in
+supersets. The owner's policy comparison has not been run yet (see Known gaps).
+
 ### Added
 
-- Judge policy in the extraction loop (ADR 0009). `never` ends a schema-valid candidate
-  `extracted` without a judge, with grounding entries as advisory feedback. `auto` accepts a
-  candidate without a judge (`verification: grounded`) when the document has text, the
-  candidate answers no schema or judge feedback and every critical value is in the
-  document; a deterministic sample (`judge.sample_rate`, FNV-1a of the job id, of the
-  document bytes in the CLI) is judged anyway. Metrics `vde_judge_decisions_total{policy,
-  decision}` and `vde_grounding_disagreements_total`; `job.finished` audit details gain
+- Judge policy `always` (default), `never` or `auto`: `roles.judge.policy`, per application
+  `applications[].judge.policy`, `judge.sample_rate` (default 0.05) and
+  `judge.allow_override`, which lets a request choose with the `judge` part or JSON field
+  (`400 bad_request` otherwise). Applications store `judge_policy`, `judge_allow_override`
+  and `judge_sample_rate` (migration 0009), settable over the admin API; an application
+  that allows override has one `service_version` per policy.
+- Terminal status `extracted` (judge policy `never`: a schema-valid result no judge looked
+  at; never acceptance) and the job field `verification` (`judge`, `grounded` or `none`;
+  `null` while in progress). The job store gains `judge_policy` and `verification`
+  (migration 0008); the admin job list accepts `status=extracted`.
+- `internal/ground`: the deterministic grounding check. Every string, number and ISO date
+  leaf of a candidate must occur in the normalized document text (casefolding, diacritics,
+  thousands separators and decimal conventions, a documented date and time table in six
+  languages, rules version `ground-1`). Schemas steer it with
+  `x-vde-grounding: critical | check | derived | skip`; misses are feedback entries with
+  `source: "grounding"` that never carry the value.
+- Judge policy in the loop: `never` ends `extracted` with advisory grounding entries;
+  `auto` accepts without a judge (`verification: grounded`) when the document has text, at
+  least one critical leaf was checked and all are found, and the candidate answers no
+  schema or judge feedback; a deterministic sample (FNV-1a of the job id, of the document
+  bytes in the CLI) is judged anyway. Metrics `vde_judge_decisions_total{policy, decision}`
+  and `vde_grounding_disagreements_total`; `job.finished` audit details carry
   `verification` and `judge_policy`.
-- PDF preparation in the service (ADR 0010): submit, the workers, `vde extract` and
-  `vde eval` select a PDF's text layer or rendered pages with one pdfium engine per
-  process when no group reads PDFs natively. A PDF over `documents.pdf.max_pages` answers
-  `415` naming the limit. The container image carries `LICENSE` and `NOTICE`.
+- `documents.pdf` (`mode: auto | native | text | pages`, `dpi`, `max_pages`,
+  `min_text_chars_per_page`, `workers`) and `applications[].documents.pdf.mode`: when no
+  group reads `application/pdf` natively, the service sends a PDF's text layer or its
+  rendered pages instead of refusing it. The text layer is also the PDF's grounding text.
+- `internal/pdf`: pdfium compiled to WebAssembly (go-pdfium on wazero), cgo-free, lazily
+  started, one bounded pool per process, a fresh sandboxed instance per document (no
+  filesystem, no network, 1 GiB memory cap, 30 s per call), compilation cache under
+  `server.data_dir/pdfium-cache`. Submit, the workers, `vde extract` and `vde eval` share
+  the selection.
+- `vde eval`: per case `judge_policy`, `verification`, `judge_calls`, `decision`,
+  `disagreements` (and `error_code`); totals for extracted cases and their field accuracy,
+  false accepts by verification (`judge` or `grounded`), cases per verification, the
+  grounded share, judge calls, sampled cases and disagreements, all covered by
+  `--compare`. `--judge always|never|auto` runs a corpus under one policy (sent as the
+  `judge` part with `--url`), and `--cases` takes a comma-separated list of globs.
+  `make eval` runs the corpus once per policy.
+- `vde extract --judge always|never|auto`; exit code 4 for `extracted`.
+- Documentation: [judge policy](docs/operator/judge-policy.md) (policies, grounding, schema
+  annotations, the date table, metrics), [PDF preprocessing](docs/operator/pdf.md), the
+  `extracted` status, `verification` and `source: "grounding"` in the API guide, the
+  pdfium sandbox in the security model, and docs tests that keep the configuration
+  reference and the date table in step with the code.
 
 ### Changed
 
-- Under every judge policy but `never`, a schema-valid candidate whose critical values are
-  not in the document goes back to the extractor once, before any judge call (one extractor
-  call, no judge call, never on the last attempt). Under `always` the grounding entries
-  reach only the extractor, never the job's `feedback`, so TravelInbox sees contract v1
-  sources only.
-- Every `service_version` changes once in v0.4: the grounding rules (`ground-1`) are hashed,
-  and the PDF policy (mode, dpi, minimum text characters) where it can change what is read.
+- [ADR 0006](docs/architecture/decisions/0006-representation-policy.md) is amended by
+  [ADR 0010](docs/architecture/decisions/0010-pdf-preprocessing-in-service.md): under the
+  default `documents.pdf.mode: auto` a PDF without pages for models that do not read PDFs
+  is no longer refused with `415` (contract 4.11) but prepared by the service.
+  `documents.pdf.mode: native` keeps the v0.3 behaviour; the conformance suite's instance
+  without a PDF reader runs it.
+- `vde config check` no longer warns that a deployment "depends on callers sending pages"
+  when a group cannot read PDFs: it prints how each role gets a PDF under the mode, warns
+  only under `native` or when a group reads PDFs only through their text layer, prints the
+  pdfium memory estimate, and warns when wazero would interpret instead of compile.
+- Under `always` and `auto` a schema-valid candidate whose critical values are not in the
+  document goes back to the extractor once before any judge call (one extractor call, no
+  judge call, never on the last attempt; whether it was made is stored with the job).
+  Under `always` the grounding entries reach only the extractor, never the job's
+  `feedback`, so TravelInbox sees contract-v1 sources only.
+- Every `service_version` changes once with v0.4: the grounding rules (`ground-1`) are
+  hashed under every policy (the repair under `always` changes results), and the PDF policy
+  (mode, dpi, minimum text characters) where it can change what is read.
+- `vde eval --url` treats `extracted` as terminal.
+- Dependencies (direct since `go mod tidy`): `github.com/klippa-app/go-pdfium` v1.21.3
+  (MIT) and `github.com/tetratelabs/wazero` v1.12.0 (Apache-2.0), with pdfium itself
+  (BSD-3-Clause) embedded as WebAssembly and `github.com/jolestar/go-commons-pool/v2`
+  v2.1.2 (Apache-2.0) indirectly; licenses in `NOTICE`, which the image carries next to
+  `LICENSE`.
+- Binary size (`CGO_ENABLED=0`, `-trimpath -s -w`): linux/amd64 35.9 MB (v0.3: 26.8 MB,
+  +9.2 MB), linux/arm64 34.2 MB (v0.3: 25.2 MB, +9.0 MB), darwin/arm64 34.9 MB. The image
+  is the binary plus about 2 MB of distroless/static (not rebuilt for this release).
+
+### Known gaps
+
+- The owner's policy comparison (`always`, `auto`, `never` on the owner suite and the
+  TravelInbox corpus) has not been run: the v0.4 exit criteria 1 to 3 on real documents
+  and models are pending (`docs/quality.md`, "Judge policy"). Automated tests cover them
+  with the fake provider.
+- pdfium runs without system fonts: a PDF whose fonts are neither embedded nor among the
+  14 standard ones may render with fallback glyphs (the text layer is unaffected).
+- Memory: each pdfium instance takes about 230 to 490 MB while it prepares a document
+  (capped at 1 GiB); budget about 500 MB per `documents.pdf.workers`. The first PDF of a
+  process without a writable compilation cache waits about 1.2 s.
+- wazero compiles only on amd64 and arm64; elsewhere pdfium is interpreted, about 60 times
+  slower.
+- No OCR: scanned PDFs are rendered as pages and are not groundable; images are never
+  groundable, so `auto` sends them to the judge.
+- Grounding cannot catch a printed value in the wrong field, a wrong choice among printed
+  values or an omission; `auto` measures that risk through its sample.
+- The container image size was not measured for this release (no buildx on the build
+  machine).
 
 ## [0.3.0] - 2026-10-17
 

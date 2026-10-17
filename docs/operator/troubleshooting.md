@@ -28,7 +28,7 @@ never quote a document.
 | 405 | `method_not_allowed` | Wrong HTTP method; the `Allow` header lists the right ones. |
 | 413 | `payload_too_large` | A part or the whole request is over `limits.document_bytes` (25 MiB), `limits.page_bytes` (10 MiB), `limits.pages` (20) or `limits.request_bytes` (128 MiB). Raise the limit if the consumer legitimately needs it; a reverse proxy may also impose its own body limit (the response then does not come from `vde`). |
 | 415 | `unsupported_media_type` | The document's media type is never accepted, or a part's content does not match its declared type. |
-| 415 | `unsupported_document` | The type is accepted by the service but no configured model of the roles can read it, for example a PDF when no model lists `application/pdf` and the caller sent no page images. Fix `accepts` or the models: [providers](providers.md#declaring-accepts), and `vde config check` shows what each role reads. |
+| 415 | `unsupported_document` | The type is accepted by the service but no configured model of the roles can read it, for example a PDF under `documents.pdf.mode: native` when no model lists `application/pdf` and the caller sent no page images, an image-only group under `mode: text`, or a PDF over `documents.pdf.max_pages` (see [below](#pdf-refused-too-many-pages)). Fix `accepts` or the models: [providers](providers.md#declaring-accepts), and `vde config check` shows what each role reads. |
 | 422 | `invalid_schema` | The caller's schema is not valid JSON Schema 2020-12. |
 | 422 | `idempotency_mismatch` | The same `Idempotency-Key` was sent with a different request. |
 | 429 | `rate_limited` | A short-term limit of the application: `rate.requests_per_minute`, `rate.submits_per_minute` or `rate.max_in_progress` (the message says which). `Retry-After` says when. Raise the limit in the configuration (and restart) if it is legitimate load; watch `vde_jobs_in_progress`. |
@@ -89,6 +89,44 @@ never the body) and as the job errors above.
 
 `vde config check --probe` is not implemented yet: no provider has a probe, so it only warns
 "probe not available" for every endpoint and tests nothing (probing is planned for v0.3). To test an endpoint, run `vde extract` with a small document.
+
+## Judge policy and PDFs
+
+### PDF refused: too many pages
+
+`415 unsupported_document` with "The PDF has more than N pages (documents.pdf.max_pages),
+and no configured endpoint reads PDFs natively.": the service would have to prepare the PDF
+(text layer or rendered pages) and it is over `documents.pdf.max_pages` (20). Raise the
+limit (up to 200; preparing a page costs about 20 ms and the memory of one pdfium
+instance), add a pair that reads `application/pdf` to every role's group (the PDF then
+goes as given and is not counted), or have the caller send page images. Encrypted and
+unreadable PDFs are refused with the same code. See [PDF preprocessing](pdf.md).
+
+### Grounded share is low
+
+Under judge policy `auto`, few jobs end `verification: grounded` and most still go to the
+judge (`vde_judge_decisions_total{policy="auto", decision="judged"}` dominates). Usual
+causes, in order:
+
+- **Derived fields without annotations.** A value the model computes or translates (an ISO
+  country or currency code, a city from an airport code, a category, a normalized phone
+  number) is not printed, so it is a critical miss. Mark it `x-vde-grounding: derived`, or
+  mark the fields that matter `critical` so the others stop gating
+  ([annotating a schema](judge-policy.md#annotating-a-schema)). `vde eval --judge auto`
+  shows per case whether it was grounded; the job's `feedback` lists the missed pointers.
+- **Ungroundable documents.** Images and scanned PDFs have no text; PDFs whose pages average
+  fewer than `documents.pdf.min_text_chars_per_page` characters are not grounded either.
+- **Schema retries.** A candidate written in answer to schema feedback goes to the judge;
+  tighten the extractor instructions.
+- **The sample.** `judge.sample_rate` of the jobs go to the judge anyway (5 % by default).
+
+### pdfium cache not writable
+
+`vde serve` logs "pdfium compilation cache unavailable; PDFs are prepared uncached (slower
+first start)" with the error. The service works, but each process compiles the pdfium
+module on its first PDF (about 1.2 s instead of 35 ms). Make `server.data_dir` writable by
+the service user (the cache is `server.data_dir/pdfium-cache`, mode `0700`), or give the
+container a writable volume there. The cache can be deleted at any time.
 
 ## Worker not picking up jobs
 

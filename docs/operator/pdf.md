@@ -31,7 +31,7 @@ encrypted PDF and an unreadable one are refused with `415 unsupported_document`,
 they are sent as given to a PDF-capable group. Applications can override the mode with
 `applications[].documents.pdf.mode`.
 
-The text layer is also what the grounding check reads (ADR 0009), whatever the models
+The text layer is also what the grounding check reads ([ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md), [judge policy](judge-policy.md)), whatever the models
 received, when its pages average at least `min_text_chars_per_page` characters. It is
 never sent to a model unless the representation is text, and never logged. When the
 caller sends pages, grounding still reads the PDF's own text layer, not the pages.
@@ -72,6 +72,7 @@ every start. The cache can be deleted at any time.
   The text layer is unaffected.
 - **No OCR.** A scanned PDF has no text layer: under `auto` it is rendered, and it is not
   groundable.
-- **Binary size.** pdfium adds about 9 MB to the binary (5.7 MB of WebAssembly). Its
+- **Binary size.** pdfium adds about 9 MB to the binary (5.7 MB of WebAssembly): v0.4 is
+  35.9 MB on linux/amd64 and 34.2 MB on linux/arm64, against 26.8 and 25.2 MB in v0.3. Its
   licenses (BSD-3-Clause for pdfium, MIT for go-pdfium, Apache-2.0 for wazero) are listed
   in `NOTICE`.

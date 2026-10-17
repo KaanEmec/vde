@@ -595,11 +595,15 @@ components:
         result:
           description: |
             The last candidate the extractor produced. Null while in progress or when no attempt
-            produced parseable JSON. Never null and schema-valid when `status` is `accepted`,
-            except in the content-deleted form of an idempotent replay (`content_deleted_at` set).
+            produced parseable JSON. Never null and schema-valid when `status` is `accepted` or
+            `extracted`, except in the content-deleted form of an idempotent replay
+            (`content_deleted_at` set).
           type: [object, "null"]
         feedback:
-          description: Final feedback on `result`; empty on `accepted` and while in progress.
+          description: |
+            Final feedback on `result`; empty while in progress. On `accepted`, at most advisory
+            entries (from the judge; never `grounding` entries under the default policy
+            `always`). On `extracted` (added by vde), advisory `grounding` entries.
           type: array
           items: { $ref: "#/components/schemas/FeedbackEntry" }
         attempts:

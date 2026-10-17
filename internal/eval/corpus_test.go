@@ -97,3 +97,32 @@ func TestImportTravelInbox_noCorpus(t *testing.T) {
 		t.Error("ImportTravelInbox(empty dir) succeeded, want an error")
 	}
 }
+
+// TestParseCasesAndLoadCorpus: a comma-separated list of globs selects the union of
+// their cases; an empty or malformed glob is an error.
+func TestParseCasesAndLoadCorpus(t *testing.T) {
+	t.Parallel()
+	patterns, err := eval.ParseCases("receipt-00[12]*, lab-005-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases, err := eval.LoadCorpus(corpusDir, patterns...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, c := range cases {
+		ids = append(ids, c.ID)
+	}
+	if got := strings.Join(ids, ","); got != "lab-005-thyroid-de,receipt-001-grocery,receipt-002-cafe" {
+		t.Errorf("selected %s", got)
+	}
+	for _, bad := range []string{"", "a,,b", "a,", "[", "a,["} {
+		if _, err := eval.ParseCases(bad); err == nil {
+			t.Errorf("ParseCases(%q) succeeded", bad)
+		}
+	}
+	if all, err := eval.LoadCorpus(corpusDir); err != nil || len(all) < 60 {
+		t.Errorf("LoadCorpus without patterns: %d cases, %v", len(all), err)
+	}
+}

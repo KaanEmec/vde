@@ -17,17 +17,20 @@ import (
 // Report is one evaluation run, saved as JSON. It carries case ids, statuses, counts and
 // JSON pointers only, never document content or result values.
 type Report struct {
-	ServiceVersion string       `json:"service_version"`
-	Extractor      []string     `json:"extractor,omitempty"` // endpoint/model pairs, local runs
-	Judge          []string     `json:"judge,omitempty"`
-	Target         string       `json:"target"` // "local" or the service URL
-	Corpus         string       `json:"corpus"`
-	Cases          string       `json:"cases"` // the case id pattern
-	Concurrency    int          `json:"concurrency"`
-	StartedAt      time.Time    `json:"started_at"`
-	FinishedAt     time.Time    `json:"finished_at"`
-	Summary        Summary      `json:"summary"`
-	Results        []CaseResult `json:"results"`
+	ServiceVersion string   `json:"service_version"`
+	Extractor      []string `json:"extractor,omitempty"` // endpoint/model pairs, local runs
+	Judge          []string `json:"judge,omitempty"`
+	Target         string   `json:"target"` // "local" or the service URL
+	Corpus         string   `json:"corpus"`
+	Cases          string   `json:"cases"` // the case id globs, comma-separated
+	// JudgePolicy is the judge policy of the run: roles.judge.policy or --judge for a
+	// local run, --judge over HTTP ("" there means the application's own policy).
+	JudgePolicy string       `json:"judge_policy,omitempty"`
+	Concurrency int          `json:"concurrency"`
+	StartedAt   time.Time    `json:"started_at"`
+	FinishedAt  time.Time    `json:"finished_at"`
+	Summary     Summary      `json:"summary"`
+	Results     []CaseResult `json:"results"`
 }
 
 // Summary aggregates a run. Rates are fractions from 0 to 1.
@@ -36,13 +39,20 @@ type Summary struct {
 	Accepted int `json:"accepted"`
 	Rejected int `json:"rejected"`
 	Failed   int `json:"failed"`
-	Errors   int `json:"errors"` // cases the harness could not run
-	Correct  int `json:"correct"`
+	// Extracted are cases no judge was asked about (judge policy never): neither accepted
+	// nor rejected, so they count in no false accept or false reject.
+	Extracted int `json:"extracted"`
+	Errors    int `json:"errors"` // cases the harness could not run
+	Correct   int `json:"correct"`
 	// AcceptanceRate is accepted / cases.
 	AcceptanceRate float64 `json:"acceptance_rate"`
 	// FalseAccepts are accepted cases with a compared field that differs from the ground
 	// truth: the headline number, the judge exists to keep it at zero.
 	FalseAccepts int `json:"false_accepts"`
+	// FalseAcceptsJudge and FalseAcceptsGrounded split FalseAccepts by verification: the
+	// judge accepted, or the grounding check did without a judge (judge policy auto).
+	FalseAcceptsJudge    int `json:"false_accepts_judge"`
+	FalseAcceptsGrounded int `json:"false_accepts_grounded"`
 	// FalseAcceptRate is false accepts / accepted (0 when nothing was accepted).
 	FalseAcceptRate float64 `json:"false_accept_rate"`
 	// FalseRejects are rejected cases whose result matched on every compared field.
@@ -53,9 +63,25 @@ type Summary struct {
 	// result matches none); AcceptedFieldAccuracy over accepted cases only.
 	FieldAccuracy         float64 `json:"field_accuracy"`
 	AcceptedFieldAccuracy float64 `json:"accepted_field_accuracy"`
-	MeanAttempts          float64 `json:"mean_attempts"`
-	DurationMedianMS      int64   `json:"duration_median_ms"`
-	DurationP95MS         int64   `json:"duration_p95_ms"`
+	// ExtractedFieldAccuracy is matched / compared fields over extracted cases.
+	ExtractedFieldAccuracy float64 `json:"extracted_field_accuracy"`
+	// VerifiedJudge and VerifiedGrounded count the cases by verification (judge or
+	// grounded; every other case is none). GroundedShare is VerifiedGrounded / Accepted.
+	VerifiedJudge    int     `json:"verified_judge"`
+	VerifiedGrounded int     `json:"verified_grounded"`
+	GroundedShare    float64 `json:"grounded_share"`
+	// JudgeCalls sums the judge-role calls of the cases where they are known
+	// (JudgeCallCases of them; a run over HTTP does not know them).
+	JudgeCallCases int `json:"judge_call_cases"`
+	JudgeCalls     int `json:"judge_calls"`
+	// Sampled counts the cases whose grounded candidate went to the judge anyway (the
+	// deterministic sample of judge policy auto); Disagreements the sampled judge calls
+	// that rejected a grounded candidate. Both are known only for local runs.
+	Sampled          int     `json:"sampled"`
+	Disagreements    int     `json:"disagreements"`
+	MeanAttempts     float64 `json:"mean_attempts"`
+	DurationMedianMS int64   `json:"duration_median_ms"`
+	DurationP95MS    int64   `json:"duration_p95_ms"`
 	// Usage sums the cases whose usage is known (UsageCases of them).
 	UsageCases   int `json:"usage_cases"`
 	Calls        int `json:"calls"`
@@ -69,7 +95,7 @@ type Summary struct {
 // Summarize aggregates per-case results.
 func Summarize(results []CaseResult) Summary {
 	s := Summary{Cases: len(results)}
-	var matched, total, accMatched, accTotal, attempts int
+	var matched, total, accMatched, accTotal, extMatched, extTotal, attempts int
 	durations := make([]int64, 0, len(results))
 	for _, r := range results {
 		switch r.Status {
@@ -81,6 +107,10 @@ func Summarize(results []CaseResult) Summary {
 			s.Rejected++
 		case StatusFailed:
 			s.Failed++
+		case StatusExtracted:
+			s.Extracted++
+			extMatched += r.Fields.Matched
+			extTotal += r.Fields.Total
 		default:
 			s.Errors++
 		}
@@ -89,7 +119,26 @@ func Summarize(results []CaseResult) Summary {
 		}
 		if r.FalseAccept {
 			s.FalseAccepts++
+			if r.Verification == VerificationGrounded {
+				s.FalseAcceptsGrounded++
+			} else {
+				s.FalseAcceptsJudge++
+			}
 		}
+		switch r.Verification {
+		case VerificationJudge:
+			s.VerifiedJudge++
+		case VerificationGrounded:
+			s.VerifiedGrounded++
+		}
+		if r.JudgeCalls != nil {
+			s.JudgeCallCases++
+			s.JudgeCalls += *r.JudgeCalls
+		}
+		if r.Decision == DecisionSampled {
+			s.Sampled++
+		}
+		s.Disagreements += r.Disagreements
 		if r.FalseReject {
 			s.FalseRejects++
 		}
@@ -109,6 +158,8 @@ func Summarize(results []CaseResult) Summary {
 	s.FalseRejectRate = ratio(s.FalseRejects, s.Rejected)
 	s.FieldAccuracy = ratio(matched, total)
 	s.AcceptedFieldAccuracy = ratio(accMatched, accTotal)
+	s.ExtractedFieldAccuracy = ratio(extMatched, extTotal)
+	s.GroundedShare = ratio(s.VerifiedGrounded, s.Accepted)
 	if s.Cases > 0 {
 		s.MeanAttempts = float64(attempts) / float64(s.Cases)
 	}
@@ -206,7 +257,7 @@ func LoadReport(path string) (Report, error) {
 // WriteTable writes the per-case table and the summary for humans.
 func (r Report) WriteTable(w io.Writer) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "CASE\tSTATUS\tATTEMPTS\tDURATION\tTOKENS\tFIELDS\tVERDICT")
+	fmt.Fprintln(tw, "CASE\tSTATUS\tVERIFIED\tDECISION\tATTEMPTS\tJUDGE CALLS\tDURATION\tTOKENS\tFIELDS\tVERDICT")
 	for _, c := range r.Results {
 		status := c.Status
 		if c.ErrorCode != "" {
@@ -220,20 +271,41 @@ func (r Report) WriteTable(w io.Writer) {
 		if c.Fields.NoResult {
 			fields = "no result"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n", c.ID, status, c.Attempts,
-			time.Duration(c.DurationMS)*time.Millisecond, tokens, fields, verdict(c))
+		judgeCalls := "-"
+		if c.JudgeCalls != nil {
+			judgeCalls = fmt.Sprint(*c.JudgeCalls)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n", c.ID, status, orDash(c.Verification),
+			orDash(c.Decision), c.Attempts, judgeCalls, time.Duration(c.DurationMS)*time.Millisecond, tokens, fields, verdict(c))
 	}
 	tw.Flush()
 
 	s := r.Summary
-	fmt.Fprintf(w, "\nservice_version %s, %s, %d case(s)\n", r.ServiceVersion, r.Target, s.Cases)
+	policy := r.JudgePolicy
+	if policy == "" {
+		policy = "the application's"
+	}
+	fmt.Fprintf(w, "\nservice_version %s, %s, %d case(s), judge policy %s\n", r.ServiceVersion, r.Target, s.Cases, policy)
 	if len(r.Extractor) > 0 {
 		fmt.Fprintf(w, "extractor %s; judge %s\n", strings.Join(r.Extractor, ", "), strings.Join(r.Judge, ", "))
 	}
-	fmt.Fprintf(w, "false accepts      %d of %d accepted (%s)\n", s.FalseAccepts, s.Accepted, pct(s.FalseAcceptRate))
-	fmt.Fprintf(w, "acceptance rate    %s (%d accepted, %d rejected, %d failed, %d harness errors)\n",
-		pct(s.AcceptanceRate), s.Accepted, s.Rejected, s.Failed, s.Errors)
-	fmt.Fprintf(w, "field accuracy     %s overall, %s on accepted\n", pct(s.FieldAccuracy), pct(s.AcceptedFieldAccuracy))
+	fmt.Fprintf(w, "false accepts      %d of %d accepted (%s): %d judge, %d grounded\n",
+		s.FalseAccepts, s.Accepted, pct(s.FalseAcceptRate), s.FalseAcceptsJudge, s.FalseAcceptsGrounded)
+	fmt.Fprintf(w, "acceptance rate    %s (%d accepted, %d extracted, %d rejected, %d failed, %d harness errors)\n",
+		pct(s.AcceptanceRate), s.Accepted, s.Extracted, s.Rejected, s.Failed, s.Errors)
+	fmt.Fprintf(w, "verification       %d judge, %d grounded (%s of accepted), %d none\n",
+		s.VerifiedJudge, s.VerifiedGrounded, pct(s.GroundedShare), s.Cases-s.VerifiedJudge-s.VerifiedGrounded)
+	if s.JudgeCallCases > 0 {
+		fmt.Fprintf(w, "judge calls        %d in %d case(s); %d sampled, %d disagreement(s)\n",
+			s.JudgeCalls, s.JudgeCallCases, s.Sampled, s.Disagreements)
+	} else {
+		fmt.Fprintln(w, "judge calls        not reported")
+	}
+	fmt.Fprintf(w, "field accuracy     %s overall, %s on accepted", pct(s.FieldAccuracy), pct(s.AcceptedFieldAccuracy))
+	if s.Extracted > 0 {
+		fmt.Fprintf(w, ", %s on extracted", pct(s.ExtractedFieldAccuracy))
+	}
+	fmt.Fprintln(w)
 	fmt.Fprintf(w, "false rejects      %d of %d rejected (%s)\n", s.FalseRejects, s.Rejected, pct(s.FalseRejectRate))
 	fmt.Fprintf(w, "correct cases      %d of %d\n", s.Correct, s.Cases)
 	fmt.Fprintf(w, "attempts           %.2f mean\n", s.MeanAttempts)
@@ -248,6 +320,8 @@ func (r Report) WriteTable(w io.Writer) {
 
 func verdict(c CaseResult) string {
 	switch {
+	case c.FalseAccept && c.Verification == VerificationGrounded:
+		return "FALSE ACCEPT (grounded)"
 	case c.FalseAccept:
 		return "FALSE ACCEPT"
 	case c.FalseReject:
@@ -258,15 +332,34 @@ func verdict(c CaseResult) string {
 	return "-"
 }
 
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// outcome is a case's status with its verification when something verified it.
+func outcome(c CaseResult) string {
+	if c.Verification == VerificationJudge || c.Verification == VerificationGrounded {
+		return c.Status + "/" + c.Verification
+	}
+	return c.Status
+}
+
 func pct(f float64) string { return fmt.Sprintf("%.1f%%", 100*f) }
 
 func ms(v int64) string { return (time.Duration(v) * time.Millisecond).String() }
 
 // WriteDiff writes how r differs from prev: the summary deltas and every case whose
-// status or correctness changed, or that is in only one of the two.
+// status, verification or correctness changed, or that is in only one of the two.
 func (r Report) WriteDiff(w io.Writer, prev Report) {
 	a, b := prev.Summary, r.Summary
-	fmt.Fprintf(w, "\ncompared with %s (%s)\n", prev.ServiceVersion, prev.StartedAt.UTC().Format(time.DateOnly))
+	fmt.Fprintf(w, "\ncompared with %s (%s", prev.ServiceVersion, prev.StartedAt.UTC().Format(time.DateOnly))
+	if prev.JudgePolicy != r.JudgePolicy {
+		fmt.Fprintf(w, ", judge policy %s -> %s", orDash(prev.JudgePolicy), orDash(r.JudgePolicy))
+	}
+	fmt.Fprintln(w, ")")
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "METRIC\tBEFORE\tNOW\tCHANGE")
 	rate := func(name string, x, y float64) {
@@ -274,8 +367,17 @@ func (r Report) WriteDiff(w io.Writer, prev Report) {
 	}
 	count := func(name string, x, y int) { fmt.Fprintf(tw, "%s\t%d\t%d\t%+d\n", name, x, y, y-x) }
 	count("false accepts", a.FalseAccepts, b.FalseAccepts)
+	count("  by judge", a.FalseAcceptsJudge, b.FalseAcceptsJudge)
+	count("  grounded", a.FalseAcceptsGrounded, b.FalseAcceptsGrounded)
 	rate("false accept rate", a.FalseAcceptRate, b.FalseAcceptRate)
 	rate("acceptance rate", a.AcceptanceRate, b.AcceptanceRate)
+	count("extracted", a.Extracted, b.Extracted)
+	count("verified by judge", a.VerifiedJudge, b.VerifiedJudge)
+	count("verified grounded", a.VerifiedGrounded, b.VerifiedGrounded)
+	rate("grounded share", a.GroundedShare, b.GroundedShare)
+	count("judge calls", a.JudgeCalls, b.JudgeCalls)
+	count("sampled", a.Sampled, b.Sampled)
+	count("disagreements", a.Disagreements, b.Disagreements)
 	rate("field accuracy", a.FieldAccuracy, b.FieldAccuracy)
 	count("false rejects", a.FalseRejects, b.FalseRejects)
 	count("correct cases", a.Correct, b.Correct)
@@ -299,9 +401,9 @@ func (r Report) WriteDiff(w io.Writer, prev Report) {
 		p, ok := before[c.ID]
 		switch {
 		case !ok:
-			changes = append(changes, fmt.Sprintf("  %s: new, %s %s", c.ID, c.Status, verdict(c)))
-		case p.Status != c.Status || verdict(p) != verdict(c):
-			changes = append(changes, fmt.Sprintf("  %s: %s %s -> %s %s", c.ID, p.Status, verdict(p), c.Status, verdict(c)))
+			changes = append(changes, fmt.Sprintf("  %s: new, %s %s", c.ID, outcome(c), verdict(c)))
+		case outcome(p) != outcome(c) || verdict(p) != verdict(c):
+			changes = append(changes, fmt.Sprintf("  %s: %s %s -> %s %s", c.ID, outcome(p), verdict(p), outcome(c), verdict(c)))
 		}
 	}
 	for _, p := range prev.Results {
@@ -310,7 +412,7 @@ func (r Report) WriteDiff(w io.Writer, prev Report) {
 		}
 	}
 	if len(changes) == 0 {
-		fmt.Fprintln(w, "no case changed status or verdict")
+		fmt.Fprintln(w, "no case changed status, verification or verdict")
 		return
 	}
 	fmt.Fprintf(w, "%d case(s) changed:\n%s\n", len(changes), strings.Join(changes, "\n"))

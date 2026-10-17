@@ -210,6 +210,7 @@ failures in a row. A `404` while polling means the job expired, was deleted, or 
   "attempts": 3,
   "service_version": "vde-0.2.0+c0ffee12",
   "judge_confidence": 0.82,
+  "verification": "none",
   "error": null,
   "created_at": "2026-10-16T09:12:03Z",
   "finished_at": "2026-10-16T09:13:30Z",
@@ -233,16 +234,20 @@ failures in a row. A `404` while polling means the job expired, was deleted, or 
 
 ### Interpreting the status
 
-Only `accepted` is acceptance. It means the judge accepted `result`, `result` validates
-against your schema (when you sent one) and `error` is `null`. Treat every other
-combination, including a status you do not know, as not accepted: keep `result` and
-`feedback`, and send the document to a person.
+Only `accepted` is acceptance. It means the judge accepted `result`, or, only for an
+application whose operator opted into judge policy `auto`, that the grounding check found
+every critical value in the document; `verification` says which (`judge` or `grounded`).
+In both cases `result` validates against your schema (when you sent one) and `error` is
+`null`. Treat every other combination, including a status you do not know, as not
+accepted: keep `result` and `feedback`, and send the document to a person. `extracted` is
+such a status: no judge looked at the result.
 
 | Status | Meaning | What to do |
 | --- | --- | --- |
 | `queued`, `running` | In progress. | Keep polling. |
-| `accepted` | The judge accepted a result that validates. | Use `result`. `feedback` may carry advisory entries from the judge. |
+| `accepted` | The judge accepted a result that validates (`verification: judge`), or under an opted-in `auto` the grounding check did (`verification: grounded`). | Use `result`. `feedback` may carry advisory entries from the judge. If you require a judge's acceptance, also check `verification` is `judge`. |
 | `rejected` | The attempt limit was reached and the judge (or the schema check) still found problems. | Show or log `feedback`, keep `result` for review. Resubmitting the same document with the same instructions rarely helps; improve the instructions or route to a person. |
+| `extracted` | Added by vde, only under judge policy `never`: the final result validates, no judge was asked. Never acceptance. | Treat as not accepted: review `result` yourself. `feedback` may carry advisory `grounding` entries naming values not found in the document. |
 | `failed` | The service could not finish: see `error.code`. | `provider_unavailable`, `timeout`, `internal`: retry later with a new submission. `extractor_failed`, `judge_failed`: the models answered unusably; retry once, then review by hand. Unknown codes: treat as a service failure and retry later. |
 
 ### Feedback entries
@@ -255,29 +260,46 @@ Each entry has three fields:
 - `message`, text meant for a human. It may quote the source document, so treat it like
   document content: do not log it where documents must not go.
 - `source`: `schema` when the result failed validation against your schema (one entry per
-  violation, produced by the service, no judge involved), `judge` when the judge raised it.
+  violation, produced by the service, no judge involved), `judge` when the judge raised it,
+  or `grounding` (added by vde, judge policies `never` and `auto` only) when the grounding
+  check did not find the value in the document: the message is always "value not found in
+  the document" and never quotes the value. Treat a source you do not know like `judge`.
 
 On `rejected` the feedback is the last round's. On `accepted` the judge may have added
-advisory entries; they do not block acceptance. The pointer is relative to `result` exactly
+advisory entries; they do not block acceptance. On `extracted` the `grounding` entries are
+advisory. Under the default policy `always` you never see `grounding` entries. The pointer is relative to `result` exactly
 as returned, so you can attach each message to the field it concerns.
 
 ## Judge policy
 
-Draft (v0.4, [ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md)).
-The operator sets per application when the judge is asked:
+Added by vde in v0.4 ([ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md);
+the operator's side is in [judge policy](../operator/judge-policy.md)). The operator sets per
+application when the judge is asked:
 
 - `always` (the default): every schema-valid candidate goes to the judge, and `accepted`
   means the judge accepted it. This is contract v1; `verification` is `judge` on
   `accepted` and `none` otherwise.
 - `never`: no judge. A schema-valid final candidate ends in the terminal status
   `extracted`, which is never acceptance. Treat it like any status you do not know.
-- `auto`: a candidate whose values are all found in the document text may be accepted
-  without a judge, with `verification: grounded`; everything else, and a small sample, goes
-  to the judge.
+- `auto`: a candidate whose critical values are all found in the document text may be
+  accepted without a judge, with `verification: grounded` and `judge_confidence: null`;
+  everything else (documents without text, such as images, included), and a small sample,
+  goes to the judge, and ends as under `always`.
+
+| Policy | Possible terminal statuses | `verification` |
+| --- | --- | --- |
+| `always` | `accepted`, `rejected`, `failed` | `judge` on `accepted`, else `none` |
+| `never` | `extracted`, `rejected` (schema violations to the last attempt), `failed` | `none` |
+| `auto` | `accepted`, `rejected`, `failed` | `judge` or `grounded` on `accepted`, else `none` |
+
+Your schema can steer the check with the annotation `x-vde-grounding`
+([writing instructions](writing-instructions.md#annotating-the-schema-for-grounding)).
 
 When the operator sets `judge.allow_override` for your application you may choose the
 policy per job with the `judge` part (or JSON field `judge`). Without that setting the part
-is refused with `400 bad_request`, whatever its value; an unknown value is also `400`. The
+is refused with `400 bad_request` ("The judge part is not allowed: ..."), whatever its
+value; an unknown value, a media type other than `text/plain` or more than 16 bytes is
+also `400`. The
 part counts towards the [idempotency](#idempotency) body hash, and the job's
 `service_version` is the one of the policy it runs under. Under `never` and `auto`,
 `feedback` may carry entries with `source: "grounding"`: a value the grounding check did not
@@ -352,7 +374,7 @@ Every error has one shape and `Content-Type: application/json`:
 
 | Status | `error.code` | Cause | Retry? |
 | --- | --- | --- | --- |
-| 400 | `bad_request` | Malformed multipart, missing or repeated part, bad `retention` or `max_attempts`, or plain HTTP where HTTPS is required. | No: fix the request. |
+| 400 | `bad_request` | Malformed multipart, missing or repeated part, bad `retention`, `max_attempts` or `judge`, a `judge` part the application does not allow, or plain HTTP where HTTPS is required. | No: fix the request. |
 | 401 | `unauthorized` | Missing, unknown, expired or revoked token. | No, until the credential is fixed or rotated. |
 | 403 | `forbidden` | Token outside its scope. | No. |
 | 404 | `not_found` | Unknown, expired, deleted or foreign job (or an unknown route). | No. |

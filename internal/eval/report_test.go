@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -109,7 +110,7 @@ func TestRunAndSummarize(t *testing.T) {
 	s := eval.Summarize(results)
 	want := eval.Summary{
 		Cases: 6, Accepted: 2, Rejected: 2, Failed: 1, Errors: 1, Correct: 2,
-		AcceptanceRate: 2.0 / 6, FalseAccepts: 1, FalseAcceptRate: 0.5, FalseRejects: 1, FalseRejectRate: 0.5,
+		AcceptanceRate: 2.0 / 6, FalseAccepts: 1, FalseAcceptsJudge: 1, FalseAcceptRate: 0.5, FalseRejects: 1, FalseRejectRate: 0.5,
 		// 1+2 accepted, 2+1 rejected, none for failed and error: 6 of 12 fields.
 		FieldAccuracy: 0.5, AcceptedFieldAccuracy: 0.75, MeanAttempts: 10.0 / 6,
 		UsageCases: 3, Calls: 6, InputTokens: 600, OutputTokens: 120,
@@ -117,6 +118,94 @@ func TestRunAndSummarize(t *testing.T) {
 	s.DurationMedianMS, s.DurationP95MS = 0, 0
 	if s != want {
 		t.Errorf("Summarize() =\n%+v\nwant\n%+v", s, want)
+	}
+}
+
+func calls(n int) *int { return &n }
+
+// TestSummarize_judgePolicy checks the v0.4 totals on a mixed set: accepted by the judge,
+// grounded, sampled with a disagreement, extracted and rejected (ADR 0009).
+func TestSummarize_judgePolicy(t *testing.T) {
+	t.Parallel()
+	judged := func(result string, n int) eval.Outcome {
+		return eval.Outcome{Status: eval.StatusAccepted, Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "auto",
+			Verification: eval.VerificationJudge, JudgeCalls: calls(n), Decision: eval.DecisionJudged}
+	}
+	grounded := func(result string) eval.Outcome {
+		return eval.Outcome{Status: eval.StatusAccepted, Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "auto",
+			Verification: eval.VerificationGrounded, JudgeCalls: calls(0), Decision: eval.DecisionGrounded}
+	}
+	extracted := func(result string) eval.Outcome {
+		return eval.Outcome{Status: eval.StatusExtracted, Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "never",
+			Verification: eval.VerificationNone, JudgeCalls: calls(0), Decision: eval.DecisionSkipped}
+	}
+	outcomes := map[string]eval.Outcome{
+		"j1-judged":          judged(right, 1),
+		"j2-judged-wrong":    judged(wrong, 1),
+		"g1-grounded":        grounded(right),
+		"g2-grounded-wrong":  grounded(wrong),
+		"s1-sampled":         {Status: eval.StatusAccepted, Result: json.RawMessage(right), Attempts: 2, Verification: eval.VerificationJudge, JudgeCalls: calls(2), Decision: eval.DecisionSampled, Disagreements: 1},
+		"x1-extracted":       extracted(right),
+		"x2-extracted-wrong": extracted(wrong),
+		"r1-rejected":        {Status: eval.StatusRejected, Result: json.RawMessage(wrong), Attempts: 3, Verification: eval.VerificationNone, JudgeCalls: calls(3), Decision: eval.DecisionJudged},
+	}
+	var cases []eval.Case
+	for id := range outcomes {
+		cases = append(cases, testCase(id))
+	}
+	var running, peak atomic.Int32
+	results := eval.Run(context.Background(), cases, 2, scripted(outcomes, &running, &peak), nil)
+	byID := map[string]eval.CaseResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	for _, id := range []string{"x1-extracted", "x2-extracted-wrong"} {
+		if r := byID[id]; r.FalseAccept || r.FalseReject {
+			t.Errorf("%s: an extracted case is a false accept or reject: %+v", id, r)
+		}
+	}
+	if r := byID["g2-grounded-wrong"]; !r.FalseAccept || r.Verification != eval.VerificationGrounded || *r.JudgeCalls != 0 || r.JudgePolicy != "auto" {
+		t.Errorf("grounded false accept: %+v", r)
+	}
+
+	s := eval.Summarize(results)
+	s.DurationMedianMS, s.DurationP95MS = 0, 0
+	want := eval.Summary{
+		Cases: 8, Accepted: 5, Rejected: 1, Extracted: 2, Correct: 4,
+		AcceptanceRate: 5.0 / 8,
+		FalseAccepts:   2, FalseAcceptsJudge: 1, FalseAcceptsGrounded: 1, FalseAcceptRate: 0.4,
+		// 2+1+2+1+2 accepted, 2+1 extracted, 1 rejected: 12 of 16 fields.
+		FieldAccuracy: 0.75, AcceptedFieldAccuracy: 0.8, ExtractedFieldAccuracy: 0.75,
+		VerifiedJudge: 3, VerifiedGrounded: 2, GroundedShare: 0.4,
+		JudgeCallCases: 8, JudgeCalls: 7, Sampled: 1, Disagreements: 1,
+		MeanAttempts: 11.0 / 8,
+	}
+	if s != want {
+		t.Errorf("Summarize() =\n%+v\nwant\n%+v", s, want)
+	}
+
+	slices.SortFunc(results, func(a, b eval.CaseResult) int { return strings.Compare(a.ID, b.ID) })
+	now := sampleReport("sv-auto", results...)
+	now.JudgePolicy = "auto"
+	var out bytes.Buffer
+	now.WriteTable(&out)
+	before := sampleReport("sv-always", eval.CaseResult{ID: "g1-grounded", Status: eval.StatusAccepted, Verification: eval.VerificationJudge, Correct: true})
+	before.JudgePolicy = "always"
+	now.WriteDiff(&out, before)
+	text := out.String()
+	for _, want := range []string{
+		"FALSE ACCEPT (grounded)", "judge policy auto",
+		"false accepts      2 of 5 accepted (40.0%): 1 judge, 1 grounded",
+		"(5 accepted, 2 extracted, 1 rejected, 0 failed, 0 harness errors)",
+		"verification       3 judge, 2 grounded (40.0% of accepted), 3 none",
+		"judge calls        7 in 8 case(s); 1 sampled, 1 disagreement(s)",
+		"75.0% on extracted",
+		"judge policy always -> auto",
+		"g1-grounded: accepted/judge correct -> accepted/grounded correct",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
 	}
 }
 

@@ -13,6 +13,10 @@ Operators upgrading within 1.x never have to rewrite their configuration by hand
 - [ ] Rename or restructure keys now if any are awkward (last chance), with a `vde config
       migrate` command that rewrites a 0.x file.
 - [ ] Deprecation rule: old keys keep working for one minor version with a warning.
+- [ ] The schema covers the v0.4 keys: `roles.judge.policy`, `applications[].judge.*`
+      (`policy`, `allow_override`, `sample_rate`), `documents.pdf.*` (`mode`, `dpi`,
+      `max_pages`, `min_text_chars_per_page`, `workers`) and
+      `applications[].documents.pdf.mode`.
 
 ## Acceptance criteria
 

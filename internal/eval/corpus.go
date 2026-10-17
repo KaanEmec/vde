@@ -33,15 +33,44 @@ type Case struct {
 	Rules                 Rules
 }
 
-// LoadCorpus loads the cases of dir whose id matches pattern (path.Match syntax; "" or
-// "*" for all), sorted by id. Subdirectories without expected.json are not cases and are
-// skipped; a case with expected.json and a missing or malformed file is an error.
-func LoadCorpus(dir, pattern string) ([]Case, error) {
-	if pattern == "" {
-		pattern = "*"
+// ParseCases splits a comma-separated list of case id globs (path.Match syntax, as
+// --cases takes it: "ti-0*,receipt-*"). Spaces around a glob are dropped; an empty glob
+// or a malformed one is an error.
+func ParseCases(list string) ([]string, error) {
+	var patterns []string
+	for p := range strings.SplitSeq(list, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return nil, fmt.Errorf("cases %q: empty glob", list)
+		}
+		if _, err := path.Match(p, ""); err != nil {
+			return nil, fmt.Errorf("cases %q: %w", p, err)
+		}
+		patterns = append(patterns, p)
 	}
-	if _, err := path.Match(pattern, ""); err != nil {
-		return nil, fmt.Errorf("cases %q: %w", pattern, err)
+	return patterns, nil
+}
+
+// LoadCorpus loads the cases of dir whose id matches any of patterns (path.Match syntax;
+// none, "" or "*" for all), sorted by id. Subdirectories without expected.json are not
+// cases and are skipped; a case with expected.json and a missing or malformed file is an
+// error.
+func LoadCorpus(dir string, patterns ...string) ([]Case, error) {
+	for _, p := range patterns {
+		if _, err := path.Match(p, ""); err != nil {
+			return nil, fmt.Errorf("cases %q: %w", p, err)
+		}
+	}
+	selected := func(id string) bool {
+		if len(patterns) == 0 {
+			return true
+		}
+		for _, p := range patterns {
+			if ok, _ := path.Match(p, id); ok || p == "" {
+				return true
+			}
+		}
+		return false
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -49,10 +78,7 @@ func LoadCorpus(dir, pattern string) ([]Case, error) {
 	}
 	var cases []Case
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if ok, _ := path.Match(pattern, e.Name()); !ok {
+		if !e.IsDir() || !selected(e.Name()) {
 			continue
 		}
 		caseDir := filepath.Join(dir, e.Name())
