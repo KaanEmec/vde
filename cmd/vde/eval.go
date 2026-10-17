@@ -23,6 +23,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/eval"
 	"github.com/kaanemec/vde/internal/extract"
+	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
@@ -30,17 +31,25 @@ import (
 )
 
 const evalUsage = `Usage: vde eval --corpus dir [--config file | --url URL --token-env NAME]
-                [--concurrency n] [--cases glob] [--out dir] [--compare previous.json]
-                [--provider-script file]
+                [--concurrency n] [--cases glob,...] [--judge always|never|auto]
+                [--out dir] [--compare previous.json] [--provider-script file]
        vde eval import-travelinbox --from dir --to dir
 
 Runs every case of a corpus (docs/operator/evaluation.md) through the engine, or through a
 deployment with --url, compares each result with the case's expected.json under its
 compare.yaml and prints a table and a summary: false accepts (accepted, but a compared
-field differs from the ground truth) first, then acceptance rate, field accuracy, false
+field differs from the ground truth, split by what accepted it: the judge or the grounding
+check) first, then acceptance rate, verification, judge calls, field accuracy, false
 rejects, durations and tokens. The JSON report is saved as <out>/<service_version>-<date>.json;
 --compare prints the change against an earlier report. Only case ids, statuses, counts
 and JSON pointers are printed or saved, never document content or result values.
+
+--cases selects the cases whose id matches any of a comma-separated list of globs
+('ti-0*,receipt-*'). --judge runs every case under that judge policy (default:
+roles.judge.policy; ADR 0009) so always, never and auto can be compared on one corpus; the
+sample of auto is decided on each document's bytes, so a rerun samples the same cases.
+With --url it sends the judge part, which the application must allow
+(applications[].judge.allow_override).
 
 --provider-script replays a fake provider script for every case (a fresh fake per case),
 so no key is needed; "{{expected}}" in an answer is replaced by the case's expected.json.
@@ -62,6 +71,7 @@ type evalOptions struct {
 	concurrency                   int
 	cases, out, compare           string
 	providerScript                string
+	judge                         string // "" for the configured (or the application's) policy
 }
 
 func runEval(args []string, stdout, stderr io.Writer) int {
@@ -80,7 +90,8 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.url, "url", "", "run against this deployment instead of locally")
 	fs.StringVar(&o.tokenEnv, "token-env", "", "environment variable holding the bearer token (with --url)")
 	fs.IntVar(&o.concurrency, "concurrency", 1, "cases run at the same time")
-	fs.StringVar(&o.cases, "cases", "*", "run only the cases whose id matches this glob")
+	fs.StringVar(&o.cases, "cases", "*", "run only the cases whose id matches one of these comma-separated globs")
+	fs.StringVar(&o.judge, "judge", "", "judge policy of every case: always, never or auto (default: the configured one)")
 	fs.StringVar(&o.out, "out", "eval-reports", `directory for the JSON report ("" to not save it)`)
 	fs.StringVar(&o.compare, "compare", "", "an earlier JSON report to compare with")
 	fs.StringVar(&o.providerScript, "provider-script", "", "replace every provider with a fake replaying this script")
@@ -113,6 +124,16 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 		return usageErr("--token-env is only for --url")
 	}
 
+	if o.judge != "" {
+		if _, err := config.ParseJudgePolicy(o.judge); err != nil {
+			return usageErr("--judge: %v", err)
+		}
+	}
+	patterns, err := eval.ParseCases(o.cases)
+	if err != nil {
+		return usageErr("--cases: %v", err)
+	}
+
 	var prev *eval.Report
 	if o.compare != "" {
 		r, err := eval.LoadReport(o.compare)
@@ -121,7 +142,7 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 		}
 		prev = &r
 	}
-	cases, err := eval.LoadCorpus(o.corpus, o.cases)
+	cases, err := eval.LoadCorpus(o.corpus, patterns...)
 	if err != nil {
 		return usageErr("%v", err)
 	}
@@ -129,7 +150,7 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 		return usageErr("no case in %s matches %q", o.corpus, o.cases)
 	}
 
-	report := eval.Report{Corpus: o.corpus, Cases: o.cases, Concurrency: o.concurrency, Target: "local"}
+	report := eval.Report{Corpus: o.corpus, Cases: o.cases, Concurrency: o.concurrency, Target: "local", JudgePolicy: o.judge}
 	var runner eval.Runner
 	if o.url != "" {
 		token := os.Getenv(o.tokenEnv)
@@ -141,7 +162,7 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 			return usageErr("--url %q: want an http or https URL", o.url)
 		}
 		report.Target = base.String()
-		runner = (&httpEngine{base: base.String(), token: token, client: &http.Client{Timeout: 2 * time.Minute}}).run
+		runner = (&httpEngine{base: base.String(), token: token, judge: o.judge, client: &http.Client{Timeout: 2 * time.Minute}}).run
 	} else {
 		engine, err := newLocalEngine(o, stderr)
 		if err != nil {
@@ -149,6 +170,7 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 			return exitUsage
 		}
 		report.ServiceVersion = engine.serviceVersion
+		report.JudgePolicy = engine.judgePolicy.String()
 		report.Extractor = groupPairs(engine.cfg, engine.cfg.Roles.Extractor.Group)
 		report.Judge = groupPairs(engine.cfg, engine.cfg.Roles.Judge.Group)
 		runner = engine.run
@@ -200,12 +222,21 @@ func describeCase(r eval.CaseResult) string {
 	if r.ErrorCode != "" {
 		status += " (" + r.ErrorCode + ")"
 	}
+	if r.Verification != "" && r.Verification != eval.VerificationNone {
+		status += " by " + r.Verification
+	}
 	fields := fmt.Sprintf("%d/%d fields", r.Fields.Matched, r.Fields.Total)
 	if r.Fields.NoResult {
 		fields = "no result"
 	}
 	line := fmt.Sprintf("%s: %s, %d attempt(s), %s, %s", r.ID, status, r.Attempts,
 		(time.Duration(r.DurationMS) * time.Millisecond).String(), fields)
+	if r.JudgeCalls != nil {
+		line += fmt.Sprintf(", %d judge call(s)", *r.JudgeCalls)
+	}
+	if r.Decision == eval.DecisionSampled {
+		line += ", sampled"
+	}
 	if r.FalseAccept {
 		line += ", FALSE ACCEPT"
 	}
@@ -228,6 +259,7 @@ func groupPairs(cfg *config.Config, group string) []string {
 // groups per case, so each case's calls and tokens are its own.
 type localEngine struct {
 	cfg            *config.Config
+	judgePolicy    config.JudgePolicy // roles.judge.policy or --judge
 	serviceVersion string
 	policy         document.HTMLPolicy
 	script         fake.Script // nil for the configured providers
@@ -260,7 +292,15 @@ func newLocalEngine(o evalOptions, stderr io.Writer) (*localEngine, error) {
 		return nil, err
 	}
 	e.cfg = cfg
-	e.serviceVersion = extract.ServiceVersion(cfg, version.Version)
+	e.judgePolicy = cfg.RolePolicy()
+	if o.judge != "" {
+		if e.judgePolicy, err = config.ParseJudgePolicy(o.judge); err != nil {
+			return nil, fmt.Errorf("--judge: %w", err)
+		}
+	}
+	vcfg := *cfg
+	vcfg.Roles.Judge.Policy = e.judgePolicy
+	e.serviceVersion = extract.ServiceVersion(&vcfg, version.Version)
 	e.policy = document.HTMLPolicy(cfg.Documents.HTML)
 	if e.pdf, err = newPDFEngine(cfg, cliPDFCacheDir()); err != nil {
 		return nil, err
@@ -291,7 +331,7 @@ func (e *localEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error
 			return eval.Outcome{}, fmt.Errorf("%s: %w", eval.FileSchema, err)
 		}
 	}
-	rep, err := selectRepresentation(ctx, e.cfg, doc, e.policy, e.pdf, e.cfg.RolePolicy())
+	rep, err := selectRepresentation(ctx, e.cfg, doc, e.policy, e.pdf, e.judgePolicy)
 	if err != nil {
 		return eval.Outcome{}, err
 	}
@@ -310,7 +350,7 @@ func (e *localEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error
 		JudgeInstructions:     string(judge),
 		Schema:                schema,
 		MaxAttempts:           e.cfg.Limits.MaxAttempts,
-		JudgePolicy:           e.cfg.RolePolicy(),
+		JudgePolicy:           e.judgePolicy,
 		SampleRate:            config.DefaultSampleRate,
 		SampleKey:             doc.Data,
 		Deadline:              time.Now().Add(e.cfg.Limits.JobTimeout),
@@ -322,6 +362,11 @@ func (e *localEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error
 		Attempts:       res.Attempts,
 		ServiceVersion: e.serviceVersion,
 		Usage:          &eval.Usage{Calls: calls, InputTokens: in, OutputTokens: out},
+		JudgePolicy:    e.judgePolicy.String(),
+		Verification:   res.Verification,
+		JudgeCalls:     &res.JudgeCalls,
+		Decision:       res.Decision,
+		Disagreements:  res.Disagreements,
 	}
 	if res.Error != nil {
 		o.ErrorCode = res.Error.Code
@@ -362,6 +407,7 @@ const (
 type httpEngine struct {
 	base   string
 	token  string
+	judge  string // the judge part, "" to send none
 	client *http.Client
 }
 
@@ -372,24 +418,28 @@ type remoteJob struct {
 	Result         json.RawMessage `json:"result"`
 	Attempts       int             `json:"attempts"`
 	ServiceVersion string          `json:"service_version"`
+	Verification   *string         `json:"verification"`
 	Error          *struct {
 		Code string `json:"code"`
 	} `json:"error"`
 }
 
 func (e *httpEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error) {
-	body, contentType, err := multipartJob(c)
+	body, contentType, err := multipartJob(c, e.judge)
 	if err != nil {
 		return eval.Outcome{}, err
 	}
 	job, err := e.submit(ctx, body, contentType)
 	if err != nil {
+		if e.judge != "" && errors.Is(err, errJudgeRefused) {
+			return eval.Outcome{}, fmt.Errorf("--judge %s: %w", e.judge, err)
+		}
 		return eval.Outcome{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, jobWait)
 	defer cancel()
 	wait, failures := pollFirst, 0
-	for job.Status != eval.StatusAccepted && job.Status != eval.StatusRejected && job.Status != eval.StatusFailed {
+	for !remoteTerminal(job.Status) {
 		select {
 		case <-ctx.Done():
 			return eval.Outcome{}, fmt.Errorf("job %s: not terminal: %w", job.ID, ctx.Err())
@@ -408,15 +458,27 @@ func (e *httpEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error)
 			return eval.Outcome{}, fmt.Errorf("job %s: poll: %w", job.ID, err)
 		}
 	}
-	o := eval.Outcome{Status: job.Status, Result: job.Result, Attempts: job.Attempts, ServiceVersion: job.ServiceVersion}
+	o := eval.Outcome{Status: job.Status, Result: job.Result, Attempts: job.Attempts, ServiceVersion: job.ServiceVersion, JudgePolicy: e.judge}
 	if job.Error != nil {
 		o.ErrorCode = job.Error.Code
+	}
+	if job.Verification != nil {
+		o.Verification = *job.Verification
 	}
 	return o, nil
 }
 
-// multipartJob builds the POST /v1/jobs body of a case, with retention none.
-func multipartJob(c eval.Case) ([]byte, string, error) {
+// remoteTerminal reports whether a job status is terminal: the job store's set
+// (contract §5 and the superset status extracted).
+func remoteTerminal(status string) bool { return job.Status(status).Terminal() }
+
+// errJudgeRefused is a submit answered 400 about the judge part: the application does
+// not allow a per-request judge policy (or the value is unknown).
+var errJudgeRefused = errors.New("the deployment refused the judge part: the application must set judge.allow_override")
+
+// multipartJob builds the POST /v1/jobs body of a case, with retention none and the judge
+// part when judge is set.
+func multipartJob(c eval.Case, judge string) ([]byte, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	addFile := func(name, path, mediaType string) error {
@@ -461,6 +523,11 @@ func multipartJob(c eval.Case) ([]byte, string, error) {
 	}
 	if err := w.WriteField("retention", "none"); err != nil {
 		return nil, "", err
+	}
+	if judge != "" {
+		if err := w.WriteField("judge", judge); err != nil {
+			return nil, "", err
+		}
 	}
 	if err := w.Close(); err != nil {
 		return nil, "", err
@@ -516,7 +583,8 @@ func (e *httpEngine) do(req *http.Request, want int) (remoteJob, int, time.Durat
 	if resp.StatusCode != want {
 		var body struct {
 			Error struct {
-				Code string `json:"code"`
+				Code    string `json:"code"`
+				Message string `json:"message"`
 			} `json:"error"`
 		}
 		_ = json.Unmarshal(data, &body)
@@ -524,7 +592,12 @@ func (e *httpEngine) do(req *http.Request, want int) (remoteJob, int, time.Durat
 		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
 			retryAfter = time.Duration(s) * time.Second
 		}
-		return remoteJob{}, resp.StatusCode, retryAfter, fmt.Errorf("status %d %s", resp.StatusCode, body.Error.Code)
+		err := fmt.Errorf("status %d %s", resp.StatusCode, body.Error.Code)
+		// The service's own messages name the refused part; only that is read from them.
+		if resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(body.Error.Message), "judge part") {
+			err = fmt.Errorf("%w: %w", err, errJudgeRefused)
+		}
+		return remoteJob{}, resp.StatusCode, retryAfter, err
 	}
 	var job remoteJob
 	if err := json.Unmarshal(data, &job); err != nil {

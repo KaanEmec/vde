@@ -1,7 +1,8 @@
 # Architecture overview
 
-Status: v0.1 to v0.3 implemented (v0.3 closed 2026-10-17); v0.4 (judge policy, grounding,
-PDF preprocessing; ADRs 0009 and 0010) in progress; v1.0 planned. This document
+Status: v0.1 to v0.4 implemented (v0.4, judge policy, grounding and PDF preprocessing,
+ADRs 0009 and 0010, closed 2026-10-18 with the owner's policy comparison pending); v1.0
+planned. This document
 describes the shape of the service; the roadmap under `docs/roadmap/` says which jobs are
 done. Each job file carries its own `Status`.
 
@@ -10,7 +11,9 @@ done. Each job file carries its own `Status`.
 A single Go binary, `vde`, that runs an authenticated HTTP service turning one document
 (PDF, image, HTML, text, email) into one JSON object. An **extractor** model produces a candidate,
 a **judge** model checks it against the source, and the loop repeats with the judge's
-feedback until the judge accepts or a bounded attempt limit is reached. The caller supplies
+feedback until the judge accepts or a bounded attempt limit is reached. Per application
+the judge policy (`always`, `never`, `auto`) decides whether the judge is asked; a
+deterministic grounding check catches values the document does not contain (ADR 0009). The caller supplies
 the instructions and, optionally, a JSON Schema per request; the service holds no domain
 knowledge. The first consumer is TravelInbox, whose contract lives in
 `FromTravelApp/EXTRACTION-SERVICE-CONTRACT.md` and is treated as the acceptance test of
@@ -102,7 +105,7 @@ internal/blob/           BlobStore interface, filesystem and S3 implementations
 internal/worker/         pool, leasing, job deadline, retention actions
 internal/sweeper/        expiry sweeper, advisory-locked across processes
 internal/webhook/        signed completion webhooks
-internal/eval/           evaluation harness: corpus, comparison, report
+internal/eval/           evaluation harness: corpus, case globs, comparison, report (verification, judge calls per case)
 internal/audit/          audit events (never content)
 internal/logging/        slog setup and redaction
 internal/metrics/        Prometheus metrics
@@ -135,6 +138,8 @@ the engine and CLI before the service.
 ### Extraction loop (per job)
 
 ```
+policy = job.judge_policy                     # always | never | auto (ADR 0009)
+text = grounding text of the representation   # none for images and PDFs without a text layer
 attempt = 0
 feedback = []
 loop while attempt < limit and deadline not passed:
@@ -142,17 +147,23 @@ loop while attempt < limit and deadline not passed:
     candidate = extractor(framing + instructions + schema + representation + prior candidate + feedback)
     if not JSON after lenient cleanup: feedback = [schema: whole result]; continue
     if schema given and candidate invalid: feedback = schema violations; continue   # no judge call
-    grounding = check(candidate, document text)          # ADR 0009; none for images
-    if policy == never: extracted (grounding entries advisory)
-    if critical leaves ungrounded and no repair yet and attempt < limit:
-        feedback = grounding; continue                   # the one repair, no judge call
-    if policy == auto and grounded and candidate answers no schema/judge feedback:
-        if not sampled(job id): accepted (verification grounded)
+    grounding = check(candidate, text, schema's x-vde-grounding rules)   # deterministic, no model
+    if policy == never:
+        extracted, verification none (grounding entries as advisory feedback)     # no judge
+    if policy in (always, auto) and critical leaves ungrounded
+            and no repair made in this job and attempt < limit:
+        feedback = grounding entries; mark repair made (persisted); continue       # no judge call
+    if policy == auto and text exists and a critical leaf was checked
+            and every critical leaf grounded and candidate answers no schema or judge feedback:
+        if not sampled(job id, sample_rate):
+            accepted, verification grounded, judge_confidence null               # no judge
+        # sampled: judged below; a rejection counts a disagreement
     verdict = judge(framing + instructions + schema + same representation + candidate)
     if verdict unparseable: ask once more; still unparseable -> failed(judge_failed)
-    if verdict.accept: accepted (advisory feedback and optional confidence forwarded)
-    feedback = verdict.feedback
-rejected with last candidate and feedback
+    if verdict.accept: accepted, verification judge (advisory feedback, optional confidence)
+    feedback = verdict.feedback (+ grounding entries under auto)
+rejected with last candidate and feedback, verification none
+# under always, grounding entries never reach the job's feedback
 ```
 
 Provider unavailability inside `extractor()` or `judge()` is handled by the router
@@ -161,23 +172,41 @@ a group the job fails with `provider_unavailable`.
 
 ### Representation selection
 
-Decided at submit time from configuration. For each endpoint-model pair the config
-declares the media types it accepts natively. If the extractor group has an endpoint that
-reads the document's type, the model gets the document bytes; otherwise the `page` images;
-otherwise the job is refused (`unsupported_document`): the service never renders pages
-itself (ADR 0006). Text, HTML and email bodies are given as text; HTML is sent raw by
-default, with a per-application `visible_text` option. The judge always sees the same
-representation from the same bytes. The policy is part of `service_version`.
+Decided at submit time from configuration, and repeated by the worker with the same
+policies and the same bytes (so a resumed job gets the identical representation). For each
+endpoint-model pair the config declares the media types it accepts natively. If every
+group of both roles has a pair that reads the document's type, the models get the document
+bytes; otherwise the caller's `page` images when the groups read them. Text, HTML and
+email bodies are given as text; HTML is sent raw by default, with a per-application
+`visible_text` option; images are prepared once (`documents.images`).
+
+A PDF that the groups do not read natively, without caller pages, is prepared by the
+service ([ADR 0010](decisions/0010-pdf-preprocessing-in-service.md), amending ADR 0006)
+under `documents.pdf.mode`: `auto` (default) sends the text layer as text when every page
+has at least `min_text_chars_per_page` characters and renders the pages (PNG at `dpi`)
+otherwise; `text` and `pages` force one of the two; `native` prepares nothing and refuses
+such a PDF with `unsupported_document`, the v0.3 behaviour. pdfium runs as WebAssembly
+(`internal/pdf`), started lazily, one bounded pool per process. Anything no group can read
+is refused (`unsupported_document`). The judge always sees the same representation from
+the same bytes.
+
+Each representation also carries its grounding text for ADR 0009: the text itself, the
+visible text of HTML and email, or a PDF's text layer (read even when the models get the
+PDF or pages, but only under `never` and `auto`). Images are ungroundable. The HTML, image
+and PDF policies are part of `service_version`.
 
 ## Data model
 
 - `applications`: id, name, attempt limit, quota limit and window, rate limits, retention
-  policy, forced retention flag, HTML policy, enabled, source (`config` or `admin`),
-  created_at, updated_at.
+  policy, forced retention flag, HTML policy, judge settings (`judge_policy`,
+  `judge_allow_override`, `judge_sample_rate`; v0.4), enabled, source (`config` or
+  `admin`), created_at, updated_at.
 - `tokens`: id, application_id (NULL for admin tokens, whose only scope is `admin`),
   sha256 hash, prefix (for display), scopes, expires_at, revoked_at, created_at,
   last_used_at.
-- `jobs`: id (ULID, `j_` prefix), application_id, status, attempts, result (JSON),
+- `jobs`: id (ULID, `j_` prefix), application_id, status (`extracted` added in v0.4),
+  judge_policy (the effective policy the job runs under, v0.4), verification (`judge`,
+  `grounded`, `none`; empty until terminal, v0.4), attempts, result (JSON),
   feedback (JSON), error (JSON), service_version, representation, media type, size, page
   count, retention, idempotency key and body hash, attachment list (JSON, email only),
   input_tokens and output_tokens (provider usage, summed over attempts and re-leases),
@@ -213,9 +242,13 @@ and S3 a second blob implementation. See ADR 0007.
 
 - API version is the base path (`/v1`); changes within it are additive only.
 - `service_version` is `vde-<semver>+<8 hex>`, where the hash covers the effective role
-  configuration (groups, endpoint-model pairs, capabilities, escalation, attempt limit),
-  the fixed framings and the representation policy. It is computed once at start and
-  logged.
+  configuration (groups, endpoint-model pairs, capabilities, escalation, second judge,
+  attempt limit), the fixed framings, the representation policy (HTML, images, and the PDF
+  mode, dpi and minimum characters when a PDF may be prepared), the judge policy (`never`
+  and `auto`; the sample rate under `auto`) and the grounding rules version (`ground-1`,
+  under every policy, since `always` makes the grounding repair). An application has one
+  `service_version` per policy it may run under, and each job carries the one it ran with.
+  It is computed at start and logged.
 - Semantic versioning for the binary and image; v0.x may change configuration keys with a
   migration note, v1.0 freezes the API and the configuration schema.
 
@@ -279,7 +312,7 @@ logged; fixtures are redacted TravelInbox corpus documents.
 
 ## Non-goals for the first releases
 
-Review UI, Temporal or another workflow engine, OCR, server-side PDF rendering (decided
-against, ADR 0006), domain-specific integrations, sensitive-data masking inside documents,
+Review UI, Temporal or another workflow engine, OCR (a scanned PDF is rendered, not read),
+HEIC conversion, a per-application role set, domain-specific integrations, sensitive-data masking inside documents,
 multi-document jobs. They are listed in
 `docs/roadmap/backlog.md` so they are not forgotten and not accidentally designed in.

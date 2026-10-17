@@ -1,0 +1,14 @@
+# Fake provider script for the judge policy auto pass of `make eval` (ADR 0009): the
+# extractor answers the case's ground truth ({{expected}} is replaced by expected.json)
+# on the first attempt, so a case whose values the document prints passes the grounding
+# gate and ends accepted with verification grounded and no judge call. A case the gate
+# cannot pass (a derived value, an image) is repaired once with the same answer and then
+# goes to the judge, which accepts; so does the deterministic sample.
+description: the ground truth on the first attempt, the judge accepts when asked
+steps:
+  - role: You are the extractor
+    repeat: true
+    answer: '{{expected}}'
+  - role: You are the judge
+    repeat: true
+    answer: '{"verdict": "accept", "feedback": {}}'

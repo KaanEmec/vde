@@ -58,3 +58,19 @@ groups:
 roles:
   extractor: {group: extraction}
   judge: {group: review}
+  # When the judge is asked (docs/operator/judge-policy.md): always (the default; contract
+  # v1, "accepted" means the judge accepted), never (results end "extracted", no judge) or
+  # auto (results whose values the document prints are accepted without a judge, with
+  # verification "grounded"; the rest and a 5 % sample go to the judge). For example:
+  # judge: {group: review, policy: auto}
+
+# How a PDF reaches models that do not accept application/pdf (docs/operator/pdf.md):
+# only used for groups whose models do not read application/pdf. The values below are the defaults.
+# documents:
+#   pdf:
+#     mode: auto                  # auto: text layer if every page has enough text, else rendered pages;
+#                                 # text | pages | native (refuse without caller-supplied pages)
+#     dpi: 150                    # rendered pages
+#     max_pages: 20               # larger PDFs are refused
+#     min_text_chars_per_page: 200
+#     workers: 1                  # pdfium instances; budget about 500 MB of memory each

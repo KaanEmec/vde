@@ -141,6 +141,38 @@ about its verdict, optional and advisory. Neither replaces the verdict.
 A `notes` field (a nullable string at the top level) is a good outlet for what the extractor
 cannot fit in the schema or found ambiguous; it saves the model from forcing a value.
 
+### Annotating the schema for grounding
+
+Since v0.4 the service checks deterministically that the values of a candidate occur in
+the document text (the grounding check of [ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md)).
+Under the default judge policy `always` it only sends a candidate with invented values back
+to the extractor once before the judge; under `auto` it decides whether the judge is
+needed at all. A value the model legitimately derives (an ISO currency code from `€`, a
+city from an airport code, a computed total) is not printed and would count as invented.
+Tell the check with the keyword `x-vde-grounding` on a property:
+
+- `critical`: must be found in the document (references, dates, amounts, names). Once any
+  property is `critical`, only those gate acceptance without a judge.
+- `derived`: an allowed derivation, not checked.
+- `skip`: never checked (your `notes`, titles you ask the model to write, confidences).
+- `check`: checked but not critical; overrides an inherited `derived` or `skip`.
+
+An annotation applies to everything below the property. Enum and `const` values,
+booleans and nulls are never checked. Without any annotation every checked leaf is
+critical, and properties named `confidence` and `notes` are skipped. The annotation is
+ignored by schema validation; an unknown value is refused with `422 invalid_schema`.
+
+```json
+"reference": {"type": ["string", "null"], "x-vde-grounding": "critical"},
+"issue_date": {"type": "string", "format": "date", "x-vde-grounding": "critical"},
+"currency": {"type": "string", "pattern": "^[A-Z]{3}$", "x-vde-grounding": "derived"},
+"notes": {"type": ["string", "null"], "x-vde-grounding": "skip"}
+```
+
+Dates in ISO form are matched against the printed forms the service knows (`21.03.2027`,
+`21 March 2027`, `March 21, 2027`, ... in six languages); the full table and the matching
+rules are in [judge policy](../operator/judge-policy.md#normalization-and-matching).
+
 ## Worked example: the generic sample
 
 [`examples/samples/`](../../examples/samples/) has a complete, domain-neutral set:

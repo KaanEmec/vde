@@ -8,12 +8,27 @@ import (
 )
 
 // Terminal job statuses as a Runner reports them, and the status of a case the harness
-// could not run.
+// could not run. StatusExtracted is a job no judge was asked about (judge policy never,
+// ADR 0009): neither accepted nor rejected, so never a false accept or a false reject.
 const (
-	StatusAccepted = "accepted"
-	StatusRejected = "rejected"
-	StatusFailed   = "failed"
-	StatusError    = "error"
+	StatusAccepted  = "accepted"
+	StatusRejected  = "rejected"
+	StatusFailed    = "failed"
+	StatusExtracted = "extracted"
+	StatusError     = "error"
+)
+
+// Verifications (the job's verification field) and judge decisions (how the last
+// schema-valid candidate was decided), as the engine reports them.
+const (
+	VerificationJudge    = "judge"
+	VerificationGrounded = "grounded"
+	VerificationNone     = "none"
+
+	DecisionJudged   = "judged"
+	DecisionGrounded = "grounded"
+	DecisionSampled  = "sampled"
+	DecisionSkipped  = "skipped"
 )
 
 // Usage is the model usage of one case.
@@ -25,12 +40,24 @@ type Usage struct {
 
 // Outcome is what running one case produced: the job's terminal state.
 type Outcome struct {
-	Status         string          // accepted, rejected or failed
+	Status         string          // accepted, rejected, failed or extracted
 	Result         json.RawMessage // the final candidate, nil when none
 	Attempts       int
 	ErrorCode      string // the job error code when failed
 	ServiceVersion string
 	Usage          *Usage // nil when not known (a run over HTTP)
+	// JudgePolicy is the policy the job ran under, "" when not known (a run over HTTP
+	// without --judge, which runs under the application's policy).
+	JudgePolicy string
+	// Verification is the job's verification: judge, grounded or none.
+	Verification string
+	// JudgeCalls counts the judge-role calls, nil when not known (a run over HTTP).
+	JudgeCalls *int
+	// Decision is how the last schema-valid candidate was decided (Decision*), "" when
+	// none reached the decision or when not known (a run over HTTP); Disagreements counts
+	// sampled judge calls that rejected a grounded candidate.
+	Decision      string
+	Disagreements int
 }
 
 // Runner runs one case to its terminal state. An error means the harness could not run
@@ -47,10 +74,15 @@ type CaseResult struct {
 	Attempts       int     `json:"attempts"`
 	DurationMS     int64   `json:"duration_ms"`
 	Usage          *Usage  `json:"usage"`
+	JudgePolicy    string  `json:"judge_policy,omitempty"`
+	Verification   string  `json:"verification,omitempty"`
+	JudgeCalls     *int    `json:"judge_calls"` // null when not known (a run over HTTP)
+	Decision       string  `json:"decision,omitempty"`
+	Disagreements  int     `json:"disagreements,omitempty"`
 	Fields         Fields  `json:"fields"`
 	FieldAccuracy  float64 `json:"field_accuracy"`
 	Correct        bool    `json:"correct"`      // a result and every compared field matched
-	FalseAccept    bool    `json:"false_accept"` // accepted, but a compared field differs
+	FalseAccept    bool    `json:"false_accept"` // accepted, but a compared field differs (by judge or grounding: Verification)
 	FalseReject    bool    `json:"false_reject"` // rejected, but every compared field matched
 	ServiceVersion string  `json:"service_version,omitempty"`
 }
@@ -96,6 +128,8 @@ func runCase(ctx context.Context, c Case, run Runner) CaseResult {
 	} else {
 		r.Status, r.ErrorCode, r.Attempts = out.Status, out.ErrorCode, out.Attempts
 		r.Usage, r.ServiceVersion = out.Usage, out.ServiceVersion
+		r.JudgePolicy, r.Verification, r.JudgeCalls = out.JudgePolicy, out.Verification, out.JudgeCalls
+		r.Decision, r.Disagreements = out.Decision, out.Disagreements
 	}
 	return Score(r, c, out.Result)
 }
@@ -110,6 +144,8 @@ func Score(r CaseResult, c Case, result json.RawMessage) CaseResult {
 	r.Fields = f
 	r.FieldAccuracy = f.Accuracy()
 	r.Correct = r.Status != StatusError && f.Correct()
+	// An extracted case is neither accepted nor rejected: it is never a false accept or a
+	// false reject, only its field accuracy counts.
 	r.FalseAccept = r.Status == StatusAccepted && !r.Correct
 	r.FalseReject = r.Status == StatusRejected && r.Correct
 	return r

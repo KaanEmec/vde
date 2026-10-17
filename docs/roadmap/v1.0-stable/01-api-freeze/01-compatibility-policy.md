@@ -20,6 +20,13 @@ Contract §11: additive changes only within `/v1`; a breaking change ships as `/
       `api/openapi.v1.0.0.yaml`; a test asserts the current document is a superset.
 - [ ] Review every `MAY` in the contract that was implemented and mark it stable or
       experimental in the API document.
+- [ ] Freeze the v0.4 supersets with the rest: the `judge` request part (and JSON field)
+      with its `400` when not allowed, the job field `verification` (`judge`, `grounded`,
+      `none`, `null` while in progress), the terminal status `extracted`, the feedback
+      source `grounding` with its fixed message, and the schema annotation
+      `x-vde-grounding` (`critical`, `check`, `derived`, `skip`), including what an unknown
+      value answers (`422 invalid_schema`). Decide whether the grounding rules (date table,
+      normalization) are part of the promise or versioned only through `service_version`.
 
 ## Acceptance criteria
 

@@ -30,13 +30,20 @@ scenarios:
 	go test ./cmd/vde -run TestScenarios -count=1 -v
 
 # The evaluation harness mechanics (docs/operator/evaluation.md) on testdata/eval with the
-# fake provider: every case replays testdata/eval/fake-script.yaml, so no key is needed; each
-# case ends accepted and correct, and a case the harness cannot run fails the target. Real
-# runs are manual and recorded in docs/quality.md.
+# fake provider, once per judge policy (docs/operator/judge-policy.md), so no key is needed.
+# always and never replay testdata/eval/fake-script.yaml (a schema violation, then the
+# ground truth): always ends every case accepted by the judge, never ends it extracted
+# with no judge call. auto replays testdata/eval/fake-script-grounded.yaml (the ground
+# truth first): cases whose values the document prints end grounded without a judge, the
+# others go to the judge. A case the harness cannot run fails the target. Real runs are
+# manual and recorded in docs/quality.md.
 EVAL_OUT ?= eval-reports
+EVAL     := go run ./cmd/vde eval --corpus testdata/eval --config testdata/scenarios/config/vde.yaml \
+	--concurrency 4 --out $(EVAL_OUT)
 eval:
-	go run ./cmd/vde eval --corpus testdata/eval --config testdata/scenarios/config/vde.yaml \
-		--provider-script testdata/eval/fake-script.yaml --concurrency 4 --out $(EVAL_OUT)
+	$(EVAL) --judge always --provider-script testdata/eval/fake-script.yaml
+	$(EVAL) --judge never --provider-script testdata/eval/fake-script.yaml
+	$(EVAL) --judge auto --provider-script testdata/eval/fake-script-grounded.yaml
 
 # The opt-in smoke test against every real provider whose key is set (see CONTRIBUTING.md).
 live:

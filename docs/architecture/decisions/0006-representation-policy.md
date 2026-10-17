@@ -2,6 +2,8 @@
 
 Status: accepted (planning), 2026-10-16
 
+Amended by [ADR 0010](0010-pdf-preprocessing-in-service.md) (PDF preprocessing in the service).
+
 ## Context
 
 The TravelInbox contract leaves two choices to the service: whether HTML is given to the

@@ -90,3 +90,52 @@ Mismatched fields, counted once per case (runs 1 → 3): `/trip_hint/ends_on` 23
    `gemini-3.8-flash` on cost per correct case.
 3. Lower eval concurrency to 2 for Anthropic models through this endpoint, or add
    `Retry-After` handling on the eval client side, to avoid the failed cases.
+
+## Judge policy
+
+Not run yet: the owner runs this comparison.
+
+v0.4 lets a deployment choose when the judge is asked (`always`, `never`, `auto`) and adds
+the deterministic grounding check ([judge policy](operator/judge-policy.md),
+[ADR 0009](architecture/decisions/0009-judge-policy-and-grounding.md)). ADR 0008 asks that a
+judge arrangement be adopted on measured runs; this is the measurement plan.
+
+**Corpora.** The owner suite (`testdata/user-docs`, ten real documents, untracked) and the
+TravelInbox corpus (`travelinbox-*` in `testdata/eval`). **Models.** The same extractor and
+judge groups under all three policies, so only the policy changes. **Commands** (the owner
+suite; the reports land in `eval-reports/`, one `service_version` per policy):
+
+```
+go build -o bin/vde ./cmd/vde
+bin/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge always
+bin/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge auto \
+  --compare eval-reports/<the always report>.json
+bin/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge never \
+  --compare eval-reports/<the always report>.json
+VDE_USER_DOCS=1 go test ./internal/document -run UserDocs -v   # PDFs: representation per file, no caller pages
+```
+
+and the same three runs with `--corpus testdata/eval --cases 'travelinbox-*'`.
+
+**Columns to record** (one row per corpus and policy):
+
+| Corpus | Policy | service_version | Extractor / judge | False accepts: judge / grounded | Verified judge / grounded (grounded share) | Extracted | Judge calls | Sampled / disagreements | Field accuracy | Tokens in / out | Cost per correct case | Report |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| owner suite | `always` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| owner suite | `auto` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| owner suite | `never` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| TravelInbox | `always` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| TravelInbox | `auto` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| TravelInbox | `never` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+
+**What decides it.** v0.4's exit criterion: under `auto`, no case with
+`verification: grounded` is a false accept caused by an invented value (the event invoice
+must never be `accepted`/`grounded`), the email cases end grounded without a judge call
+except the sampled ones, and every PDF runs from its bytes alone. Then false accepts by
+verification, judge calls saved and cost per correct case. A grounded false accept caused
+by a printed value in the wrong field is the risk `auto` accepts; it is weighed against the
+judge calls saved. Cost per correct case is computed by hand from the token counts and the
+providers' prices until the report carries prices.
+
+The per-case `error_code` follow-up of the 2026-10-16 run is done: the report records the
+job error code per case.

@@ -14,7 +14,7 @@ variable (`api_key_env`).
 | [`vde.dev.yaml`](vde.dev.yaml) | Anthropic, one model for both roles | `ANTHROPIC_API_KEY` | The minimal development setup: one provider, one model, one key. |
 | [`vde.openrouter.yaml`](vde.openrouter.yaml) | OpenRouter (preset) | `OPENROUTER_API_KEY` | Any model OpenRouter serves; the preset asks for no-retention routing. |
 | [`vde.gemini.yaml`](vde.gemini.yaml) | Google Gemini | `GEMINI_API_KEY` | Use a paid-tier key for confidential documents. |
-| [`vde.local-ollama.yaml`](vde.local-ollama.yaml) | Ollama on this machine | none | Fully local. No PDF reader, so PDFs need caller-supplied page images (a warning says so). |
+| [`vde.local-ollama.yaml`](vde.local-ollama.yaml) | Ollama on this machine | none | Fully local. No PDF reader: the service sends a PDF's text layer or renders its pages (`documents.pdf.mode: auto`, [PDF preprocessing](../docs/operator/pdf.md)). |
 | [`vde.failover.yaml`](vde.failover.yaml) | Anthropic, Gemini, OpenRouter | all three | Primary and fallback per role, across providers. |
 
 Model names change. The ones here were current when the files were written; replace them
@@ -23,6 +23,13 @@ list: `vde` does not probe the model, and a type listed for a model that cannot 
 makes jobs fail. Take the list from the provider's documentation and keep it conservative;
 the files carry commented alternatives. See [`docs/providers/`](../docs/providers/README.md)
 and the [configuration reference](../docs/operator/configuration.md).
+
+Every file also carries two commented blocks with the v0.4 settings: the judge role's
+`policy` (`always`, the default, `never` or `auto`; see
+[judge policy](../docs/operator/judge-policy.md)) and `documents.pdf` (how a PDF reaches
+models that do not read `application/pdf`, with the defaults; see
+[PDF preprocessing](../docs/operator/pdf.md)). Uncomment and edit them to change the
+defaults.
 
 ### Check a configuration
 
@@ -62,18 +69,20 @@ vde extract --config examples/vde.dev.yaml \
 ```
 
 The media type comes from the extension (`.txt`, `.md`, `.html`, `.eml`, `.pdf`, `.png`,
-`.jpg`, `.webp`, `.heic`; `--type` overrides it). `--page` adds a page image, in order, used
-when the configured models read PDFs only as images (as with `vde.local-ollama.yaml`). Leave
+`.jpg`, `.webp`, `.heic`; `--type` overrides it). `--page` adds a page image, in order; it is
+optional for a PDF, since the service reads the text layer or renders the pages itself when
+the models do not read PDFs (as with `vde.local-ollama.yaml`), and caller pages still win. Leave
 out `--schema` for schema-less extraction; the instructions then describe the JSON.
-`--max-attempts`, `--timeout` and `--html raw_html|visible_text` override the configuration
-for this run, and `--verbose` prints one line per attempt and per model call (endpoint,
+`--max-attempts`, `--timeout`, `--html raw_html|visible_text` and `--judge always|never|auto`
+override the configuration for this run, and `--verbose` prints one line per attempt and per model call (endpoint,
 outcome, tokens) to stderr, never document content.
 
-The result has `status` (`accepted`, `rejected` or `failed`), `result`, `feedback`,
-`attempts`, `service_version`, `judge_confidence`, `error` (a code such as `timeout` or
-`provider_unavailable` when failed), `finished_at` and, for an `.eml`, the `attachments`
-it lists but does not read. The exit code is 0 accepted, 2 rejected, 3 failed and 1 for a
-usage or configuration error.
+The result has `status` (`accepted`, `rejected`, `failed`, or `extracted` under judge
+policy `never`), `result`, `feedback`, `attempts`, `service_version`, `judge_confidence`,
+`verification` (`judge`, `grounded` or `none`: what accepted the result), `error` (a code
+such as `timeout` or `provider_unavailable` when failed), `finished_at` and, for an `.eml`,
+the `attachments` it lists but does not read. The exit code is 0 accepted, 2 rejected,
+3 failed, 4 extracted and 1 for a usage or configuration error.
 
 ### Try it without a key
 
@@ -93,6 +102,13 @@ vde extract --config examples/vde.dev.yaml \
   --extractor-instructions examples/samples/extractor.md \
   --judge-instructions examples/samples/judge.md \
   --provider-script testdata/scenarios/three-rejections.yaml   # exits 2, rejected
+
+vde extract --config examples/vde.dev.yaml --judge auto \
+  --document examples/samples/booking.txt \
+  --extractor-instructions examples/samples/extractor.md \
+  --judge-instructions examples/samples/judge.md \
+  --provider-script testdata/scenarios/accept-first-try.yaml --verbose
+  # accepted, verification grounded: every value is printed in booking.txt, no judge call
 ```
 
 The fake's answers are scripted, not read from the document. `make scenarios` runs every

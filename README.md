@@ -9,12 +9,23 @@ knowledge. Providers: Anthropic, OpenAI-compatible endpoints (OpenAI, OpenRouter
 vLLM), Google Gemini, AWS Bedrock and Vertex AI (not yet verified live) and a classifier-style
 judge, with ordered failover per role.
 
+- **Judge policy per application**: `always` (every result judged, the default), `never`
+  (results end `extracted`, no judge) or `auto` (results whose values the document prints
+  skip the judge, with a sampled check); see [judge policy](docs/operator/judge-policy.md).
+- **Grounding check**: a deterministic check that every extracted value occurs in the
+  document text, which catches invented dates, names and amounts that judges accepted.
+- **PDFs without caller pages**: the service reads a PDF's text layer or renders its pages
+  itself (pdfium as WebAssembly, still one static cgo-free binary), so models without PDF
+  input work; see [PDF preprocessing](docs/operator/pdf.md).
+
 ## Status
 
-v0.1 to v0.3 are implemented: engine, CLI, HTTP API, jobs, retention, operations, admin API,
+v0.1 to v0.4 are implemented: engine, CLI, HTTP API, jobs, retention, operations, admin API,
 container image and compose example, plus Postgres and S3 storage, Bedrock and Vertex
 adapters, a classifier judge adapter, escalation, image conversion, synchronous and webhook
-delivery, an evaluation harness and multi-replica operation. Verified against the fake
+delivery, an evaluation harness and multi-replica operation, and (v0.4) judge policies, the
+grounding check and PDF preparation in the service. v0.4 is closed with the owner's
+comparison of the judge policies on real documents still to run. Verified against the fake
 provider, the TravelInbox contract's live test and one real model; the Bedrock and Vertex
 adapters have not run live, and the first evaluation shows a high false-accept rate that needs
 instruction work (see [quality](docs/quality.md)). Do not treat it as production-ready. v1.0
@@ -23,7 +34,10 @@ done and what is next.
 
 ## Quick start
 
-Requires Go 1.26 or newer; the binary is pure Go (`CGO_ENABLED=0`).
+Requires Go 1.26 or newer; the binary is pure Go (`CGO_ENABLED=0`), about 36 MB on
+linux/amd64 (pdfium embedded as WebAssembly). Budget about 500 MB of memory per
+`documents.pdf.workers` (default 1) when the service prepares PDFs; a deployment whose
+models all read PDFs never starts pdfium.
 
 ```
 make build                                       # bin/vde (or: docker build -t vde .)

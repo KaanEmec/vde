@@ -1,5 +1,6 @@
-# PR gate: the same checks as `make check`, plus vulnerability scanning and
-# cross-compilation. Release automation is a separate, later workflow.
+# PR gate: the same checks as `make check`, plus vulnerability scanning,
+# cross-compilation, the conformance suite and the evaluation harness mechanics. Release
+# automation is a separate, later workflow.
 name: ci
 
 on:
@@ -102,6 +103,19 @@ jobs:
           cache: true
       - name: Contract §14 items 1-9 against the binary and a fake provider
         run: make conformance
+
+  eval:
+    name: evaluation harness (fake provider, every judge policy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: testdata/eval under always, never and auto
+        run: make eval EVAL_OUT="$RUNNER_TEMP/eval-reports"
 
   storage:
     name: storage backends (PostgreSQL, S3)

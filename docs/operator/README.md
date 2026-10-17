@@ -23,6 +23,7 @@ about ten minutes from clone to a first job.
 | [retention.md](retention.md) | What is deleted, when, and what remains. |
 | [privacy.md](privacy.md) | What is logged, what never is, the `debug.log_content` switch and data residency. |
 | [storage.md](storage.md) | Choose SQLite or PostgreSQL and local files or S3; pool sizing, backups, bucket lifecycle rule, migrations. |
+| [judge-policy.md](judge-policy.md) | Choose when the judge is asked (`always`, `never`, `auto`), annotate a schema for grounding, read the decision metrics and the `extracted` status. |
 | [pdf.md](pdf.md) | Choose how PDFs reach models that do not read PDFs: text layer, rendered pages or caller pages; memory and limits. |
 | [framings.md](framings.md) | The fixed prompts of the extractor and judge roles. |
 | [evaluation.md](evaluation.md) | Measure extraction quality on a corpus with `vde eval`; build a corpus from production rejections. |
@@ -44,7 +45,7 @@ service), [examples](../../examples/README.md) and the [changelog](../../CHANGEL
 | `vde migrate [--config path]` | Apply pending database migrations of `storage.driver` and print the schema version (`serve` also migrates at start). See [storage](storage.md#migrations). |
 | `vde healthcheck [--config path]` | Request `/healthz` on the configured listener; exit 0 on `200`. Used by the container `HEALTHCHECK`. |
 | `vde extract` | Run one document through the extractor and judge from the command line; for trying a configuration. See [examples](../../examples/README.md#extract-a-document). |
-| `vde eval` | Run a corpus with ground truth through the engine or a deployment and report false accepts, acceptance rate and field accuracy. See [evaluation](evaluation.md). |
+| `vde eval` | Run a corpus with ground truth through the engine or a deployment and report false accepts (by verification), acceptance rate, judge calls and field accuracy; `--judge` compares policies. See [evaluation](evaluation.md). |
 | `vde version` | Print version, commit and build date. |
 
 `--config` defaults to `vde.yaml`. The commands `app`, `token`, `audit`, `migrate` and `healthcheck` fall back

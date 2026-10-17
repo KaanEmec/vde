@@ -62,7 +62,7 @@ probing is planned for v0.3; until then test an endpoint with `vde extract` and 
 | `roles.second_judge.group` | string | empty (off) | A second, independent judge with the same request: an `accept` of the judge is confirmed by it before the job is accepted, and its `reject` feeds the next attempt like the judge's. Its failures follow the judge's rules (`judge_failed`, `provider_unavailable`; never acceptance). On acceptance the advisory entries of both judges are kept and `judge_confidence` is the second judge's. Hashed into `service_version` when set; unset changes nothing. Calls are counted as `judge` calls in metrics and `--verbose`. |
 | `roles.judge.feedback_fallback` | string | `whole_result` | What a reject from a `classifier` endpoint carries: `whole_result`, one entry at pointer `""` with a fixed message and the confidence; or `llm`, pointer-level feedback asked from `feedback_group` (one extra call per rejection). See [classifier](../providers/classifier.md#how-decisions-become-a-verdict). `llm` is hashed into `service_version`; a warning when no judge group has a classifier. |
 | `roles.judge.feedback_group` | string | required with `feedback_fallback: llm`, not allowed otherwise | The LLM group asked for feedback on classifier rejections, with the judge framing; no `classifier` endpoint. |
-| `roles.judge.policy` | string | `always` | When the judge is asked (v0.4, [ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md)): `always` (contract v1: `accepted` means the judge accepted), `never` (a schema-valid final candidate ends `extracted`, never `accepted`) or `auto` (a grounded candidate may be accepted without a judge, with `verification: grounded`). The default applications inherit; `applications[].judge.policy` overrides it. `never` or `auto` is hashed into `service_version`; `always` changes nothing. `never` together with `roles.second_judge` is a warning; `policy` on `roles.extractor` is an error. |
+| `roles.judge.policy` | string | `always` | When the judge is asked (v0.4, [judge policy](judge-policy.md), [ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md)): `always` (contract v1: `accepted` means the judge accepted), `never` (a schema-valid final candidate ends `extracted`, never `accepted`) or `auto` (a grounded candidate may be accepted without a judge, with `verification: grounded`). The default applications inherit; `applications[].judge.policy` overrides it. `never` or `auto` is hashed into `service_version`; `always` changes nothing. `never` together with `roles.second_judge` is a warning; `roles.extractor.policy` is an error. |
 
 ## `limits`
 
@@ -103,10 +103,23 @@ endpoint that accepts only JPEG and PNG can still process a WebP document. `imag
 is not converted (there is no cgo-free HEIC decoder): it is accepted only when the
 models of both groups declare `image/heic`. Images above 120 megapixels are refused with `413`.
 
-`documents.pdf.mode`, `dpi` and `min_text_chars_per_page` are part of `service_version`;
+`documents.pdf.mode`, `dpi` and `min_text_chars_per_page` are part of `service_version`
+when a role's groups do not all read PDFs natively (or the judge policy is not `always`);
 `max_pages` and `workers` are not. pdfium starts on the first PDF that needs it, so a
-deployment whose models all read PDFs pays nothing at run time. Its compiled code is
-cached under `server.data_dir/pdfium-cache` (the CLI uses the user cache directory).
+deployment whose models all read PDFs pays nothing at run time.
+
+**Memory budget.** Each pdfium instance takes about 230 to 490 MB while it prepares a
+document (its WebAssembly memory is capped at 1 GiB, and a fresh instance is used per
+document, so the memory is returned afterwards). Budget about 500 MB per
+`documents.pdf.workers` on top of the service; `config check` prints the estimate.
+**Compilation cache.** The compiled module is cached under `server.data_dir/pdfium-cache`
+(about 20 MB; the CLI uses `vde/pdfium-cache` under the user cache directory). Without a
+writable cache the service logs a warning and compiles at every start (about 1.2 s instead
+of 35 ms). **Fonts.** The sandbox has no filesystem and no system fonts: a PDF whose fonts
+are neither embedded nor among the 14 standard ones may render with fallback glyphs; its
+text layer is unaffected. **Interpreter fallback.** wazero compiles to native code on
+amd64 and arm64 only; elsewhere it interprets, about 60 times slower, and `config check`
+warns. Details: [PDF preprocessing](pdf.md).
 
 ## `applications[]` (used from v0.2)
 
@@ -124,7 +137,7 @@ cached under `server.data_dir/pdfium-cache` (the CLI uses the user cache directo
 | `retention.force_none` | bool | `false` | Treat every job as `retention: none`. |
 | `retention.delete_blobs_at_terminal` | bool | `false` | Delete the document and pages of `retention: default` jobs when they reach a terminal state instead of at expiry; the result stays readable. See [retention](retention.md). |
 | `documents.html` | string | top-level `documents.html` | Per-application HTML policy override: `raw_html` or `visible_text`. |
-| `judge.policy` | string | `roles.judge.policy` | The application's judge policy: `always`, `never` or `auto`. Hashed into the application's `service_version` unless `always`. |
+| `judge.policy` | string | `roles.judge.policy` | The application's judge policy: `always`, `never` or `auto` (see [judge policy](judge-policy.md)). Hashed into the application's `service_version` unless `always`. |
 | `judge.allow_override` | bool | `false` | Lets a request choose the policy with the `judge` part (or JSON field); without it the part is refused with `400 bad_request`. The application then has one `service_version` per policy, and each job carries the one it ran under. |
 | `judge.sample_rate` | number | `0.05` | Under `auto`, the share of jobs (chosen deterministically from the job id) sent to the judge although grounding alone would accept them, to measure disagreement. From 0 to 1; hashed into `service_version` under `auto` only. |
 | `documents.pdf.mode` | string | top-level `documents.pdf.mode` | Per-application PDF mode override: `auto`, `native`, `text` or `pages`. The other `documents.pdf` keys are process-wide. |
@@ -219,8 +232,9 @@ never in the file.
 Other files: [`vde.gemini.yaml`](../../examples/vde.gemini.yaml) (Google Gemini; use a
 paid-tier key for confidential documents), [`vde.openrouter.yaml`](../../examples/vde.openrouter.yaml)
 (the OpenRouter preset) and [`vde.local-ollama.yaml`](../../examples/vde.local-ollama.yaml)
-(fully local, no key; no PDF reader, so `config check` warns that PDFs need caller-supplied
-page images).
+(fully local, no key; no PDF reader, so PDFs are sent as their text layer or as rendered
+pages under `documents.pdf.mode: auto`). Every example carries a commented
+`documents.pdf` block and `roles.judge.policy`.
 
 The service keys not shown in the examples (`limits`, `worker`, `retention`, `audit`,
 `metrics`, `auth`, `logging`, `storage`, `blobs`) all have defaults and are only set when you need to change
