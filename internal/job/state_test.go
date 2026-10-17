@@ -12,6 +12,7 @@ import (
 func TestStatusTerminal(t *testing.T) {
 	for s, want := range map[Status]bool{
 		StatusQueued: false, StatusRunning: false, StatusAccepted: true, StatusRejected: true, StatusFailed: true,
+		StatusExtracted: true,
 	} {
 		if s.Terminal() != want {
 			t.Errorf("%s.Terminal() = %v", s, !want)
@@ -160,7 +161,7 @@ func TestReleaseAfterCrash(t *testing.T) {
 func TestStateMachineProperty(t *testing.T) {
 	const seeds, steps, jobs = 20, 60, 3
 	workers := []string{"w1", "w2", ""}
-	statuses := []Status{StatusAccepted, StatusRejected, StatusFailed, StatusRunning, StatusQueued}
+	statuses := []Status{StatusAccepted, StatusRejected, StatusFailed, StatusExtracted, StatusRunning, StatusQueued}
 	for _, d := range testDrivers {
 		t.Run(d.name, func(t *testing.T) {
 			if d.name == "postgres" {
@@ -240,4 +241,41 @@ func testStateMachineProperty(t *testing.T, open func(*testing.T) *sqlStore, see
 	if terminal == 0 {
 		t.Error("no random sequence reached a terminal status")
 	}
+}
+
+// TestRunningToExtracted: the edge running → extracted (judge policy never) is terminal
+// like the others: it keeps its verification, never changes again, and its content is
+// deleted like any terminal job's.
+func TestRunningToExtracted(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		j := newJob("app")
+		j.JudgePolicy = "never"
+		createJob(t, s, j)
+		if err := s.Finish(ctx, j.ID, "", Outcome{Status: StatusExtracted}, t0); !errors.Is(err, ErrConflict) {
+			t.Errorf("queued → extracted: %v, want ErrConflict", err)
+		}
+		if _, err := s.LeaseNextQueued(ctx, "w1", t0, t0.Add(time.Minute), nil); err != nil {
+			t.Fatal(err)
+		}
+		o := Outcome{Status: StatusExtracted, Attempts: 1, Result: json.RawMessage(`{"a":1}`), Feedback: json.RawMessage(`[]`),
+			Verification: VerificationNone}
+		if err := s.Finish(ctx, j.ID, "w1", o, t0.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := s.GetJobAny(ctx, j.ID)
+		if got.Status != StatusExtracted || got.Verification != VerificationNone || got.JudgePolicy != "never" || got.FinishedAt.IsZero() {
+			t.Errorf("extracted = %+v", got)
+		}
+		if err := s.Finish(ctx, j.ID, "", Outcome{Status: StatusAccepted}, t0.Add(2*time.Second)); !errors.Is(err, ErrConflict) {
+			t.Errorf("extracted → accepted: %v, want ErrConflict", err)
+		}
+		if err := s.MarkContentDeleted(ctx, j.ID, ContentAll, t0.Add(3*time.Second)); err != nil {
+			t.Errorf("content of an extracted job: %v", err)
+		}
+		if got, _ := s.GetJobAny(ctx, j.ID); got.Result != nil || got.ContentDeletedAt.IsZero() {
+			t.Errorf("after content deletion = %+v", got)
+		}
+	})
 }

@@ -174,24 +174,36 @@ func affected(res sql.Result) (int64, error) {
 // ---- applications
 
 const applicationColumns = `id, name, max_attempts, quota_limit, quota_window, requests_per_minute,
-	submits_per_minute, max_in_progress, retention_default, force_none, html_policy, enabled,
-	source, created_at, updated_at`
+	submits_per_minute, max_in_progress, retention_default, force_none, html_policy, judge_policy,
+	judge_allow_override, judge_sample_rate, enabled, source, created_at, updated_at`
 
 func scanApplication(r scanner) (Application, error) {
 	var a Application
 	var created, updated sql.NullInt64
+	var sampleRate sql.NullFloat64
 	err := r.Scan(&a.ID, &a.Name, &a.MaxAttempts, &a.QuotaLimit, &a.QuotaWindow, &a.RequestsPerMinute,
-		&a.SubmitsPerMinute, &a.MaxInProgress, &a.RetentionDefault, &a.ForceNone, &a.HTMLPolicy, &a.Enabled,
-		&a.Source, &created, &updated)
+		&a.SubmitsPerMinute, &a.MaxInProgress, &a.RetentionDefault, &a.ForceNone, &a.HTMLPolicy, &a.JudgePolicy,
+		&a.JudgeAllowOverride, &sampleRate, &a.Enabled, &a.Source, &created, &updated)
 	a.CreatedAt, a.UpdatedAt = fromMS(created), fromMS(updated)
+	if sampleRate.Valid {
+		a.JudgeSampleRate = &sampleRate.Float64
+	}
 	return a, err
+}
+
+// nullFloat is a *float64 column value: NULL when nil.
+func nullFloat(f *float64) any {
+	if f == nil {
+		return nil
+	}
+	return *f
 }
 
 // UpsertApplication implements Store.
 func (s *sqlStore) UpsertApplication(ctx context.Context, a Application, now time.Time) error {
 	_, err := s.exec(ctx, `
 		INSERT INTO applications (`+applicationColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, 'config', ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, 'config', ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			name = excluded.name, max_attempts = excluded.max_attempts,
 			quota_limit = excluded.quota_limit, quota_window = excluded.quota_window,
@@ -199,9 +211,12 @@ func (s *sqlStore) UpsertApplication(ctx context.Context, a Application, now tim
 			submits_per_minute = excluded.submits_per_minute,
 			max_in_progress = excluded.max_in_progress, retention_default = excluded.retention_default,
 			force_none = excluded.force_none, html_policy = excluded.html_policy,
+			judge_policy = excluded.judge_policy, judge_allow_override = excluded.judge_allow_override,
+			judge_sample_rate = excluded.judge_sample_rate,
 			enabled = TRUE, source = 'config', updated_at = excluded.updated_at`,
 		a.ID, a.Name, a.MaxAttempts, a.QuotaLimit, a.QuotaWindow, a.RequestsPerMinute,
 		a.SubmitsPerMinute, a.MaxInProgress, a.RetentionDefault, a.ForceNone, a.HTMLPolicy,
+		a.JudgePolicy, a.JudgeAllowOverride, nullFloat(a.JudgeSampleRate),
 		now.UnixMilli(), now.UnixMilli())
 	if err != nil {
 		return fmt.Errorf("job: upsert application: %w", err)
@@ -248,9 +263,10 @@ func (s *sqlStore) DisableApplicationsNotIn(ctx context.Context, ids []string, n
 func (s *sqlStore) CreateApplication(ctx context.Context, a Application, now time.Time) error {
 	_, err := s.exec(ctx, `
 		INSERT INTO applications (`+applicationColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?)`,
 		a.ID, a.Name, a.MaxAttempts, a.QuotaLimit, a.QuotaWindow, a.RequestsPerMinute,
-		a.SubmitsPerMinute, a.MaxInProgress, a.RetentionDefault, a.ForceNone, a.HTMLPolicy, a.Enabled,
+		a.SubmitsPerMinute, a.MaxInProgress, a.RetentionDefault, a.ForceNone, a.HTMLPolicy,
+		a.JudgePolicy, a.JudgeAllowOverride, nullFloat(a.JudgeSampleRate), a.Enabled,
 		now.UnixMilli(), now.UnixMilli())
 	if isUnique(err) {
 		return ErrDuplicate
@@ -266,10 +282,12 @@ func (s *sqlStore) UpdateApplication(ctx context.Context, a Application, now tim
 	res, err := s.exec(ctx, `
 		UPDATE applications SET name = ?, max_attempts = ?, quota_limit = ?, quota_window = ?,
 			requests_per_minute = ?, submits_per_minute = ?, max_in_progress = ?,
-			retention_default = ?, force_none = ?, html_policy = ?, enabled = ?, updated_at = ?
+			retention_default = ?, force_none = ?, html_policy = ?, judge_policy = ?,
+			judge_allow_override = ?, judge_sample_rate = ?, enabled = ?, updated_at = ?
 		WHERE id = ?`,
 		a.Name, a.MaxAttempts, a.QuotaLimit, a.QuotaWindow, a.RequestsPerMinute, a.SubmitsPerMinute,
-		a.MaxInProgress, a.RetentionDefault, a.ForceNone, a.HTMLPolicy, a.Enabled, now.UnixMilli(), a.ID)
+		a.MaxInProgress, a.RetentionDefault, a.ForceNone, a.HTMLPolicy, a.JudgePolicy, a.JudgeAllowOverride,
+		nullFloat(a.JudgeSampleRate), a.Enabled, now.UnixMilli(), a.ID)
 	if err != nil {
 		return fmt.Errorf("job: update application: %w", err)
 	}
@@ -502,20 +520,24 @@ const jobColumns = `id, application_id, status, attempts, result, feedback, erro
 	service_version, representation, media_type, size, page_count, retention, idempotency_key,
 	body_hash, attachments, extractor_instructions, judge_instructions, schema, max_attempts, created_at,
 	started_at, finished_at, expires_at, lease_until, worker_id, inputs_deleted_at,
-	content_deleted_at, input_tokens, output_tokens`
+	content_deleted_at, input_tokens, output_tokens, judge_policy, verification`
 
 func scanJob(r scanner) (Job, error) {
 	var j Job
-	var result, feedback, jobErr, key, attachments sql.NullString
+	var result, feedback, jobErr, key, attachments, verification sql.NullString
 	var confidence sql.NullFloat64
 	var created, started, finished, expires, lease, inputsDeleted, contentDeleted sql.NullInt64
 	err := r.Scan(&j.ID, &j.ApplicationID, &j.Status, &j.Attempts, &result, &feedback, &jobErr, &confidence,
 		&j.ServiceVersion, &j.Representation, &j.MediaType, &j.Size, &j.PageCount, &j.Retention, &key,
 		&j.BodyHash, &attachments, &j.ExtractorInstructions, &j.JudgeInstructions, &j.Schema, &j.MaxAttempts, &created,
 		&started, &finished, &expires, &lease, &j.WorkerID, &inputsDeleted,
-		&contentDeleted, &j.InputTokens, &j.OutputTokens)
+		&contentDeleted, &j.InputTokens, &j.OutputTokens, &j.JudgePolicy, &verification)
 	if err != nil {
 		return Job{}, err
+	}
+	j.Verification = verification.String
+	if !verification.Valid {
+		j.Verification = DefaultVerification(j.Status) // a row finished before v0.4
 	}
 	j.Result, j.Feedback, j.Error = fromText(result), fromText(feedback), fromText(jobErr)
 	if confidence.Valid {
@@ -561,7 +583,10 @@ func (s *sqlStore) CreateJob(ctx context.Context, j *Job) error {
 	if j.Retention, j.ExpiresAt, err = expiry(j.CreatedAt, j.Retention, app); err != nil {
 		return err
 	}
-	j.Status, j.Attempts = StatusQueued, 0
+	j.Status, j.Attempts, j.Verification = StatusQueued, 0, ""
+	if j.JudgePolicy == "" {
+		j.JudgePolicy = DefaultJudgePolicy
+	}
 	var attachments any // NULL when there are none
 	if len(j.Attachments) > 0 {
 		b, err := json.Marshal(j.Attachments)
@@ -574,12 +599,13 @@ func (s *sqlStore) CreateJob(ctx context.Context, j *Job) error {
 	_, err = tx.ExecContext(ctx, s.q(`
 		INSERT INTO jobs (id, application_id, status, attempts, service_version, representation,
 			media_type, size, page_count, retention, idempotency_key, body_hash, attachments,
-			extractor_instructions, judge_instructions, schema, max_attempts, created_at, expires_at)
-		VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			extractor_instructions, judge_instructions, schema, max_attempts, created_at, expires_at,
+			judge_policy)
+		VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		j.ID, j.ApplicationID, j.Status, j.ServiceVersion, j.Representation,
 		j.MediaType, j.Size, j.PageCount, j.Retention, nullString(j.IdempotencyKey), j.BodyHash, attachments,
 		j.ExtractorInstructions, j.JudgeInstructions, j.Schema, j.MaxAttempts,
-		j.CreatedAt.UnixMilli(), j.ExpiresAt.UnixMilli())
+		j.CreatedAt.UnixMilli(), j.ExpiresAt.UnixMilli(), j.JudgePolicy)
 	if isUnique(err) {
 		return ErrDuplicate
 	}
@@ -702,14 +728,19 @@ func (s *sqlStore) Finish(ctx context.Context, id, workerID string, o Outcome, n
 	if o.JudgeConfidence != nil {
 		confidence = *o.JudgeConfidence
 	}
+	verification := o.Verification
+	if verification == "" {
+		verification = DefaultVerification(o.Status)
+	}
 	res, err := s.exec(ctx, `
 		UPDATE jobs SET status = ?1, attempts = CASE WHEN attempts > ?2 THEN attempts ELSE ?2 END, result = ?3, feedback = ?4,
 			error = ?5, judge_confidence = ?6, finished_at = ?7, lease_until = NULL,
 			input_tokens = CASE WHEN input_tokens > ?10 THEN input_tokens ELSE ?10 END,
-			output_tokens = CASE WHEN output_tokens > ?11 THEN output_tokens ELSE ?11 END
+			output_tokens = CASE WHEN output_tokens > ?11 THEN output_tokens ELSE ?11 END,
+			verification = ?12
 		WHERE id = ?8 AND status = 'running' AND (?9 = '' OR worker_id = ?9)`,
 		o.Status, o.Attempts, jsonText(o.Result), jsonText(o.Feedback), jsonText(o.Error),
-		confidence, now.UnixMilli(), id, workerID, o.InputTokens, o.OutputTokens)
+		confidence, now.UnixMilli(), id, workerID, o.InputTokens, o.OutputTokens, verification)
 	if err != nil {
 		return fmt.Errorf("job: finish: %w", err)
 	}
@@ -732,7 +763,7 @@ func (s *sqlStore) MarkContentDeleted(ctx context.Context, id string, what Conte
 				result = NULL, feedback = NULL, error = NULL, judge_confidence = NULL, attachments = NULL,
 				inputs_deleted_at = COALESCE(inputs_deleted_at, ?1), content_deleted_at = ?1
 			WHERE id = ?2 AND content_deleted_at IS NULL
-			  AND status IN ('accepted', 'rejected', 'failed')`, now.UnixMilli(), id)
+			  AND status IN ('accepted', 'rejected', 'failed', 'extracted')`, now.UnixMilli(), id)
 	default:
 		return fmt.Errorf("job: mark content deleted: unknown content %d", what)
 	}
@@ -809,7 +840,7 @@ func (s *sqlStore) ListExpired(ctx context.Context, now time.Time, limit int) ([
 func (s *sqlStore) ListContentExpired(ctx context.Context, now time.Time, limit int) ([]Job, error) {
 	return s.queryJobs(ctx, "list content expired", `
 		SELECT `+jobColumns+` FROM jobs
-		WHERE expires_at <= ? AND content_deleted_at IS NULL AND status IN ('accepted', 'rejected', 'failed')
+		WHERE expires_at <= ? AND content_deleted_at IS NULL AND status IN ('accepted', 'rejected', 'failed', 'extracted')
 		ORDER BY expires_at, id LIMIT ?`,
 		now.UnixMilli(), limit)
 }

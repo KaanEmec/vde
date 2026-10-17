@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/extract"
+	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/version"
 )
 
@@ -146,6 +148,7 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 			fmt.Fprintf(tw, "    escalation: from attempt %d, group %s\n", e.FromAttempt, e.Group)
 		}
 		if role.name == "judge" {
+			fmt.Fprintf(tw, "    policy: %s\n", cfg.RolePolicy())
 			if g := cfg.Roles.SecondJudge.Group; g != "" {
 				fmt.Fprintf(tw, "    second judge: group %s\n", g)
 			}
@@ -166,12 +169,24 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 			}
 			fmt.Fprintf(tw, "    %s\t%s\t%s\n", c.MediaType, via, pairs)
 		}
+		fmt.Fprintf(tw, "    pdf: %s\n", pdfSummary(cfg.Documents.PDF, role.caps))
 	}
 	l := cfg.Limits
 	fmt.Fprintf(tw, "\nlimits\n  max_attempts %d, job_timeout %s, judge_reparse_tries %d\n",
 		l.MaxAttempts, l.JobTimeout, l.JudgeReparseTries)
 	fmt.Fprintf(tw, "  document_bytes %d, page_bytes %d, pages %d\n", l.DocumentBytes, l.PageBytes, l.Pages)
 	fmt.Fprintf(tw, "\napplications %d, documents.html %s\n", len(cfg.Applications), cfg.Documents.HTML)
+	if p := cfg.Documents.PDF; p.Mode != config.PDFModeNative {
+		fmt.Fprintf(tw, "documents.pdf: mode %s, dpi %d, max_pages %d, min_text_chars_per_page %d, workers %d "+
+			"(about %d MB of memory for pdfium when it runs)\n", p.Mode, p.DPI, p.MaxPages, p.MinTextCharsPerPage, p.Workers, p.Workers*500)
+		if !pdf.Compiled() {
+			fmt.Fprintf(tw, "warning: documents.pdf: no WebAssembly compiler on %s/%s; pdfium is interpreted, about 60 times slower\n",
+				runtime.GOOS, runtime.GOARCH)
+		}
+	}
+	for _, a := range cfg.Applications {
+		fmt.Fprintf(tw, "  %s: %s\n", a.ID, judgeSummary(cfg, a))
+	}
 	fmt.Fprintf(tw, "%s\n", storageSummary(cfg))
 	rate := "per process"
 	if cfg.Rate.Shared {
@@ -181,6 +196,59 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 		cfg.Worker.Size, cfg.Worker.PollInterval, cfg.Worker.Lease, rate)
 	fmt.Fprintf(tw, "service_version: %s\n", extract.ServiceVersion(cfg, version.Version))
 	tw.Flush()
+}
+
+// pdfSummary says how a role's groups get a PDF: natively, or else under
+// documents.pdf.mode (ADR 0010).
+func pdfSummary(p config.PDF, caps []config.Capability) string {
+	text, images := false, false
+	for _, c := range caps {
+		switch {
+		case c.MediaType == "application/pdf" && c.Via == config.ViaNative:
+			return "sent as given (a pair reads application/pdf)"
+		case c.MediaType == "application/pdf":
+			images = c.Via == config.ViaPages
+		case c.MediaType == "text/plain":
+			text = c.Via == config.ViaText
+		}
+	}
+	rendered := fmt.Sprintf("pages rendered at %d dpi", p.DPI)
+	var out string
+	switch p.Mode {
+	case config.PDFModeNative:
+		out = "only caller pages; PDFs without them are refused"
+	case config.PDFModeText:
+		out = "text layer"
+	case config.PDFModePages:
+		out = rendered
+	default:
+		out = fmt.Sprintf("text layer when every page has %d characters, else %s", p.MinTextCharsPerPage, rendered)
+	}
+	out += " (documents.pdf.mode: " + p.Mode + ")"
+	if (p.Mode == config.PDFModeText && !text) || (p.Mode == config.PDFModePages && !images) ||
+		(p.Mode == config.PDFModeAuto && !text && !images) {
+		out += "; this group cannot read it"
+	}
+	return out
+}
+
+// judgeSummary describes an application's judge policy: the effective policy, whether a
+// request may override it, and the sample rate when auto can run.
+func judgeSummary(cfg *config.Config, a config.Application) string {
+	p := cfg.JudgePolicyOf(a)
+	out := "judge policy " + p.String()
+	if a.Judge.Policy == "" {
+		out += " (roles.judge.policy)"
+	}
+	if a.Judge.AllowOverride {
+		out += ", override allowed"
+	} else {
+		out += ", override not allowed"
+	}
+	if p == config.JudgeAuto || a.Judge.AllowOverride {
+		out += fmt.Sprintf(", sample rate %g", a.Judge.Rate())
+	}
+	return out
 }
 
 // judgeHasClassifier reports whether a group serving the judge role has a classifier

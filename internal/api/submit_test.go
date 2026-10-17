@@ -118,6 +118,8 @@ type submitRigOptions struct {
 	ext, judge fake.Script
 	// notify wires a worker.Notifier between the pool and POST /v1/extract.
 	notify bool
+	// appVersion is Deps.AppServiceVersion; nil leaves it unset.
+	appVersion func(job.Application, config.JudgePolicy) string
 }
 
 type submitRig struct {
@@ -172,6 +174,7 @@ func newSubmitRig(t *testing.T, o submitRigOptions) *submitRig {
 	deps := Deps{
 		Config: cfg, Store: store, ServiceVersion: testServiceVersion, Logger: logger, Now: rg.clock.Now,
 		Extractor: fakeHealth(true), Judge: fakeHealth(true), Blobs: blobs,
+		AppServiceVersion: o.appVersion,
 	}
 	if o.pool {
 		if o.ext == nil {
@@ -425,7 +428,7 @@ func TestSubmitQueuedJob(t *testing.T) {
 		}
 	}
 	for k := range body {
-		if _, ok := example[k]; !ok && k != "judge_confidence" {
+		if _, ok := example[k]; !ok && k != "judge_confidence" && k != "verification" {
 			t.Errorf("unexpected field %s (attachments are only for email)", k)
 		}
 	}
@@ -1069,7 +1072,7 @@ func TestJobToResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `{"id":"j_1","status":"rejected","result":{"name":"x"},"feedback":[{"pointer":"/name","message":"m","source":"judge"}],` +
-		`"attempts":3,"service_version":"v","judge_confidence":0.75,"error":null,` +
+		`"attempts":3,"service_version":"v","judge_confidence":0.75,"verification":"none","error":null,` +
 		`"created_at":"2026-10-16T07:12:03Z","finished_at":"2026-10-16T07:13:03Z","expires_at":"2026-10-17T07:12:03Z"}`
 	if string(raw) != want {
 		t.Errorf("got  %s\nwant %s", raw, want)
@@ -1122,4 +1125,116 @@ func TestForbiddenCarriesQuotaHeaders(t *testing.T) {
 		t.Errorf("403 = %d, quota headers %q %q; want 403 with both", w.Code,
 			w.Header().Get(headerQuotaRemaining), w.Header().Get(headerQuotaReset))
 	}
+}
+
+// judgeVersion is a rig's AppServiceVersion: one version per judge policy.
+func judgeVersion(_ job.Application, p config.JudgePolicy) string { return "vde-0.4.0+" + p.String() }
+
+// TestSubmitJudgePart: the judge part (ADR 0009) is accepted only when the application
+// allows override, is validated, chooses the stored policy and service_version, and
+// counts in the idempotency body hash.
+func TestSubmitJudgePart(t *testing.T) {
+	t.Parallel()
+	judgePart := func(v string) mpart { return mpart{name: partJudge, ctype: "text/plain", data: []byte(v)} }
+
+	t.Run("not allowed", func(t *testing.T) {
+		t.Parallel()
+		rg := newSubmitRig(t, submitRigOptions{appVersion: judgeVersion})
+		for _, v := range []string{"always", "never", "bogus"} {
+			w := rg.submit(t, append(validParts(), judgePart(v)), nil)
+			if w.Code != http.StatusBadRequest || decodeError(t, w).Code != codeBadRequest ||
+				!strings.Contains(w.Body.String(), "judge part") {
+				t.Errorf("judge %s without allow_override: %d %s, want 400 naming the part", v, w.Code, w.Body)
+			}
+		}
+		// Without the part the application's policy (here the role's) is stored.
+		w := rg.submit(t, validParts(), nil)
+		j, err := rg.db.GetJobAny(t.Context(), decodeJob(t, w)["id"].(string))
+		if err != nil || j.JudgePolicy != "always" || j.ServiceVersion != "vde-0.4.0+always" ||
+			w.Header().Get(headerServiceVersion) != j.ServiceVersion {
+			t.Errorf("stored policy %q, version %q, header %q, %v", j.JudgePolicy, j.ServiceVersion,
+				w.Header().Get(headerServiceVersion), err)
+		}
+		if n := rg.quotaUsed(t); n != 1 {
+			t.Errorf("quota used %d, want 1: a refused part charges nothing", n)
+		}
+	})
+
+	t.Run("application policy", func(t *testing.T) {
+		t.Parallel()
+		rg := newSubmitRig(t, submitRigOptions{appVersion: judgeVersion,
+			app: func(a *job.Application) { a.JudgePolicy = "auto" }})
+		j, _ := rg.db.GetJobAny(t.Context(), decodeJob(t, rg.submit(t, validParts(), nil))["id"].(string))
+		if j.JudgePolicy != "auto" || j.ServiceVersion != "vde-0.4.0+auto" {
+			t.Errorf("stored policy %q, version %q; want the application's auto", j.JudgePolicy, j.ServiceVersion)
+		}
+	})
+
+	t.Run("allowed", func(t *testing.T) {
+		t.Parallel()
+		rg := newSubmitRig(t, submitRigOptions{appVersion: judgeVersion,
+			app: func(a *job.Application) { a.JudgeAllowOverride = true }})
+		for _, tt := range []struct {
+			part, want string
+			ctype      string
+		}{
+			{"never", "never", "text/plain"},
+			{" auto\n", "auto", "text/plain; charset=utf-8"},
+			{"always", "always", ""},
+		} {
+			p := judgePart(tt.part)
+			p.ctype = tt.ctype
+			w := rg.submit(t, append(validParts(), p), nil)
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("judge %q: %d %s", tt.part, w.Code, w.Body)
+			}
+			body := decodeJob(t, w)
+			j, err := rg.db.GetJobAny(t.Context(), body["id"].(string))
+			want := "vde-0.4.0+" + tt.want
+			if err != nil || j.JudgePolicy != tt.want || j.ServiceVersion != want || body["service_version"] != want ||
+				w.Header().Get(headerServiceVersion) != want {
+				t.Errorf("judge %q: stored %q, version %q, body %v, header %q; want %s", tt.part, j.JudgePolicy,
+					j.ServiceVersion, body["service_version"], w.Header().Get(headerServiceVersion), want)
+			}
+			if body["verification"] != nil {
+				t.Errorf("queued job verification = %v, want null", body["verification"])
+			}
+		}
+		for name, p := range map[string]mpart{
+			"unknown value": judgePart("sometimes"),
+			"empty":         judgePart(""),
+			"too long":      judgePart(strings.Repeat("a", maxJudgeBytes+1)),
+			"media type":    {name: partJudge, ctype: "application/json", data: []byte(`"never"`)},
+		} {
+			w := rg.submit(t, append(validParts(), p), nil)
+			if w.Code != http.StatusBadRequest || decodeError(t, w).Code != codeBadRequest {
+				t.Errorf("%s: %d %s, want 400 bad_request", name, w.Code, w.Body)
+			}
+		}
+		if w := rg.submit(t, append(validParts(), judgePart("never"), judgePart("auto")), nil); w.Code != http.StatusBadRequest {
+			t.Errorf("repeated judge part: %d, want 400", w.Code)
+		}
+	})
+
+	t.Run("idempotency", func(t *testing.T) {
+		t.Parallel()
+		rg := newSubmitRig(t, submitRigOptions{app: func(a *job.Application) { a.JudgeAllowOverride = true }})
+		key := idempotencyKey("judge-1")
+		first := rg.submit(t, append(validParts(), judgePart("never")), key)
+		if first.Code != http.StatusAccepted {
+			t.Fatalf("first: %d %s", first.Code, first.Body)
+		}
+		if w := rg.submit(t, append(validParts(), judgePart("never")), key); w.Header().Get(headerIdempotencyReplayed) != "true" {
+			t.Errorf("same judge: %d, want a replay", w.Code)
+		}
+		for name, parts := range map[string][]mpart{
+			"other judge": append(validParts(), judgePart("auto")),
+			"no judge":    validParts(),
+		} {
+			w := rg.submit(t, parts, key)
+			if w.Code != http.StatusUnprocessableEntity || decodeError(t, w).Code != codeIdempotencyMismatch {
+				t.Errorf("%s: %d %s, want 422 idempotency_mismatch", name, w.Code, w.Body)
+			}
+		}
+	})
 }

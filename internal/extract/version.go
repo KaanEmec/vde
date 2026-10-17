@@ -27,22 +27,36 @@ var semverRe = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // policies; the framing texts and separators; the answer parser's leniency and the schema
 // library's version. Configured extras are hashed too and leave the hash unchanged when
 // unset: per-attempt escalation steps, the second judge's group, a classifier judge's
-// feedback fallback (llm, with its group) and a classifier model's questions. It excludes secrets, listen addresses, data paths and application settings.
+// feedback fallback (llm, with its group) and a classifier model's questions. The judge
+// policy (ADR 0009) is hashed only when it is not always, and the sample rate only under
+// auto, so a configuration that keeps the default keeps its hash. It excludes secrets,
+// listen addresses, data paths and application settings.
 //
 // For an application (v0.2) use ApplicationServiceVersion, so each application's jobs
 // carry the hash of the configuration that runs them.
 func ServiceVersion(cfg *config.Config, buildVersion string) string {
+	return serviceVersion(cfg, config.DefaultSampleRate, buildVersion)
+}
+
+func serviceVersion(cfg *config.Config, sampleRate float64, buildVersion string) string {
 	semver := devVersion
 	if m := semverRe.FindStringSubmatch(buildVersion); m != nil {
 		semver = m[1]
 	}
-	sum := sha256.Sum256(canonicalConfig(cfg))
+	sum := sha256.Sum256(canonicalConfig(cfg, sampleRate))
 	return "vde-" + semver + "+" + hex.EncodeToString(sum[:4])
 }
 
-// ApplicationServiceVersion is ServiceVersion with the application's attempt limit and
-// HTML policy in place of the global ones (zero values keep the global ones).
+// ApplicationServiceVersion is ServiceVersion with the application's attempt limit, HTML
+// policy and effective judge policy (with its sample rate) in place of the global ones
+// (zero values keep the global ones).
 func ApplicationServiceVersion(cfg *config.Config, app config.Application, buildVersion string) string {
+	return ApplicationServiceVersionFor(cfg, app, cfg.JudgePolicyOf(app), buildVersion)
+}
+
+// ApplicationServiceVersionFor is ApplicationServiceVersion for a job run under policy,
+// which a request may choose when the application allows override.
+func ApplicationServiceVersionFor(cfg *config.Config, app config.Application, policy config.JudgePolicy, buildVersion string) string {
 	c := *cfg
 	if app.MaxAttempts > 0 {
 		c.Limits.MaxAttempts = app.MaxAttempts
@@ -50,7 +64,23 @@ func ApplicationServiceVersion(cfg *config.Config, app config.Application, build
 	if app.Documents.HTML != "" {
 		c.Documents.HTML = app.Documents.HTML
 	}
-	return ServiceVersion(&c, buildVersion)
+	c.Roles.Judge.Policy = policy
+	return serviceVersion(&c, app.Judge.Rate(), buildVersion)
+}
+
+// ApplicationServiceVersions returns the service_version of every judge policy the
+// application's jobs can run under: its effective policy alone, or all three when it
+// allows override.
+func ApplicationServiceVersions(cfg *config.Config, app config.Application, buildVersion string) map[config.JudgePolicy]string {
+	policies := []config.JudgePolicy{cfg.JudgePolicyOf(app)}
+	if app.Judge.AllowOverride {
+		policies = config.JudgePolicies
+	}
+	out := make(map[config.JudgePolicy]string, len(policies))
+	for _, p := range policies {
+		out[p] = ApplicationServiceVersionFor(cfg, app, p, buildVersion)
+	}
+	return out
 }
 
 type versionedConfig struct {
@@ -72,6 +102,8 @@ type versionedConfig struct {
 	SecondJudge         *versionedGroup `json:"second_judge,omitempty"`
 	FeedbackFallback    string          `json:"feedback_fallback,omitempty"` // only llm; whole_result is the default
 	FeedbackJudge       *versionedGroup `json:"feedback_judge,omitempty"`
+	JudgePolicy         string          `json:"judge_policy,omitempty"` // never or auto; always is the default
+	SampleRate          *float64        `json:"sample_rate,omitempty"`  // auto only
 }
 
 type versionedStep struct {
@@ -103,7 +135,7 @@ type versionedPair struct {
 
 // canonicalConfig is the JSON hashed by ServiceVersion. Struct fields marshal in a fixed
 // order and accepted media types are sorted, so equal configurations give equal bytes.
-func canonicalConfig(cfg *config.Config) []byte {
+func canonicalConfig(cfg *config.Config, sampleRate float64) []byte {
 	maxChars := cfg.Limits.FeedbackMessageChars
 	if maxChars <= 0 {
 		maxChars = DefaultFeedbackMessageChars
@@ -137,9 +169,15 @@ func canonicalConfig(cfg *config.Config) []byte {
 		g := versionGroup(cfg, cfg.Roles.Judge.FeedbackGroup)
 		v.FeedbackFallback, v.FeedbackJudge = config.FeedbackLLM, &g
 	}
+	if p := cfg.RolePolicy(); p != config.JudgeAlways {
+		v.JudgePolicy = string(p)
+		if p == config.JudgeAuto {
+			v.SampleRate = &sampleRate
+		}
+	}
 	data, err := json.Marshal(v)
 	if err != nil {
-		panic("extract: service version: " + err.Error()) // strings, ints and bools always marshal
+		panic("extract: service version: " + err.Error()) // strings, ints, bools and finite floats always marshal
 	}
 	return data
 }

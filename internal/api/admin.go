@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -112,6 +113,15 @@ type appSettings struct {
 	Documents struct {
 		HTML string `json:"html"`
 	} `json:"documents"`
+	Judge appJudge `json:"judge"`
+}
+
+// appJudge is applications[].judge: policy "" means roles.judge.policy, sample_rate
+// null means the default.
+type appJudge struct {
+	Policy        string   `json:"policy"`
+	AllowOverride bool     `json:"allow_override"`
+	SampleRate    *float64 `json:"sample_rate"`
 }
 
 // appBody is the body of POST and PATCH /admin/v1/applications[/{id}]. PATCH decodes
@@ -139,6 +149,7 @@ func settingsOf(a job.Application) appSettings {
 		a.RequestsPerMinute, a.SubmitsPerMinute, a.MaxInProgress
 	st.Retention.Default, st.Retention.ForceNone = a.RetentionDefault, a.ForceNone
 	st.Documents.HTML = a.HTMLPolicy
+	st.Judge = appJudge{Policy: a.JudgePolicy, AllowOverride: a.JudgeAllowOverride, SampleRate: a.JudgeSampleRate}
 	return st
 }
 
@@ -165,6 +176,9 @@ func (s *server) checkApp(id string, st appSettings) (job.Application, apiError,
 		st.Rate.RequestsPerMinute, st.Rate.SubmitsPerMinute, st.Rate.MaxInProgress
 	c.Retention.Default, c.Retention.ForceNone = st.Retention.Default, st.Retention.ForceNone
 	c.Documents.HTML = st.Documents.HTML
+	c.Judge = config.AppJudge{
+		Policy: config.JudgePolicy(st.Judge.Policy), AllowOverride: st.Judge.AllowOverride, SampleRate: st.Judge.SampleRate,
+	}
 	for _, issue := range s.deps.Config.CheckApplication(&c) {
 		if !issue.Warning {
 			return job.Application{}, newError(codeBadRequest, msgAdminInvalidField, issue.Key), false
@@ -175,7 +189,8 @@ func (s *server) checkApp(id string, st appSettings) (job.Application, apiError,
 		QuotaWindow: c.Quota.Window, RequestsPerMinute: c.Rate.RequestsPerMinute,
 		SubmitsPerMinute: c.Rate.SubmitsPerMinute, MaxInProgress: c.Rate.MaxInProgress,
 		RetentionDefault: c.Retention.Default, ForceNone: c.Retention.ForceNone,
-		HTMLPolicy: c.Documents.HTML,
+		HTMLPolicy: c.Documents.HTML, JudgePolicy: string(c.Judge.Policy),
+		JudgeAllowOverride: c.Judge.AllowOverride, JudgeSampleRate: c.Judge.SampleRate,
 	}, newError(codeInternal, msgInternal), true
 }
 
@@ -446,6 +461,8 @@ type adminJobResponse struct {
 	Attempts         int        `json:"attempts"`
 	MaxAttempts      int        `json:"max_attempts"` // the request's limit; 0 means the application's
 	ServiceVersion   string     `json:"service_version"`
+	JudgePolicy      string     `json:"judge_policy"`
+	Verification     *string    `json:"verification"` // null until terminal
 	Representation   string     `json:"representation"`
 	MediaType        string     `json:"media_type"`
 	Bytes            int64      `json:"bytes"`
@@ -469,10 +486,17 @@ func adminJob(j job.Job) adminJobResponse {
 	if j.Error != nil {
 		_ = json.Unmarshal(j.Error, &e) // the message is never copied
 	}
+	var verification *string
+	if j.Status.Terminal() {
+		v := cmp.Or(j.Verification, job.DefaultVerification(j.Status))
+		verification = &v
+	}
 	return adminJobResponse{
 		ID: j.ID, ApplicationID: j.ApplicationID, Status: j.Status, Attempts: j.Attempts,
-		MaxAttempts: j.MaxAttempts, ServiceVersion: j.ServiceVersion, Representation: j.Representation,
-		MediaType: j.MediaType, Bytes: j.Size, Pages: j.PageCount, Retention: string(j.Retention),
+		MaxAttempts: j.MaxAttempts, ServiceVersion: j.ServiceVersion,
+		JudgePolicy: cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy), Verification: verification,
+		Representation: j.Representation,
+		MediaType:      j.MediaType, Bytes: j.Size, Pages: j.PageCount, Retention: string(j.Retention),
 		ErrorCode: e.Code, CreatedAt: formatTime(j.CreatedAt), StartedAt: optionalTime(j.StartedAt),
 		FinishedAt: optionalTime(j.FinishedAt), ExpiresAt: formatTime(j.ExpiresAt),
 		InputsDeletedAt: optionalTime(j.InputsDeletedAt), ContentDeletedAt: optionalTime(j.ContentDeletedAt),
@@ -484,8 +508,7 @@ func adminJob(j job.Job) adminJobResponse {
 func (s *server) adminListJobs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := job.JobFilter{ApplicationID: q.Get("app"), Status: job.Status(q.Get("status"))}
-	statuses := []job.Status{job.StatusQueued, job.StatusRunning, job.StatusAccepted, job.StatusRejected, job.StatusFailed}
-	if f.Status != "" && !slices.Contains(statuses, f.Status) {
+	if f.Status != "" && !slices.Contains(job.Statuses, f.Status) {
 		writeError(w, r, newError(codeBadRequest, msgAdminInvalidParam, "status"))
 		return
 	}

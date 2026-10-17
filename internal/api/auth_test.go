@@ -236,7 +236,7 @@ func TestAuthenticateContext(t *testing.T) {
 	s := newServer(Deps{
 		Config: &config.Config{}, Store: store, Logger: slog.New(slog.DiscardHandler),
 		ServiceVersion: testServiceVersion,
-		AppServiceVersion: func(a job.Application) string {
+		AppServiceVersion: func(a job.Application, _ config.JudgePolicy) string {
 			if a.ID == testApp {
 				return "vde-0.0.0-dev+app00001"
 			}

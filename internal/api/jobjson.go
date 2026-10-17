@@ -9,7 +9,8 @@ import (
 )
 
 // jobResponse is the job resource of contract §5, with the superset fields
-// judge_confidence, attachments and content_deleted_at (api/openapi.yaml, Job). result
+// judge_confidence, verification, attachments and content_deleted_at (api/openapi.yaml,
+// Job). verification is null until the terminal state, then always present. result
 // and error are null unless set; feedback is an array, never null; finished_at is null
 // until the terminal state; content_deleted_at is present only on a job whose content is
 // gone, which only an idempotent replay shows. Timestamps are RFC 3339 UTC with second
@@ -22,6 +23,7 @@ type jobResponse struct {
 	Attempts         int              `json:"attempts"`
 	ServiceVersion   string           `json:"service_version"`
 	JudgeConfidence  *float64         `json:"judge_confidence"`
+	Verification     *string          `json:"verification"`
 	Error            json.RawMessage  `json:"error"`
 	Attachments      []job.Attachment `json:"attachments,omitempty"`
 	CreatedAt        string           `json:"created_at"`
@@ -51,6 +53,13 @@ func jobToResponse(j *job.Job) jobResponse {
 	}
 	if len(resp.Feedback) == 0 || string(resp.Feedback) == "null" {
 		resp.Feedback = emptyFeedback
+	}
+	if j.Status.Terminal() {
+		v := j.Verification
+		if v == "" {
+			v = job.DefaultVerification(j.Status)
+		}
+		resp.Verification = &v
 	}
 	if !j.FinishedAt.IsZero() {
 		f := formatTime(j.FinishedAt)

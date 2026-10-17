@@ -24,8 +24,9 @@ type Capability struct {
 }
 
 // Capabilities reports for every known document media type how group reads it. It
-// returns nil for an undefined group. The service never renders pages (ADR 0006), so a
-// PDF without a native reader depends on page images supplied by the caller.
+// returns nil for an undefined group. A PDF without a native reader reports ViaPages when
+// a pair reads PNG or JPEG: caller pages, or pages the service renders under
+// documents.pdf.mode (ADR 0010); a text-only group may still read its text layer.
 func (c *Config) Capabilities(group string) []Capability {
 	g, ok := c.Groups[group]
 	if !ok || g == nil {

@@ -359,6 +359,7 @@ func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in
 		ExtractorInstructions: j.ExtractorInstructions,
 		JudgeInstructions:     j.JudgeInstructions,
 		Schema:                schema,
+		JudgePolicy:           config.JudgePolicy(j.JudgePolicy),
 	}, "", nil
 }
 
@@ -482,6 +483,7 @@ func merge(j job.Job, o extract.Outcome) job.Outcome {
 		Result:          o.Result,
 		Feedback:        feedbackJSON(o.Feedback),
 		JudgeConfidence: o.JudgeConfidence,
+		Verification:    o.Verification,
 		InputTokens:     j.InputTokens + int64(o.Usage.InputTokens),
 		OutputTokens:    j.OutputTokens + int64(o.Usage.OutputTokens),
 	}

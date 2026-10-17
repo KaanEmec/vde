@@ -134,13 +134,21 @@ func TestValidate(t *testing.T) {
 
 		// The extractor group reads every MUST media type, directly or via page images.
 		{
-			name: "no native PDF reader",
+			name: "no native PDF reader under native",
+			edit: func(c *Config) {
+				c.Endpoints["anthropic"].Models["claude"] = Model{Accepts: []string{"image/png", "image/jpeg", "text/plain"}}
+				c.Documents.PDF.Mode = PDFModeNative
+			},
+			wantKey:     "roles.extractor.group",
+			wantMessage: "reads application/pdf natively; PDFs work only when callers send page images",
+			wantWarning: true,
+		},
+		{
+			// Under auto the service renders pages for a vision group: nothing to warn.
+			name: "no native PDF reader under auto",
 			edit: func(c *Config) {
 				c.Endpoints["anthropic"].Models["claude"] = Model{Accepts: []string{"image/png", "image/jpeg", "text/plain"}}
 			},
-			wantKey:     "roles.extractor.group",
-			wantMessage: "reads application/pdf natively",
-			wantWarning: true,
 		},
 		{
 			name: "MUST types not readable",
@@ -150,7 +158,28 @@ func TestValidate(t *testing.T) {
 				c.Endpoints["local"].Models["vision"] = Model{Accepts: []string{"text/plain"}}
 			},
 			wantKey:     "roles.extractor.group",
-			wantMessage: "cannot read application/pdf, image/jpeg, image/png",
+			wantMessage: "cannot read image/jpeg, image/png",
+			wantWarning: true,
+		},
+		{
+			name: "text-only group reads PDFs through the text layer under auto",
+			edit: func(c *Config) {
+				c.Endpoints["anthropic"].Models["claude"] = Model{Accepts: []string{"text/plain"}}
+				c.Groups["extraction"].Endpoints = c.Groups["extraction"].Endpoints[:1]
+			},
+			wantKey:     "roles.extractor.group",
+			wantMessage: "reads PDFs only through their text layer",
+			wantWarning: true,
+		},
+		{
+			name: "text-only group cannot read PDFs under pages",
+			edit: func(c *Config) {
+				c.Endpoints["anthropic"].Models["claude"] = Model{Accepts: []string{"text/plain"}}
+				c.Groups["extraction"].Endpoints = c.Groups["extraction"].Endpoints[:1]
+				c.Documents.PDF.Mode = PDFModePages
+			},
+			wantKey:     "roles.extractor.group",
+			wantMessage: "cannot read application/pdf",
 			wantWarning: true,
 		},
 		{
@@ -352,6 +381,40 @@ func TestValidate(t *testing.T) {
 			edit: func(c *Config) { c.Documents.HTML = "visible_text" },
 		},
 		{
+			name:        "unknown pdf mode",
+			edit:        func(c *Config) { c.Documents.PDF.Mode = "ocr" },
+			wantKey:     "documents.pdf.mode",
+			wantMessage: `"ocr" is not one of auto, native, text, pages`,
+		},
+		{
+			name:        "pdf dpi too low",
+			edit:        func(c *Config) { c.Documents.PDF.DPI = 50 },
+			wantKey:     "documents.pdf.dpi",
+			wantMessage: "must be between 72 and 300",
+		},
+		{
+			name:        "pdf max pages too high",
+			edit:        func(c *Config) { c.Documents.PDF.MaxPages = 500 },
+			wantKey:     "documents.pdf.max_pages",
+			wantMessage: "must be between 1 and 200",
+		},
+		{
+			name:        "pdf negative min text",
+			edit:        func(c *Config) { c.Documents.PDF.MinTextCharsPerPage = -1 },
+			wantKey:     "documents.pdf.min_text_chars_per_page",
+			wantMessage: "must not be negative",
+		},
+		{
+			name:        "pdf workers zero",
+			edit:        func(c *Config) { c.Documents.PDF.Workers = 0 },
+			wantKey:     "documents.pdf.workers",
+			wantMessage: "must be between 1 and 16",
+		},
+		{
+			name: "pdf min text zero",
+			edit: func(c *Config) { c.Documents.PDF.MinTextCharsPerPage = 0 },
+		},
+		{
 			name:        "image max dimension too small",
 			edit:        func(c *Config) { c.Documents.Images.MaxDimension = 10 },
 			wantKey:     "documents.images.max_dimension",
@@ -430,6 +493,16 @@ func TestValidate(t *testing.T) {
 			edit:        func(c *Config) { c.Applications[0].Documents.HTML = "pdf" },
 			wantKey:     "applications[0].documents.html",
 			wantMessage: `"pdf" is not one of`,
+		},
+		{
+			name:        "bad application pdf mode",
+			edit:        func(c *Config) { c.Applications[0].Documents.PDF.Mode = "always" },
+			wantKey:     "applications[0].documents.pdf.mode",
+			wantMessage: `"always" is not one of auto, native, text, pages`,
+		},
+		{
+			name: "application pdf mode",
+			edit: func(c *Config) { c.Applications[0].Documents.PDF.Mode = PDFModeNative },
 		},
 		{
 			name:        "quota window in months",
@@ -548,7 +621,7 @@ func TestValidate(t *testing.T) {
 			name:        "classifier judge",
 			edit:        func(c *Config) { addClassifier(c); c.Roles.Judge.Group = "classify" },
 			wantKey:     "roles.judge.group",
-			wantMessage: `group "classify" cannot read application/pdf, image/jpeg, image/png`,
+			wantMessage: `group "classify" cannot read image/jpeg, image/png`,
 			wantWarning: true,
 		},
 		{
@@ -683,6 +756,68 @@ func TestValidate(t *testing.T) {
 			name: "no applications",
 			edit: func(c *Config) { c.Applications = nil },
 		},
+
+		// Judge policy (v0.4, ADR 0009).
+		{
+			name: "judge policy never and auto",
+			edit: func(c *Config) {
+				c.Roles.Judge.Policy = JudgeNever
+				rate := 0.5
+				c.Applications[0].Judge = AppJudge{Policy: JudgeAuto, AllowOverride: true, SampleRate: &rate}
+			},
+		},
+		{
+			name:        "unknown role judge policy",
+			edit:        func(c *Config) { c.Roles.Judge.Policy = "sometimes" },
+			wantKey:     "roles.judge.policy",
+			wantMessage: `"sometimes" is not one of always, never, auto`,
+		},
+		{
+			name:        "policy on the extractor",
+			edit:        func(c *Config) { c.Roles.Extractor.Policy = JudgeAlways },
+			wantKey:     "roles.extractor.policy",
+			wantMessage: "applies only to roles.judge",
+		},
+		{
+			name:        "unknown application judge policy",
+			edit:        func(c *Config) { c.Applications[0].Judge.Policy = "Auto" },
+			wantKey:     "applications[0].judge.policy",
+			wantMessage: `"Auto" is not one of always, never, auto`,
+		},
+		{
+			name:        "sample rate above 1",
+			edit:        func(c *Config) { r := 1.5; c.Applications[0].Judge.SampleRate = &r },
+			wantKey:     "applications[0].judge.sample_rate",
+			wantMessage: "1.5 must be from 0 to 1",
+		},
+		{
+			name:        "negative sample rate",
+			edit:        func(c *Config) { r := -0.1; c.Applications[0].Judge.SampleRate = &r },
+			wantKey:     "applications[0].judge.sample_rate",
+			wantMessage: "must be from 0 to 1",
+		},
+		{
+			name: "sample rate bounds",
+			edit: func(c *Config) {
+				zero, one := 0.0, 1.0
+				c.Applications[0].Judge.SampleRate = &zero
+				c.Applications = append(c.Applications, Application{
+					ID: "other", MaxAttempts: 3, Quota: Quota{Limit: 1, Window: "P1D"},
+					Rate:      Rate{RequestsPerMinute: 1, SubmitsPerMinute: 1, MaxInProgress: 1},
+					Retention: Retention{Default: "24h"}, Judge: AppJudge{SampleRate: &one},
+				})
+			},
+		},
+		{
+			name: "never with a second judge",
+			edit: func(c *Config) {
+				c.Roles.Judge.Policy = JudgeNever
+				c.Roles.SecondJudge.Group = "review"
+			},
+			wantKey:     "roles.second_judge",
+			wantMessage: "is never asked",
+			wantWarning: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -706,6 +841,21 @@ func TestValidate(t *testing.T) {
 			}
 			t.Errorf("Validate() = %v, want an issue at %s containing %q", issues, tt.wantKey, tt.wantMessage)
 		})
+	}
+}
+
+// TestValidate_autoWithClassifierJudge: auto is allowed when the judge group is a
+// classifier (a sampled or ungroundable job then goes to the classifier).
+func TestValidate_autoWithClassifierJudge(t *testing.T) {
+	t.Parallel()
+	cfg := validConfig(t)
+	addClassifier(cfg)
+	cfg.Roles.Judge.Group = "classify"
+	cfg.Roles.Judge.Policy = JudgeAuto
+	for _, i := range cfg.Validate() {
+		if strings.Contains(i.Key, "policy") || !i.Warning {
+			t.Errorf("issue %v, want only the classifier's media type warning", i)
+		}
 	}
 }
 

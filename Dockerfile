@@ -20,6 +20,8 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
+# The binary embeds pdfium as WebAssembly (go-pdfium on wazero, ADR 0010), still cgo-free;
+# it adds about 9 MB. Its licenses are listed in NOTICE.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \

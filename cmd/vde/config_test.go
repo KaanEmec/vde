@@ -41,6 +41,13 @@ roles:
   judge: {group: main}
 `
 
+// noPDFNativeConfig is noPDFConfig under documents.pdf.mode native (ADR 0006): PDFs need
+// caller pages.
+const noPDFNativeConfig = noPDFConfig + `
+documents:
+  pdf: {mode: native}
+`
+
 // tieredConfig escalates the extractor, adds a second judge and an LLM feedback group.
 const tieredConfig = `
 endpoints:
@@ -60,6 +67,25 @@ roles:
   judge: {group: main, feedback_fallback: llm, feedback_group: strong}
   second_judge: {group: strong}
 rate: {shared: true}
+`
+
+// judgeConfig sets the judge policy on the role and per application (ADR 0009).
+const judgeConfig = `
+endpoints:
+  anthropic:
+    provider: anthropic
+    api_key_env: VDE_TEST_ANTHROPIC_KEY
+    models:
+      claude: {accepts: [application/pdf, image/png, image/jpeg, text/plain]}
+groups:
+  main:
+    endpoints: [{endpoint: anthropic, model: claude}]
+roles:
+  extractor: {group: main}
+  judge: {group: main, policy: never}
+applications:
+  - {id: inbox}
+  - {id: lab, judge: {policy: auto, allow_override: true, sample_rate: 0.2}}
 `
 
 const brokenConfig = `
@@ -96,6 +122,7 @@ func TestRunConfigCheck(t *testing.T) {
 	t.Setenv("VDE_TEST_ANTHROPIC_KEY", testSecret)
 	good := writeConfig(t, goodConfig)
 	noPDF := writeConfig(t, noPDFConfig)
+	noPDFNative := writeConfig(t, noPDFNativeConfig)
 	broken := writeConfig(t, brokenConfig)
 
 	tests := []struct {
@@ -130,15 +157,47 @@ func TestRunConfigCheck(t *testing.T) {
 			},
 		},
 		{
-			name:       "warnings do not fail",
-			args:       []string{"config", "check", "-config", noPDF},
+			name:     "judge policy of the role and of every application",
+			args:     []string{"config", "check", "--config", writeConfig(t, judgeConfig)},
+			wantCode: exitOK,
+			wantStdout: []string{
+				"    policy: never\n",
+				"  inbox: judge policy never (roles.judge.policy), override not allowed\n",
+				"  lab: judge policy auto, override allowed, sample rate 0.2\n",
+			},
+		},
+		{
+			name:       "default judge policy",
+			args:       []string{"config", "check", "--config", good},
 			wantCode:   exitOK,
-			wantStdout: []string{"application/pdf  pages   local/vision"},
-			wantStderr: []string{"warning: roles.extractor.group", "natively"},
+			wantStdout: []string{"    policy: always\n"},
+		},
+		{
+			name:     "PDFs rendered or read as text without a native reader",
+			args:     []string{"config", "check", "--config", noPDF},
+			wantCode: exitOK,
+			wantStdout: []string{
+				"application/pdf  pages   local/vision",
+				"pdf: text layer when every page has 200 characters, else pages rendered at 150 dpi (documents.pdf.mode: auto)",
+				"documents.pdf: mode auto, dpi 150, max_pages 20, min_text_chars_per_page 200, workers 1 (about 500 MB",
+			},
+		},
+		{
+			name:       "PDF readers sent as given",
+			args:       []string{"config", "check", "--config", good},
+			wantCode:   exitOK,
+			wantStdout: []string{"pdf: sent as given (a pair reads application/pdf)"},
+		},
+		{
+			name:       "warnings do not fail",
+			args:       []string{"config", "check", "-config", noPDFNative},
+			wantCode:   exitOK,
+			wantStdout: []string{"application/pdf  pages   local/vision", "pdf: only caller pages"},
+			wantStderr: []string{"warning: roles.extractor.group", "natively", "documents.pdf.mode: native"},
 		},
 		{
 			name:       "strict turns warnings into errors",
-			args:       []string{"config", "check", "--strict", "--config", noPDF},
+			args:       []string{"config", "check", "--strict", "--config", noPDFNative},
 			wantCode:   exitFailure,
 			wantStderr: []string{"warning: roles.extractor.group", "2 blocking problem(s)"},
 		},

@@ -293,6 +293,7 @@ func (v *validator) roles(c *Config) {
 	v.role(c, "roles.extractor", c.Roles.Extractor, false)
 	v.role(c, "roles.judge", c.Roles.Judge.Role, true)
 	v.judgeFeedback(c)
+	v.judgeRole(c)
 	if g := c.Roles.SecondJudge.Group; g != "" {
 		v.roleGroup(c, "roles.second_judge.group", g, true)
 	}
@@ -337,18 +338,55 @@ func (v *validator) roleGroup(c *Config, key, group string, judge bool) {
 		v.errorf(key, "group %q has a classifier endpoint, which can serve only the judge", group)
 	}
 	var missing []string
-	for _, capability := range c.Capabilities(group) {
+	caps := c.Capabilities(group)
+	for _, capability := range caps {
+		if capability.MediaType == "application/pdf" && capability.Via != ViaNative {
+			if !v.pdfReadable(key, group, c.Documents.PDF.Mode, capability.Via, readsText(caps)) {
+				missing = append(missing, capability.MediaType)
+			}
+			continue
+		}
 		if capability.Required && capability.Via == "" {
 			missing = append(missing, capability.MediaType)
-		}
-		if capability.MediaType == "application/pdf" && capability.Via == ViaPages {
-			v.warnf(key, "no endpoint-model pair in group %q reads application/pdf natively; "+
-				"PDFs work only when callers send page images, since the service never renders pages", group)
 		}
 	}
 	if len(missing) > 0 {
 		v.warnf(key, "group %q cannot read %s, directly or via page images", group, strings.Join(missing, ", "))
 	}
+}
+
+// pdfReadable reports whether a group without a native PDF reader still reads PDFs under
+// documents.pdf.mode (ADR 0010), warning where it depends on callers or on a text layer.
+// via is the PDF capability's Via: ViaPages when a pair reads PNG or JPEG, else "".
+func (v *validator) pdfReadable(key, group, mode, via string, text bool) bool {
+	images := via == ViaPages
+	switch mode {
+	case PDFModeNative:
+		if images {
+			v.warnf(key, "no endpoint-model pair in group %q reads application/pdf natively; PDFs work only "+
+				"when callers send page images (documents.pdf.mode: native)", group)
+		}
+		return images
+	case PDFModeText:
+		return text
+	case PDFModePages:
+		return images
+	}
+	if !images && text {
+		v.warnf(key, "group %q reads PDFs only through their text layer (documents.pdf.mode: auto); "+
+			"PDFs without enough text are refused", group)
+	}
+	return images || text
+}
+
+// readsText reports whether a pair of the group reads text/plain.
+func readsText(caps []Capability) bool {
+	for _, capability := range caps {
+		if capability.MediaType == "text/plain" {
+			return capability.Via == ViaText
+		}
+	}
+	return false
 }
 
 // judgeFeedback checks roles.judge.feedback_fallback and feedback_group.
@@ -448,11 +486,40 @@ func (v *validator) images(i Images) {
 	}
 }
 
+// PDF modes (documents.pdf.mode, ADR 0010).
+const (
+	PDFModeAuto   = "auto"   // text when every page has enough text, else rendered pages
+	PDFModeNative = "native" // ADR 0006: without a native reader, only caller pages
+	PDFModeText   = "text"   // always the text layer
+	PDFModePages  = "pages"  // always rendered pages
+)
+
+var pdfModes = []string{PDFModeAuto, PDFModeNative, PDFModeText, PDFModePages}
+
+func (v *validator) pdf(p PDF) {
+	if !slices.Contains(pdfModes, p.Mode) {
+		v.errorf("documents.pdf.mode", "%q is not one of %s", p.Mode, strings.Join(pdfModes, ", "))
+	}
+	if p.DPI < 72 || p.DPI > 300 {
+		v.errorf("documents.pdf.dpi", "%d must be between 72 and 300", p.DPI)
+	}
+	if p.MaxPages < 1 || p.MaxPages > 200 {
+		v.errorf("documents.pdf.max_pages", "%d must be between 1 and 200", p.MaxPages)
+	}
+	if p.MinTextCharsPerPage < 0 {
+		v.errorf("documents.pdf.min_text_chars_per_page", "%d must not be negative", p.MinTextCharsPerPage)
+	}
+	if p.Workers < 1 || p.Workers > 16 {
+		v.errorf("documents.pdf.workers", "%d must be between 1 and 16", p.Workers)
+	}
+}
+
 func (v *validator) other(c *Config) {
 	if !slices.Contains(htmlPolicies, c.Documents.HTML) {
 		v.errorf("documents.html", "%q is not one of %s", c.Documents.HTML, strings.Join(htmlPolicies, ", "))
 	}
 	v.images(c.Documents.Images)
+	v.pdf(c.Documents.PDF)
 	if !slices.Contains([]string{"debug", "info", "warn", "error"}, c.Logging.Level) {
 		v.errorf("logging.level", "%q is not one of debug, info, warn, error", c.Logging.Level)
 	}
@@ -516,5 +583,9 @@ func (v *validator) applications(c *Config) {
 		if a.Documents.HTML != "" && !slices.Contains(htmlPolicies, a.Documents.HTML) {
 			v.errorf(key+".documents.html", "%q is not one of %s", a.Documents.HTML, strings.Join(htmlPolicies, ", "))
 		}
+		if m := a.Documents.PDF.Mode; m != "" && !slices.Contains(pdfModes, m) {
+			v.errorf(key+".documents.pdf.mode", "%q is not one of %s", m, strings.Join(pdfModes, ", "))
+		}
+		v.appJudge(key, a.Judge)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
@@ -159,5 +160,43 @@ func TestJSONSubmissionRefusals(t *testing.T) {
 	}
 	if rg.quotaUsed(t) != 0 || rg.blobJobs(t) != 0 {
 		t.Errorf("quota used %d, blob jobs %d; want nothing stored", rg.quotaUsed(t), rg.blobJobs(t))
+	}
+}
+
+// TestJSONSubmissionJudge: the JSON field judge follows the multipart part's rules.
+func TestJSONSubmissionJudge(t *testing.T) {
+	t.Parallel()
+	refused := newSubmitRig(t, submitRigOptions{appVersion: judgeVersion})
+	body := jsonFrom(validParts())
+	body["judge"] = "never"
+	if w := refused.submitJSON(t, "/v1/jobs", body, nil); w.Code != http.StatusBadRequest || decodeError(t, w).Code != codeBadRequest {
+		t.Errorf("judge without allow_override: %d %s, want 400", w.Code, w.Body)
+	}
+
+	rg := newSubmitRig(t, submitRigOptions{appVersion: judgeVersion,
+		app: func(a *job.Application) { a.JudgeAllowOverride = true },
+		cfg: func(c *config.Config) { c.Sync.MaxWait = 20 * time.Millisecond }}) // no pool: /v1/extract answers 202
+	w := rg.submitJSON(t, "/v1/jobs", body, nil)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("judge never: %d %s", w.Code, w.Body)
+	}
+	j, err := rg.db.GetJobAny(t.Context(), decodeJob(t, w)["id"].(string))
+	if err != nil || j.JudgePolicy != "never" || j.ServiceVersion != "vde-0.4.0+never" {
+		t.Errorf("stored policy %q, version %q, %v", j.JudgePolicy, j.ServiceVersion, err)
+	}
+	for _, bad := range []any{"maybe", 3, strings.Repeat("x", 40)} {
+		body["judge"] = bad
+		if w := rg.submitJSON(t, "/v1/jobs", body, nil); w.Code != http.StatusBadRequest {
+			t.Errorf("judge %v: %d, want 400", bad, w.Code)
+		}
+	}
+	// POST /v1/extract takes it too.
+	body["judge"] = "auto"
+	w = rg.submitJSON(t, "/v1/extract", body, nil)
+	if w.Code != http.StatusAccepted && w.Code != http.StatusOK {
+		t.Fatalf("POST /v1/extract with judge: %d %s", w.Code, w.Body)
+	}
+	if j, _ := rg.db.GetJobAny(t.Context(), decodeJob(t, w)["id"].(string)); j.JudgePolicy != "auto" {
+		t.Errorf("POST /v1/extract stored policy %q, want auto", j.JudgePolicy)
 	}
 }

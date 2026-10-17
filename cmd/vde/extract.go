@@ -26,7 +26,7 @@ import (
 const extractUsage = `Usage: vde extract --document file --extractor-instructions file --judge-instructions file
                    [--config path] [--type media/type] [--page image]... [--schema file]
                    [--max-attempts n] [--html raw_html|visible_text] [--timeout d]
-                   [--provider-script file] [--verbose]
+                   [--judge always|never|auto] [--provider-script file] [--verbose]
 
 Runs one extraction with the configured extractor and judge groups and prints the
 job-shaped result as JSON on stdout. The media type defaults from the file extension
@@ -38,7 +38,11 @@ script (a fake script or a testdata/scenarios file), so no key is needed or used
 result's usage counts the provider calls of the run (failed ones included) and the input
 and output tokens the providers reported.
 
-Exit codes: 0 accepted, 2 rejected, 3 failed, 1 usage or configuration error.
+--judge sets the judge policy of the run (default: roles.judge.policy); the result's
+verification says what accepted it: judge, grounded or none.
+
+Exit codes: 0 accepted, 2 rejected, 3 failed, 4 extracted (no judge asked, judge policy
+never), 1 usage or configuration error.
 
 Flags:
 `
@@ -74,9 +78,12 @@ type extractOptions struct {
 	schema                      string
 	maxAttempts                 int
 	html                        string
+	judge                       string
 	timeout                     time.Duration
 	providerScript              string
 	verbose                     bool
+	// run is the loop; nil means extract.Run (tests observe the input through it).
+	run func(context.Context, extract.Input, extract.Roles) extract.Outcome
 }
 
 // attachment is an email attachment listed in the result (metadata only).
@@ -96,6 +103,7 @@ type jobOutput struct {
 	ServiceVersion  string             `json:"service_version"`
 	JudgeConfidence *float64           `json:"judge_confidence"`
 	Error           *extract.JobError  `json:"error"`
+	Verification    string             `json:"verification"`
 	Attachments     []attachment       `json:"attachments,omitempty"`
 	FinishedAt      time.Time          `json:"finished_at"`
 }
@@ -118,6 +126,7 @@ func runExtract(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.maxAttempts, "max-attempts", 0, "attempt limit, at most limits.max_attempts (default: limits.max_attempts)")
 	fs.StringVar(&o.html, "html", "", "HTML policy, raw_html or visible_text (default: documents.html)")
 	fs.DurationVar(&o.timeout, "timeout", 0, "job time limit (default: limits.job_timeout)")
+	fs.StringVar(&o.judge, "judge", "", "judge policy, always, never or auto (default: roles.judge.policy)")
 	fs.StringVar(&o.providerScript, "provider-script", "", "replace every provider with the fake replaying this script")
 	fs.BoolVar(&o.verbose, "verbose", false, "progress lines on stderr (never content)")
 	if err := fs.Parse(args); err != nil {
@@ -141,6 +150,13 @@ func runExtract(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	if o.judge != "" {
+		if _, err := config.ParseJudgePolicy(o.judge); err != nil {
+			fmt.Fprintf(stderr, "vde extract: --judge: %v\n", err)
+			return exitUsage
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	out, err := extractFile(ctx, o, stderr)
@@ -160,6 +176,8 @@ func runExtract(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	case extract.StatusRejected:
 		return exitRejected
+	case extract.StatusExtracted:
+		return exitExtracted
 	}
 	return exitFailed
 }
@@ -193,8 +211,16 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		return jobOutput{}, err
 	}
 
+	judgePolicy := cfg.RolePolicy()
+	if o.judge != "" {
+		if judgePolicy, err = config.ParseJudgePolicy(o.judge); err != nil {
+			return jobOutput{}, fmt.Errorf("--judge: %w", err)
+		}
+	}
 	logger := newLogger(stderr, cfg.Logging)
-	sv := extract.ServiceVersion(cfg, version.Version)
+	vcfg := *cfg
+	vcfg.Roles.Judge.Policy = judgePolicy
+	sv := extract.ServiceVersion(&vcfg, version.Version)
 	logger.Info("vde extract", "service_version", sv, "version", version.Version)
 
 	maxAttempts := cfg.Limits.MaxAttempts
@@ -243,7 +269,13 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 	// Every group that may serve a role (escalation, second judge, feedback group) must
 	// read the representation.
 	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
-	rep, err := document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images))
+	pdfEngine, err := newPDFEngine(cfg, cliPDFCacheDir())
+	if err != nil {
+		return jobOutput{}, err
+	}
+	defer func() { _ = pdfEngine.Close() }()
+	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, "", document.PDFEngineOf(pdfEngine))
+	rep, err := document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
 	if err != nil {
 		return jobOutput{}, err
 	}
@@ -260,12 +292,17 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 	obs.logf("document %s, %s representation, %d part(s), schema %t, max %d attempt(s), timeout %s",
 		doc.BaseType(), rep.Kind, len(rep.Parts), schema != nil, maxAttempts, timeout)
 
-	res := extract.Run(ctx, extract.Input{
+	run := o.run
+	if run == nil {
+		run = extract.Run
+	}
+	res := run(ctx, extract.Input{
 		Representation:        rep,
 		ExtractorInstructions: string(extractorInstructions),
 		JudgeInstructions:     string(judgeInstructions),
 		Schema:                schema,
 		MaxAttempts:           maxAttempts,
+		JudgePolicy:           judgePolicy,
 		Deadline:              time.Now().Add(timeout),
 		OnAttempt:             func(p extract.Progress) { obs.logf("attempt %d: %s", p.Attempts, describeProgress(p)) },
 	}, roles)
@@ -287,6 +324,7 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		ServiceVersion:  sv,
 		JudgeConfidence: res.JudgeConfidence,
 		Error:           res.Error,
+		Verification:    res.Verification,
 		FinishedAt:      time.Now().UTC(),
 	}
 	for _, a := range doc.Attachments {

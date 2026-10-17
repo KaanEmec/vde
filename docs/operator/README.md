@@ -23,6 +23,7 @@ about ten minutes from clone to a first job.
 | [retention.md](retention.md) | What is deleted, when, and what remains. |
 | [privacy.md](privacy.md) | What is logged, what never is, the `debug.log_content` switch and data residency. |
 | [storage.md](storage.md) | Choose SQLite or PostgreSQL and local files or S3; pool sizing, backups, bucket lifecycle rule, migrations. |
+| [pdf.md](pdf.md) | Choose how PDFs reach models that do not read PDFs: text layer, rendered pages or caller pages; memory and limits. |
 | [framings.md](framings.md) | The fixed prompts of the extractor and judge roles. |
 | [evaluation.md](evaluation.md) | Measure extraction quality on a corpus with `vde eval`; build a corpus from production rejections. |
 

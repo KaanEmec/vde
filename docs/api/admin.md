@@ -24,7 +24,7 @@ the routes in step. It is not part of the TravelInbox contract.
 | --- | --- | --- |
 | `GET /applications` | list applications | `vde app list` |
 | `POST /applications` | create a dynamic application | none |
-| `GET`, `PATCH /applications/{id}` | read; change name, limits, retention, HTML policy, enabled | none |
+| `GET`, `PATCH /applications/{id}` | read; change name, limits, retention, HTML policy, judge policy, enabled | none |
 | `GET`, `POST /applications/{id}/tokens` | list; issue a token (shown once) | `vde token list`, `vde token create` |
 | `GET /applications/{id}/quota` | the current window, not charged | none |
 | `DELETE /tokens/{id}` | revoke an application or admin token | `vde token revoke` |
@@ -32,8 +32,9 @@ the routes in step. It is not part of the TravelInbox contract.
 | `GET`, `DELETE /jobs/{id}` | job metadata; force delete in any state | none |
 | `GET /audit?app=&since=&kind=&limit=` | audit events, oldest first, last 24 h by default | `vde audit list` |
 
-Job resources here are metadata only: status, attempts, service version, representation,
-media type, size, pages, retention, error code, timestamps and the provider token usage
+Job resources here are metadata only: status, attempts, service version, judge policy and
+verification, representation, media type, size, pages, retention, error code, timestamps and
+the provider token usage
 (`input_tokens`, `output_tokens`, every run of the job included). Never the result, feedback,
 error message, instructions, schema, idempotency key or attachment names.
 
@@ -45,7 +46,8 @@ An application has a `source`:
   rewrites all of its stored fields from the entry, defaults applied (`name`,
   `max_attempts`, `quota.limit`, `quota.window`, `rate.requests_per_minute`,
   `rate.submits_per_minute`, `rate.max_in_progress`, `retention.default`,
-  `retention.force_none`, `documents.html`) and enables it: the YAML wins. A `PATCH`
+  `retention.force_none`, `documents.html`, `judge.policy`, `judge.allow_override`,
+  `judge.sample_rate`) and enables it: the YAML wins. A `PATCH`
   therefore lasts until the next restart. Removing the entry disables it at the next start.
   `retention.delete_blobs_at_terminal` exists only in the YAML.
 - `admin`: created with `POST /applications`. It is stored as created or patched and kept
