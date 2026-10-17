@@ -1,6 +1,6 @@
 # Epic 03: Auto decision in the loop
 
-Version: v0.4 · Status: planned · Depends on: 01, 02
+Version: v0.4 · Status: in progress · Depends on: 01, 02
 
 The extraction loop behaves according to the job's judge policy. It sends one grounding
 repair before the judge, ends in `extracted` under `never`, and accepts grounded candidates
@@ -13,6 +13,6 @@ fake provider.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [`always` and `never` paths, grounding repair](01-always-never-and-repair.md) | planned |
-| 02 | [`auto` gate, sampling and metrics](02-auto-gate-and-sampling.md) | planned |
-| 03 | [Worker, CLI and audit wiring](03-wiring.md) | planned |
+| 01 | [`always` and `never` paths, grounding repair](01-always-never-and-repair.md) | in progress |
+| 02 | [`auto` gate, sampling and metrics](02-auto-gate-and-sampling.md) | in progress |
+| 03 | [Worker, CLI and audit wiring](03-wiring.md) | in progress |

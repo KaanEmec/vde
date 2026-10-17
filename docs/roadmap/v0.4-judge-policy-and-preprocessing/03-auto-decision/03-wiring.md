@@ -1,6 +1,6 @@
 # Job: Worker, CLI and audit wiring
 
-Version: v0.4 · Epic: 03 Auto decision in the loop · Status: planned · Depends on: 02
+Version: v0.4 · Epic: 03 Auto decision in the loop · Status: in progress · Depends on: 02
 
 ## Goal
 
