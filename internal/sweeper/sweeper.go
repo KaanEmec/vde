@@ -377,7 +377,8 @@ func (s *Sweeper) clearInputs(ctx context.Context, j job.Job, now time.Time) err
 
 func timeoutOutcome(j job.Job) job.Outcome {
 	e, _ := json.Marshal(extract.JobError{Code: extract.CodeTimeout, Message: timeoutMessage})
-	o := job.Outcome{Status: job.StatusFailed, Attempts: j.Attempts, Result: j.Result, Feedback: j.Feedback, Error: e}
+	o := job.Outcome{Status: job.StatusFailed, Attempts: j.Attempts, Result: j.Result, Error: e,
+		Feedback: extract.VisibleFeedback(j.JudgePolicy, j.Feedback)} // contract v1 sources only under always
 	if o.Feedback == nil {
 		o.Feedback = json.RawMessage(`[]`)
 	}

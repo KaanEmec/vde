@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/pdf"
 )
 
 // Defaults for Options.
@@ -281,9 +281,22 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 // extract runs the loop for the remaining attempts. ok is false when the job must be
 // left alone: the pool was cancelled or the lease was lost.
 func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, app config.Application, j job.Job, deadline time.Time, remaining int) (job.Outcome, extract.Outcome, bool) {
-	in, reason, err := p.input(ctx, app, j)
+	// Preparing the document (the PDF engine) runs under the job's deadline too.
+	prepCtx, cancelPrep := context.WithDeadline(ctx, deadline)
+	in, reason, err := p.input(prepCtx, app, j)
+	cancelPrep()
 	if err != nil {
-		if ctx.Err() != nil {
+		switch {
+		case ctx.Err() != nil:
+			return job.Outcome{}, extract.Outcome{}, false
+		case !time.Now().Before(deadline):
+			return fromRow(j, job.StatusFailed, extract.CodeTimeout), extract.Outcome{}, true
+		case errors.Is(err, pdf.ErrBusy):
+			// Every PDF engine instance stayed busy for the engine's wait: not the job's
+			// fault. Release the lease without an attempt, so the job is leased again (by
+			// any worker) until it gets an instance or its deadline ends it as timeout.
+			log.Info("worker: pdf engine busy, job left for the next lease")
+			p.release(ctx, log, j.ID, workerID)
 			return job.Outcome{}, extract.Outcome{}, false
 		}
 		log.Error("worker: cannot prepare the job", "reason", reason)
@@ -294,7 +307,7 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, a
 	// j.Attempts up to the limit and sends the last candidate and feedback in its
 	// first request, as a retry does.
 	in.MaxAttempts = j.Attempts + remaining
-	in.PriorAttempts, in.PriorCandidate = j.Attempts, j.Result
+	in.PriorAttempts, in.PriorCandidate, in.PriorRepaired = j.Attempts, j.Result, j.GroundingRepaired
 	if len(j.Feedback) > 0 {
 		_ = json.Unmarshal(j.Feedback, &in.PriorFeedback) // a malformed column leaves the retry without feedback
 	}
@@ -340,6 +353,14 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, a
 	return merge(j, o), o, true
 }
 
+// release ends this worker's lease on a running job now, so the next lease takes it
+// again; its attempts and saved progress are unchanged.
+func (p *Pool) release(ctx context.Context, log *slog.Logger, id, workerID string) {
+	if err := p.store.RenewLease(context.WithoutCancel(ctx), id, workerID, time.Now()); err != nil {
+		log.Warn("worker: releasing the lease failed; the job waits for it to expire", "error", err)
+	}
+}
+
 // input builds the loop input from the row and its blobs. reason names the failing
 // step for the log; errors may quote content and are never logged.
 func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in extract.Input, reason string, err error) {
@@ -364,7 +385,7 @@ func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in
 	// The same selection as at submit: the image policy, and the PDF policy with the
 	// process's engine (a PDF chosen as text at submit is read as text again).
 	pdfPolicy := document.NewPDFPolicy(p.cfg.Documents.PDF, app.Documents.PDF.Mode, p.opts.PDF)
-	rep, err := document.SelectWith(doc, p.extractorCaps, p.judgeCaps, policy, document.NewImagePolicy(p.cfg.Documents.Images), pdfPolicy)
+	rep, err := document.SelectContext(ctx, doc, p.extractorCaps, p.judgeCaps, policy, document.NewImagePolicy(p.cfg.Documents.Images), pdfPolicy)
 	if err != nil {
 		return in, "representation", err
 	}
@@ -374,7 +395,9 @@ func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in
 	judgePolicy := config.JudgePolicy(cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy))
 	if judgePolicy != config.JudgeAlways {
 		// A PDF sent natively or as caller pages is opened for its text layer only here.
-		rep.GroundText, rep.Groundable = document.GroundingText(ctx, doc, rep, pdfPolicy)
+		if rep.GroundText, rep.Groundable, err = document.GroundingText(ctx, doc, rep, pdfPolicy); err != nil {
+			return in, "grounding text", err
+		}
 	}
 	var schema *extract.Schema
 	if j.Schema != "" {
@@ -477,11 +500,7 @@ func feedbackJSON(f []extract.Feedback) json.RawMessage {
 func fromRow(j job.Job, status job.Status, code string) job.Outcome {
 	o := job.Outcome{Status: status, Attempts: j.Attempts, Result: j.Result, Feedback: j.Feedback,
 		InputTokens: j.InputTokens, OutputTokens: j.OutputTokens}
-	var persisted []extract.Feedback
-	if cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy) == string(config.JudgeAlways) && json.Unmarshal(j.Feedback, &persisted) == nil &&
-		slices.ContainsFunc(persisted, func(f extract.Feedback) bool { return f.Source == extract.SourceGrounding }) {
-		o.Feedback = feedbackJSON(slices.DeleteFunc(persisted, func(f extract.Feedback) bool { return f.Source == extract.SourceGrounding }))
-	}
+	o.Feedback = extract.VisibleFeedback(j.JudgePolicy, j.Feedback)
 	if o.Feedback == nil {
 		o.Feedback = feedbackJSON(nil)
 	}
@@ -505,7 +524,7 @@ func exhausted(j job.Job) job.Outcome {
 // usage (of earlier runs, as leased) is added. Tokens spent after the last persisted
 // attempt of a run that died are not counted.
 func progress(j job.Job, pr extract.Progress) job.Progress {
-	return job.Progress{Attempts: pr.Attempts, Result: pr.Result, Feedback: feedbackJSON(pr.Feedback),
+	return job.Progress{Attempts: pr.Attempts, Result: pr.Result, Feedback: feedbackJSON(pr.Feedback), GroundingRepaired: pr.Repaired,
 		InputTokens:  j.InputTokens + int64(pr.Usage.InputTokens),
 		OutputTokens: j.OutputTokens + int64(pr.Usage.OutputTokens)}
 }

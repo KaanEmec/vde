@@ -166,14 +166,15 @@ func (l textLayer) groundText(minChars int) (string, bool) {
 
 // selectPDF chooses a text-layer or rendered-pages representation under p for a PDF that
 // neither a native reader nor the caller's pages could serve. The PDF is opened once,
-// and the same bytes and policy always give the same representation.
-func selectPDF(doc *Document, extractor, judge []config.Capability, images ImagePolicy, p PDFPolicy) (Representation, error) {
-	ctx := context.Background() // every engine call is bounded by the engine's timeout
+// and the same bytes and policy always give the same representation. The engine
+// instance is held only while reading: from Open through the text layer and, when the
+// pages are tried, their rendering; the image conversion runs after it is released.
+func selectPDF(ctx context.Context, doc *Document, extractor, judge []config.Capability, images ImagePolicy, p PDFPolicy) (Representation, error) {
 	d, layer, err := readTextLayer(ctx, p.Engine, doc.Data, p.MaxPages)
 	if err != nil {
 		return Representation{}, err
 	}
-	defer d.Close()
+	defer d.Close() // Close is idempotent; the paths below close it as soon as they can
 	ground, groundable := layer.groundText(p.MinTextChars)
 
 	var order []Kind
@@ -212,6 +213,7 @@ func selectPDF(doc *Document, extractor, judge []config.Capability, images Image
 			}
 			rendered[i] = Page{MediaType: "image/png", Data: png}
 		}
+		d.Close() // every page is rendered: release the instance before converting
 		cands, err := pageCandidates(rendered, images)
 		if err != nil {
 			return Representation{}, err
@@ -265,17 +267,25 @@ func imagesReadable(extractor, judge []config.Capability, images ImagePolicy) bo
 // call it only when the judge policy needs grounding, so a deployment that never does
 // never starts pdfium. Images and PDFs without an engine are not groundable. The text is
 // never logged.
-func GroundingText(ctx context.Context, doc *Document, rep Representation, p PDFPolicy) (string, bool) {
+//
+// A PDF that cannot be read is not groundable (err nil). err is set only when the read
+// could not happen now: the engine had no instance free (pdf.ErrBusy) or ctx ended; the
+// caller retries later rather than run the job without its grounding text.
+func GroundingText(ctx context.Context, doc *Document, rep Representation, p PDFPolicy) (string, bool, error) {
 	if rep.Groundable {
-		return rep.GroundText, true
+		return rep.GroundText, true, nil
 	}
 	if doc.Category != CategoryPDF || p.Engine == nil || rep.Source == SourceTextLayer || rep.Source == SourceRendered {
-		return "", false // already measured, or nothing to read
+		return "", false, nil // already measured, or nothing to read
 	}
 	d, layer, err := readTextLayer(ctx, p.Engine, doc.Data, 0)
 	if err != nil {
-		return "", false
+		if errors.Is(err, pdf.ErrBusy) || ctx.Err() != nil {
+			return "", false, err
+		}
+		return "", false, nil
 	}
 	d.Close()
-	return layer.groundText(p.MinTextChars)
+	text, ok := layer.groundText(p.MinTextChars)
+	return text, ok, nil
 }

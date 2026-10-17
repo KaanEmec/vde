@@ -2,6 +2,7 @@ package document
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -146,7 +147,18 @@ func Select(doc *Document, extractor, judge []config.Capability, policy HTMLPoli
 // through the image policy); text and pages force one; native keeps ADR 0006's refusal.
 // A PDF with more than MaxPages pages is refused then. Without a PDF policy, or with a
 // nil engine, PDFs are selected as before. Only the first PDFPolicy is used.
+//
+// SelectWith runs the PDF engine without a deadline of its own (each engine call is
+// bounded by the engine's timeout); SelectContext takes the request's or job's context.
 func SelectWith(doc *Document, extractor, judge []config.Capability, policy HTMLPolicy, images ImagePolicy, pdfs ...PDFPolicy) (Representation, error) {
+	return SelectContext(context.Background(), doc, extractor, judge, policy, images, pdfs...)
+}
+
+// SelectContext is SelectWith under ctx: a PDF the service prepares is opened, read and
+// rendered under it, so cancellation (shutdown, a gone client) and a job's deadline
+// stop the engine. An engine with no instance free reports pdf.ErrBusy (wrapped, not a
+// refusal): try again later.
+func SelectContext(ctx context.Context, doc *Document, extractor, judge []config.Capability, policy HTMLPolicy, images ImagePolicy, pdfs ...PDFPolicy) (Representation, error) {
 	policy, err := policy.resolve()
 	if err != nil {
 		return Representation{}, err
@@ -162,7 +174,7 @@ func SelectWith(doc *Document, extractor, judge []config.Capability, policy HTML
 		return build(doc, c, policy)
 	}
 	if len(pdfs) > 0 && doc.Category == CategoryPDF && pdfs[0].active() {
-		return selectPDF(doc, extractor, judge, images, pdfs[0])
+		return selectPDF(ctx, doc, extractor, judge, images, pdfs[0])
 	}
 	return Representation{}, refuse(CodeUnsupportedDocument,
 		"no representation of %s is readable by both the extractor and the judge group", doc.BaseType())

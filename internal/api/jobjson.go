@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/kaanemec/vde/internal/document"
+	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
 )
 
@@ -42,7 +43,7 @@ func jobToResponse(j *job.Job) jobResponse {
 		ID:              j.ID,
 		Status:          j.Status,
 		Result:          nullIfEmpty(j.Result),
-		Feedback:        j.Feedback,
+		Feedback:        extract.VisibleFeedback(j.JudgePolicy, j.Feedback), // a running job's saved feedback may hold a repair's entries
 		Attempts:        j.Attempts,
 		ServiceVersion:  j.ServiceVersion,
 		JudgeConfidence: j.JudgeConfidence,

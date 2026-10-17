@@ -119,6 +119,9 @@ type Job struct {
 	// terminal, "" before.
 	JudgePolicy  string
 	Verification string
+	// GroundingRepaired is set once the job made its one grounding repair (ADR 0009), so
+	// a resumed run does not repair again; RecordAttempt stores it and never clears it.
+	GroundingRepaired bool
 
 	CreatedAt  time.Time
 	StartedAt  time.Time
@@ -148,6 +151,8 @@ type Progress struct {
 	Attempts int
 	Result   json.RawMessage
 	Feedback json.RawMessage
+	// GroundingRepaired: the job made its grounding repair (Job.GroundingRepaired).
+	GroundingRepaired bool
 	// InputTokens and OutputTokens are the job's usage so far, earlier runs included;
 	// the stored counts never decrease.
 	InputTokens  int64

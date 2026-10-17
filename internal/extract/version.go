@@ -14,6 +14,10 @@ import (
 	"github.com/kaanemec/vde/internal/ground"
 )
 
+// pdfEngineModule is the module of the PDF engine (internal/pdf: pdfium compiled to
+// WebAssembly, ADR 0010), whose version is hashed with the PDF policy.
+const pdfEngineModule = "github.com/klippa-app/go-pdfium"
+
 // devVersion is the semver of a build without a release version.
 const devVersion = "0.0.0-dev"
 
@@ -32,7 +36,8 @@ var semverRe = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // policy (ADR 0009) is hashed only when it is not always, and the sample rate only under
 // auto. The grounding rules (ground.RulesVersion) are always hashed, since every policy
 // grounds candidates (always for its one repair, ADR 0009). The PDF policy (mode, dpi,
-// minimum text characters) is hashed when it can change what is read: when a role's
+// minimum text characters) and the PDF engine's module version are hashed when they can
+// change what is read: when a role's
 // groups do not all read PDFs natively and the mode is not native, or when the judge
 // policy is not always (natively sent PDFs are then opened for grounding). It excludes
 // secrets, listen addresses, data paths and application settings.
@@ -187,7 +192,9 @@ func canonicalConfig(cfg *config.Config, sampleRate float64) []byte {
 		}
 	}
 	if cfg.RolePolicy() != config.JudgeAlways || (cfg.Documents.PDF.Mode != config.PDFModeNative && !readsPDFNatively(cfg)) {
-		v.PDF = document.NewPDFPolicy(cfg.Documents.PDF, "", nil).String()
+		// The engine's version too: another pdfium build may read other text or render
+		// other pixels from the same PDF.
+		v.PDF = document.NewPDFPolicy(cfg.Documents.PDF, "", nil).String() + "/engine=" + pdfEngineModule + "@" + moduleVersion(pdfEngineModule)
 	}
 	data, err := json.Marshal(v)
 	if err != nil {

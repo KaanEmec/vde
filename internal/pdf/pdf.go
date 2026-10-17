@@ -52,13 +52,16 @@ const (
 
 // Errors. Open and the Doc methods return them wrapped; test with errors.Is.
 var (
-	ErrInvalid       = errors.New("pdf: not a readable PDF")
-	ErrEncrypted     = errors.New("pdf: encrypted")
-	ErrTooManyPages  = errors.New("pdf: too many pages")
-	ErrTooLarge      = errors.New("pdf: too large")
-	ErrPageTooLarge  = errors.New("pdf: page too large to render")
-	ErrPageRange     = errors.New("pdf: page out of range")
-	ErrTimeout       = errors.New("pdf: timed out")
+	ErrInvalid      = errors.New("pdf: not a readable PDF")
+	ErrEncrypted    = errors.New("pdf: encrypted")
+	ErrTooManyPages = errors.New("pdf: too many pages")
+	ErrTooLarge     = errors.New("pdf: too large")
+	ErrPageTooLarge = errors.New("pdf: page too large to render")
+	ErrPageRange    = errors.New("pdf: page out of range")
+	ErrTimeout      = errors.New("pdf: timed out")
+	// ErrBusy: every instance stayed in use for the whole wait. Nothing is wrong with
+	// the document or the engine; try again later.
+	ErrBusy          = errors.New("pdf: every pdfium instance is busy")
 	ErrClosed        = errors.New("pdf: closed")
 	errInternalPanic = errors.New("pdf: internal error")
 )
@@ -224,9 +227,10 @@ type Doc struct {
 	timeout time.Duration
 }
 
-// Open loads data into a free instance, waiting at most the configured timeout for one,
-// and checks the size and page limits. Errors wrap ErrInvalid, ErrEncrypted,
-// ErrTooManyPages, ErrTooLarge, ErrTimeout or ErrClosed.
+// Open loads data into a free instance, waiting at most the configured timeout for one
+// (ErrBusy when none became free), and checks the size and page limits. Errors wrap
+// ErrInvalid, ErrEncrypted, ErrTooManyPages, ErrTooLarge, ErrTimeout, ErrBusy or
+// ErrClosed.
 func (e *Engine) Open(ctx context.Context, data []byte) (*Doc, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("%w: empty input", ErrInvalid)
@@ -240,12 +244,16 @@ func (e *Engine) Open(ctx context.Context, data []byte) (*Doc, error) {
 	}
 	wait, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
 	inst, err := pool.GetInstanceWithContext(wait)
+	waited := wait.Err()
 	cancel()
 	if err != nil {
-		if ctx.Err() != nil {
+		switch {
+		case ctx.Err() != nil:
 			return nil, ctx.Err()
+		case waited != nil:
+			return nil, fmt.Errorf("%w: no instance free within %s", ErrBusy, e.cfg.Timeout)
 		}
-		return nil, fmt.Errorf("%w: waiting for a pdfium instance: %w", ErrTimeout, err)
+		return nil, fmt.Errorf("pdf: get a pdfium instance: %w", err)
 	}
 	d := &Doc{inst: inst, timeout: e.cfg.Timeout}
 	var docErr error // a refusal of this document, as opposed to a failed call

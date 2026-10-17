@@ -32,6 +32,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 	"github.com/kaanemec/vde/internal/worker"
@@ -1087,6 +1088,15 @@ func TestJobToResponse(t *testing.T) {
 		!strings.Contains(string(raw), `"result":null`) || strings.Contains(string(raw), "attachments") {
 		t.Errorf("failed job = %s", raw)
 	}
+	// A running job's saved feedback may hold a grounding repair's entries: under judge
+	// policy always they never show (contract v1 sources only), under auto they do.
+	saved := json.RawMessage(`[{"pointer":"/born","message":"value not found in the document","source":"grounding"}]`)
+	for policy, want := range map[string]string{"always": `"feedback":[]`, "": `"feedback":[]`, "auto": `"source":"grounding"`} {
+		running := &job.Job{ID: "j_3", Status: job.StatusRunning, Attempts: 1, JudgePolicy: policy, Feedback: saved}
+		if raw, _ := json.Marshal(jobToResponse(running)); !strings.Contains(string(raw), want) {
+			t.Errorf("policy %q: running job = %s, want %s", policy, raw, want)
+		}
+	}
 }
 
 // TestAttachmentsPersisted: an email's attachment list is stored with the job, so the
@@ -1284,5 +1294,29 @@ func TestSubmitPDFPreparedByService(t *testing.T) {
 	if w.Code != http.StatusUnsupportedMediaType || !strings.Contains(w.Body.String(), "unsupported_document") ||
 		!strings.Contains(w.Body.String(), "20 pages") {
 		t.Errorf("21 pages: status %d %s, want 415 naming the limit", w.Code, w.Body)
+	}
+}
+
+// busyPDF is a document.PDFEngine with no instance free.
+type busyPDF struct{}
+
+func (busyPDF) Open(context.Context, []byte) (document.PDFDoc, error) {
+	return nil, fmt.Errorf("%w: no instance free", pdf.ErrBusy)
+}
+
+// TestSubmitPDFEngineBusy: a PDF the service must prepare while every engine instance
+// stays busy is answered 503 unavailable with Retry-After: 5, not 500: nothing is wrong
+// with the document or the configuration, and no job is stored.
+func TestSubmitPDFEngineBusy(t *testing.T) {
+	t.Parallel()
+	rg := newSubmitRig(t, submitRigOptions{pdf: busyPDF{}})
+	w := rg.submit(t, withPart(validParts(), mpart{name: partDocument, ctype: "application/pdf", filename: "booking.pdf",
+		data: []byte("%PDF-1.7 SENTINEL-PDF")}), nil)
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "5" ||
+		!strings.Contains(w.Body.String(), `"code":"unavailable"`) {
+		t.Errorf("status %d, Retry-After %q: %s; want 503 unavailable, 5", w.Code, w.Header().Get("Retry-After"), w.Body)
+	}
+	if jobs, err := rg.db.ListJobs(t.Context(), job.JobFilter{}, 0); err != nil || len(jobs) != 0 {
+		t.Errorf("jobs stored: %d, %v", len(jobs), err)
 	}
 }

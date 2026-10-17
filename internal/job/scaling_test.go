@@ -37,6 +37,29 @@ func TestUsageColumns(t *testing.T) {
 	})
 }
 
+// TestGroundingRepairedColumn: RecordAttempt stores the grounding repair flag, a later
+// attempt without it never clears it, and a re-lease returns it (migration 0010).
+func TestGroundingRepairedColumn(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		j := createJob(t, s, newJob("app"))
+		if got, err := s.LeaseNextQueued(ctx, "w", t0.Add(time.Second), t0.Add(time.Minute), nil); err != nil || got.GroundingRepaired {
+			t.Fatalf("leased %+v, %v; want not repaired", got, err)
+		}
+		if err := s.RecordAttempt(ctx, j.ID, "w", Progress{Attempts: 1, GroundingRepaired: true}, t0.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.RecordAttempt(ctx, j.ID, "w", Progress{Attempts: 2}, t0.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.LeaseNextQueued(ctx, "w2", t0.Add(3*time.Minute), t0.Add(4*time.Minute), nil)
+		if err != nil || got.ID != j.ID || !got.GroundingRepaired || got.Attempts != 2 {
+			t.Fatalf("re-leased %+v, %v; want the job with the repair flag set", got, err)
+		}
+	})
+}
+
 // TestOldestQueuedAt: the created_at of the oldest queued job, zero when none is queued;
 // running and terminal jobs do not count.
 func TestOldestQueuedAt(t *testing.T) {

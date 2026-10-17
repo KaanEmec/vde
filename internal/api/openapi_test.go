@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	spec "github.com/kaanemec/vde/api"
+	"github.com/kaanemec/vde/internal/document"
 )
 
 // travelInboxDoc is the consumer's document ours must be a superset of (ADR 0005).
@@ -208,6 +209,27 @@ func TestOpenAPISupersetOfTravelInbox(t *testing.T) {
 			if !slices.Contains(our.Required, field) && !slices.Contains(relaxedRequired[name], field) {
 				t.Errorf("schema %s: field %s is no longer required", name, field)
 			}
+		}
+	}
+}
+
+// TestAdminJobRepresentationEnum: JobMetadata.representation (additionalProperties
+// false) lists every label a job can store, the service-prepared PDF ones of ADR 0010
+// included.
+func TestAdminJobRepresentationEnum(t *testing.T) {
+	t.Parallel()
+	doc, _ := loadDoc(t, spec.AdminOpenAPI)
+	prop, _ := doc.Components.Schemas["JobMetadata"].Properties["representation"].(map[string]any)
+	var enum []string
+	for _, v := range prop["enum"].([]any) {
+		enum = append(enum, v.(string))
+	}
+	for _, rep := range []document.Representation{
+		{Kind: document.Native}, {Kind: document.Pages}, {Kind: document.Text},
+		{Kind: document.Text, Source: document.SourceTextLayer}, {Kind: document.Pages, Source: document.SourceRendered},
+	} {
+		if !slices.Contains(enum, rep.Label()) {
+			t.Errorf("JobMetadata.representation enum %v lacks %q", enum, rep.Label())
 		}
 	}
 }

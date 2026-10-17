@@ -389,8 +389,12 @@ func TestServiceVersion_pdfPolicy(t *testing.T) {
 	cfg.Endpoints["main"].Models["model-a"] = config.Model{Accepts: []string{"text/plain"}} // no group reads PDFs now
 	global := ServiceVersion(cfg, "v0.4.0")
 	var v versionedConfig
-	if err := json.Unmarshal(canonicalConfig(cfg, config.DefaultSampleRate), &v); err != nil || v.PDF != "auto/dpi=150/min_chars=200" {
-		t.Errorf("pdf = %q (%v), want the default policy hashed", v.PDF, err)
+	wantPDF := "auto/dpi=150/min_chars=200/engine=github.com/klippa-app/go-pdfium@" + moduleVersion(pdfEngineModule)
+	if err := json.Unmarshal(canonicalConfig(cfg, config.DefaultSampleRate), &v); err != nil || v.PDF != wantPDF {
+		t.Errorf("pdf = %q (%v), want the default policy and the engine version %q hashed", v.PDF, err, wantPDF)
+	}
+	if moduleVersion(pdfEngineModule) == "unknown" {
+		t.Error("the PDF engine's module version is not in the build info")
 	}
 	for name, edit := range map[string]func(*config.Config){
 		"dpi":       func(c *config.Config) { c.Documents.PDF.DPI = 200 },

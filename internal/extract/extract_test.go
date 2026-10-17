@@ -1078,3 +1078,58 @@ func TestRun_groundingRepairDroppedOnFailure(t *testing.T) {
 		t.Errorf("outcome %s with feedback %+v; want rejected with no entries", out.Status, out.Feedback)
 	}
 }
+
+// TestRun_autoNothingChecked: under auto a candidate with no checked critical leaf ({},
+// only nulls or booleans) gives grounding no evidence, so the judge decides it; it is
+// never accepted as grounded.
+func TestRun_autoNothingChecked(t *testing.T) {
+	for _, candidate := range []string{`{}`, `{"name": null, "born": null}`, `{"alive": false, "spouse": null}`} {
+		t.Run(candidate, func(t *testing.T) {
+			r := newRig(t, fake.Script{fake.Answer(candidate)}, nil, fake.Script{fake.Answer(accept)})
+			in := groundedInput(t, config.JudgeAuto)
+			in.Schema = nil // schema-less, so {} and nulls validate
+			in.SampleKey = []byte("key")
+			out := Run(t.Context(), in, r.roles)
+			if out.Status != StatusAccepted || out.Verification != VerificationJudge || out.Decision != DecisionJudged ||
+				len(r.judge.Calls()) != 1 {
+				t.Errorf("outcome %s, verification %q, decision %q after %d judge calls; want accepted by the judge",
+					out.Status, out.Verification, out.Decision, len(r.judge.Calls()))
+			}
+		})
+	}
+}
+
+// TestRun_groundingRepairFlag: the repair is reported in Progress.Repaired, and a resumed
+// job with PriorRepaired (whose saved feedback is the judge's, not the repair's) never
+// repairs again: every later ungrounded candidate goes to the judge.
+func TestRun_groundingRepairFlag(t *testing.T) {
+	t.Run("reported", func(t *testing.T) {
+		r := newRig(t, fake.Script{fake.Answer(invented), fake.Answer(valid)}, nil, fake.Script{fake.Answer(accept)})
+		in := groundedInput(t, config.JudgeAlways)
+		var progress []Progress
+		in.OnAttempt = func(p Progress) { progress = append(progress, p) }
+		Run(t.Context(), in, r.roles)
+		if len(progress) != 1 || !progress[0].Repaired {
+			t.Errorf("progress = %+v, want one entry with Repaired", progress)
+		}
+	})
+	t.Run("resumed", func(t *testing.T) {
+		r := newRig(t, fake.Script{{Answer: invented, Repeat: true}}, nil, fake.Script{{Answer: reject, Repeat: true}})
+		in := groundedInput(t, config.JudgeAlways)
+		in.MaxAttempts, in.PriorAttempts, in.PriorRepaired = 4, 2, true
+		in.PriorCandidate = json.RawMessage(invented)
+		in.PriorFeedback = []Feedback{{Pointer: "/born", Message: "wrong year", Source: SourceJudge}}
+		var progress []Progress
+		in.OnAttempt = func(p Progress) { progress = append(progress, p) }
+		out := Run(t.Context(), in, r.roles)
+		if out.Status != StatusRejected || out.Attempts != 4 || len(r.primary.Calls()) != 2 || len(r.judge.Calls()) != 2 {
+			t.Errorf("outcome %s after %d attempts, %d extractor and %d judge calls; want rejected after 2 judged attempts",
+				out.Status, out.Attempts, len(r.primary.Calls()), len(r.judge.Calls()))
+		}
+		for _, p := range progress {
+			if !p.Repaired {
+				t.Errorf("progress %+v lost the repair flag", p)
+			}
+		}
+	})
+}

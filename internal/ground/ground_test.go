@@ -118,12 +118,12 @@ func TestCheck_annotations(t *testing.T) {
 		criticalMissed       int
 		criticalOK, critical bool
 	}{
-		{"skip and derived are skipped", `{"city":"Berlin","note":"invented","travellers":["A B","C D"]}`, []string{}, 0, 4, 0, true, false},
+		{"skip and derived are skipped", `{"city":"Berlin","note":"invented","travellers":["A B","C D"]}`, []string{}, 0, 4, 0, false, false},
 		{"misses outside critical do not count", `{"total":100,"venue":"Messe Nord"}`, []string{"/venue"}, 2, 0, 0, true, false},
 		{"critical miss counts", `{"total":101,"venue":"Messe Nord"}`, []string{"/total", "/venue"}, 2, 0, 1, false, true},
 		{"annotation on an array applies to its items", `{"guests":[{"name":"Jane Roe"},{"name":"John Roe"}]}`, []string{"/guests/0/name", "/guests/1/name"}, 2, 0, 2, false, true},
 		{"a deeper annotation overrides", `{"guests":[{"name":"Jane Roe","seat":"12A"}],"venue":"Messe Nord"}`, []string{"/guests/0/name", "/guests/0/seat", "/venue"}, 3, 0, 1, false, true},
-		{"critical leaf that is null still marks critical", `{"total":null,"venue":"Messe Nord"}`, []string{"/venue"}, 1, 1, 0, true, false},
+		{"critical leaf that is null still marks critical", `{"total":null,"venue":"Messe Nord"}`, []string{"/venue"}, 1, 1, 0, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -193,6 +193,32 @@ func TestCheck_leaves(t *testing.T) {
 	}
 	if res := ground.Check(doc, json.RawMessage(`["q1","q2","q3"]`), nil, ground.Options{MaxMisses: 2}); res.Missed != 3 || res.CriticalMissed != 3 {
 		t.Errorf("capped counts: Missed %d CriticalMissed %d, want 3 3", res.Missed, res.CriticalMissed)
+	}
+}
+
+// TestCheck_nothingCritical: a candidate without a checked critical leaf gives grounding
+// no evidence, so it never passes the auto gate.
+func TestCheck_nothingCritical(t *testing.T) {
+	t.Parallel()
+	doc := ground.NewText("Invoice 2027-03-21 total 100,00 EUR from Hamburg")
+	tests := []struct {
+		name, candidate string
+		criticalOK      bool
+	}{
+		{"empty object", `{}`, false},
+		{"empty array", `[]`, false},
+		{"only nulls", `{"a":null,"b":{"c":null}}`, false},
+		{"only booleans", `{"a":true,"b":false}`, false},
+		{"one grounded leaf", `{"city":"Hamburg","a":null}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := ground.Check(doc, json.RawMessage(tt.candidate), nil, ground.Options{})
+			if res.CriticalOK() != tt.criticalOK {
+				t.Errorf("CriticalOK = %v (CriticalChecked %d), want %v", res.CriticalOK(), res.CriticalChecked, tt.criticalOK)
+			}
+		})
 	}
 }
 
