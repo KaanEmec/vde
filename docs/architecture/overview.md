@@ -1,6 +1,7 @@
 # Architecture overview
 
-Status: v0.1 to v0.3 implemented (v0.3 closed 2026-10-17); v1.0 planned. This document
+Status: v0.1 to v0.3 implemented (v0.3 closed 2026-10-17); v0.4 (judge policy, grounding,
+PDF preprocessing; ADRs 0009 and 0010) in progress; v1.0 planned. This document
 describes the shape of the service; the roadmap under `docs/roadmap/` says which jobs are
 done. Each job file carries its own `Status`.
 
@@ -223,6 +224,8 @@ first releases:
 - [0006 Representation policy: raw HTML by default, no server-side rendering](decisions/0006-representation-policy.md)
 - [0007 Storage drivers and process roles](decisions/0007-storage-drivers-and-process-roles.md)
 - [0008 Judge quality is measured, not assumed](decisions/0008-judge-quality-measurement.md)
+- [0009 Judge policy and a deterministic grounding check](decisions/0009-judge-policy-and-grounding.md)
+- [0010 PDF preprocessing in the service (amends 0006)](decisions/0010-pdf-preprocessing-in-service.md)
 
 ## Implementation decisions (build start, 2026-10-16)
 

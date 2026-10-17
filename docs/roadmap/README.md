@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: v0.1, v0.2 and v0.3 done (2026-10-17); v1.0 planned. Each job file carries its own `Status`.
+Status: v0.1, v0.2 and v0.3 done (2026-10-17); v0.4 in progress; v1.0 planned. Each job file carries its own `Status`.
 
 The roadmap is organized as **versions → epics → jobs**. A version is a releasable
 milestone with an exit criterion. An epic is a coherent body of work inside a version with
@@ -19,10 +19,12 @@ Ideas deliberately kept out of the first releases are in [`backlog.md`](backlog.
 | [v0.1 Core engine](v0.1-core-engine/README.md) (done) | Configuration, provider adapters (Anthropic, OpenAI-compatible, Gemini), failover, document representation including email, the extraction loop, a CLI to run it | `vde extract` turns a PDF, an image, an HTML and a text document into accepted or rejected JSON against the fake and one real provider, with failover demonstrated per role |
 | [v0.2 Service](v0.2-service/README.md) (done) | The authenticated HTTP service: applications, tokens, jobs, quota, retention, operations, admin API, packaging | TravelInbox contract v1 acceptance checklist passes against a container deployment |
 | [v0.3 Hardening and extensions](v0.3-hardening-and-extensions/README.md) (done; [open items](v0.3-hardening-and-extensions/README.md#exit-criterion-check-2026-10-17)) | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, evaluation harness, multi-replica | A second consumer can use the service without contract changes; the service runs with more than one replica |
+| [v0.4 Judge policy and preprocessing](v0.4-judge-policy-and-preprocessing/README.md) (in progress) | Judge policy per application (`always`, `never`, `auto`) with a `verification` field and an `extracted` status, a deterministic grounding check against invented values, PDF text layer and page rendering in the service (pure-Go pdfium, ADR 0010) | On the owner suite under `auto`, no invented value is accepted without a judge, emails skip the judge when grounded, and PDFs are processed without caller-supplied pages |
 | [v1.0 Stable](v1.0-stable/README.md) (planned) | API and configuration freeze, security review, performance baseline, release engineering | `/v1` and the configuration schema are frozen with a 12-month compatibility promise |
 
-Versions are sequential; epics inside a version are listed in a suggested order but many
-can proceed in parallel (each epic README says what it depends on).
+Versions are sequential: v0.4 comes before v1.0, so the v1.0 freeze covers what v0.4
+adds. Epics inside a version are listed in a suggested order but many can proceed in
+parallel (each epic README says what it depends on).
 
 ## Guiding constraints
 
