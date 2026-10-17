@@ -1,6 +1,6 @@
 # Job: Text layer for grounding, samples and the owner suite
 
-Version: v0.4 · Epic: 04 PDF preprocessing · Status: planned · Depends on: 02, 02-03
+Version: v0.4 · Epic: 04 PDF preprocessing · Status: in progress · Depends on: 02, 02-03
 
 ## Goal
 
