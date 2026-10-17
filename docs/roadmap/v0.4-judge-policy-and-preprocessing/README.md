@@ -43,7 +43,7 @@ The TravelInbox conformance suite (`test/conformance`) passes unchanged under th
 | 02 | [Grounding check](02-grounding-check/README.md) | v0.3 | done |
 | 03 | [Auto decision in the loop](03-auto-decision/README.md) | 01, 02 | done |
 | 04 | [PDF preprocessing (text layer and rendering)](04-pdf-preprocessing/README.md) | v0.3 (independent) | done |
-| 05 | [Harness, docs and closeout](05-harness-docs-closeout/README.md) | 01 to 04 | planned |
+| 05 | [Harness, docs and closeout](05-harness-docs-closeout/README.md) | 01 to 04 | in progress |
 
 Epics 01, 02 and 04 can proceed in parallel. Epic 02's PDF grounding text comes from epic 04
 (job 04-03). Until that lands, PDFs are ungroundable, which is safe: `auto` sends them to the

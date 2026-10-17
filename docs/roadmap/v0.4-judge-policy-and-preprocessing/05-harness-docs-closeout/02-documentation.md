@@ -1,6 +1,6 @@
 # Job: Operator and API documentation
 
-Version: v0.4 · Epic: 05 Harness, docs and closeout · Status: planned · Depends on: 01-03, 03-03, 04-03
+Version: v0.4 · Epic: 05 Harness, docs and closeout · Status: in progress · Depends on: 01-03, 03-03, 04-03
 
 ## Goal
 
