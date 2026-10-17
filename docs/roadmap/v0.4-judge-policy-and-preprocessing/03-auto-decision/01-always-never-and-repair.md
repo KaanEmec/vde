@@ -1,6 +1,6 @@
 # Job: `always` and `never` paths, grounding repair
 
-Version: v0.4 · Epic: 03 Auto decision in the loop · Status: planned · Depends on: 01-02, 02-03
+Version: v0.4 · Epic: 03 Auto decision in the loop · Status: in progress · Depends on: 01-02, 02-03
 
 ## Goal
 

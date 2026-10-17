@@ -1,6 +1,6 @@
 # Job: `auto` gate, sampling and metrics
 
-Version: v0.4 · Epic: 03 Auto decision in the loop · Status: planned · Depends on: 01
+Version: v0.4 · Epic: 03 Auto decision in the loop · Status: in progress · Depends on: 01
 
 ## Goal
 
