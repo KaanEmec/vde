@@ -1,6 +1,6 @@
 # Job: `internal/pdf` on go-pdfium (WebAssembly)
 
-Version: v0.4 · Epic: 04 PDF preprocessing · Status: planned · Depends on: v0.3
+Version: v0.4 · Epic: 04 PDF preprocessing · Status: in progress · Depends on: v0.3
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # Job: `documents.pdf` and representation selection
 
-Version: v0.4 · Epic: 04 PDF preprocessing · Status: planned · Depends on: 01
+Version: v0.4 · Epic: 04 PDF preprocessing · Status: in progress · Depends on: 01
 
 ## Goal
 

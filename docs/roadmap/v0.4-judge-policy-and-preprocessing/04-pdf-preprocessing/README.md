@@ -1,6 +1,6 @@
 # Epic 04: PDF preprocessing (text layer and rendering)
 
-Version: v0.4 · Status: planned · Depends on: v0.3 (independent of 01 to 03)
+Version: v0.4 · Status: in progress · Depends on: v0.3 (independent of 01 to 03)
 
 The service reads a PDF's text layer and renders its pages itself, cgo-free, with
 `go-pdfium` on its WebAssembly runtime. Models without native PDF input then work without
@@ -17,6 +17,6 @@ and budget are in ADR 0010.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [`internal/pdf` on go-pdfium (WebAssembly)](01-pdf-package.md) | planned |
-| 02 | [`documents.pdf` and representation selection](02-representation-selection.md) | planned |
-| 03 | [Text layer for grounding, samples and the owner suite](03-text-layer-and-samples.md) | planned |
+| 01 | [`internal/pdf` on go-pdfium (WebAssembly)](01-pdf-package.md) | in progress |
+| 02 | [`documents.pdf` and representation selection](02-representation-selection.md) | in progress |
+| 03 | [Text layer for grounding, samples and the owner suite](03-text-layer-and-samples.md) | in progress |

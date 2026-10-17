@@ -1,6 +1,6 @@
 # Job: Per-request override, admin API and CLI flag
 
-Version: v0.4 · Epic: 01 Judge policy · Status: planned · Depends on: 01, 02
+Version: v0.4 · Epic: 01 Judge policy · Status: in progress · Depends on: 01, 02
 
 ## Goal
 

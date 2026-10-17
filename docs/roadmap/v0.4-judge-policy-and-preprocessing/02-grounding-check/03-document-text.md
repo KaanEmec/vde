@@ -1,6 +1,6 @@
 # Job: Document text for grounding
 
-Version: v0.4 · Epic: 02 Grounding check · Status: planned · Depends on: 02
+Version: v0.4 · Epic: 02 Grounding check · Status: in progress · Depends on: 02
 
 ## Goal
 

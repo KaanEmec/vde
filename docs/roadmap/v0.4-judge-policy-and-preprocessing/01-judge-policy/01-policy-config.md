@@ -1,6 +1,6 @@
 # Job: Policy configuration and `service_version`
 
-Version: v0.4 · Epic: 01 Judge policy · Status: planned · Depends on: v0.3
+Version: v0.4 · Epic: 01 Judge policy · Status: in progress · Depends on: v0.3
 
 ## Goal
 

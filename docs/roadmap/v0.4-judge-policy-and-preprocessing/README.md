@@ -39,10 +39,10 @@ The TravelInbox conformance suite (`test/conformance`) passes unchanged under th
 
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
-| 01 | [Judge policy](01-judge-policy/README.md) | v0.3 | planned |
-| 02 | [Grounding check](02-grounding-check/README.md) | v0.3 | planned |
+| 01 | [Judge policy](01-judge-policy/README.md) | v0.3 | in progress |
+| 02 | [Grounding check](02-grounding-check/README.md) | v0.3 | in progress |
 | 03 | [Auto decision in the loop](03-auto-decision/README.md) | 01, 02 | planned |
-| 04 | [PDF preprocessing (text layer and rendering)](04-pdf-preprocessing/README.md) | v0.3 (independent) | planned |
+| 04 | [PDF preprocessing (text layer and rendering)](04-pdf-preprocessing/README.md) | v0.3 (independent) | in progress |
 | 05 | [Harness, docs and closeout](05-harness-docs-closeout/README.md) | 01 to 04 | planned |
 
 Epics 01, 02 and 04 can proceed in parallel. Epic 02's PDF grounding text comes from epic 04

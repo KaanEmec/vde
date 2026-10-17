@@ -1,6 +1,6 @@
 # Job: `extracted` status and `verification` field
 
-Version: v0.4 · Epic: 01 Judge policy · Status: planned · Depends on: 01
+Version: v0.4 · Epic: 01 Judge policy · Status: in progress · Depends on: 01
 
 ## Goal
 

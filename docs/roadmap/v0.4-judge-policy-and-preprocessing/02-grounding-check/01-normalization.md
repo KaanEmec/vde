@@ -1,6 +1,6 @@
 # Job: Normalization, numbers and dates
 
-Version: v0.4 · Epic: 02 Grounding check · Status: planned · Depends on: v0.3
+Version: v0.4 · Epic: 02 Grounding check · Status: in progress · Depends on: v0.3
 
 ## Goal
 
