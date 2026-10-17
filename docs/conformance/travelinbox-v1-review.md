@@ -54,7 +54,7 @@ send or read any of it.
 | `verification` (v0.4) | Job field: `judge`, `grounded` or `none` on terminal jobs, `null` while queued or running. Under the default `always`, `accepted` pairs with `judge` and every other status with `none`, so TravelInbox sees `judge` on its accepted jobs. Rows finished before v0.4 read the same way. | As implemented |
 | `extracted` status (v0.4) | Terminal status of a schema-valid final candidate under judge policy `never`: never acceptance. Contract section 5 has clients treat an unknown status as not accepted, so it is additive; TravelInbox's applications run `always` and never see it. | As implemented (`TestServeJudgePolicies`, `TestExtractSyncExtracted`, `TestExtractedStatusPassesThrough`) |
 | `source: "grounding"` feedback entries (v0.4) | Feedback entries of the deterministic grounding check, in the job's `feedback` only under `never` and `auto`. Under `always` they reach only the extractor, so a contract-v1 client sees only `judge` and `schema`. | As implemented (scenarios in `testdata/scenarios/judge-policy`; under `always` none reach the job's `feedback`, also while running or when the sweeper times a job out) |
-| Grounding repair under `always` (v0.4) | Under the default policy a candidate with critical values the document does not print goes back to the extractor once, with grounding feedback, before the judge is asked (at most one extra extractor call per job, only while an attempt remains). No new status, field or feedback source reaches the client; the change is visible only through `service_version`, which hashes the grounding rules (`ground-1`). | As implemented (`always-repair-*` scenarios; the conformance suite passes unchanged under `always`) |
+| Grounding repair under `always` (v0.4) | Under the default policy, and only for a schema with an `x-vde-grounding` annotation, a candidate with critical values the document does not print goes back to the extractor once, with grounding feedback, before the judge is asked (at most one extra extractor call per job, only while an attempt remains). The TravelInbox schema is unannotated, so its jobs take no repair (ADR 0009 amendment 2026-10-18). No new status, field or feedback source reaches the client; the change is visible only through `service_version`, which hashes the grounding rules (`ground-2`). | As implemented (`always-repair-*` scenarios; the conformance suite passes unchanged under `always`) |
 
 Deviations from the contract: none known. Where the contract says MAY or SHOULD, section
 1 and the table above say what the service chose.
@@ -168,7 +168,8 @@ What TravelInbox needs, without reading the service's code:
   `source: "grounding"` appear only for applications an operator moves to `never` or
   `auto`, and the `judge` part only where `judge.allow_override` is set. Note also that the
   grounding repair under `always` can add one extractor call to a job (`attempts` counts
-  it), and that its `service_version` changed with v0.4.
+  it) only if its schema gains an `x-vde-grounding` annotation (the current, unannotated
+  schema takes none), and that its `service_version` changed with v0.4.
 - PDF preparation (v0.4, ADR 0010): with the default `documents.pdf.mode: auto`, a PDF
   without pages for models that read no `application/pdf` is no longer refused (contract
   4.11) but sent as its text layer or rendered pages. A deployment that wants 4.11's `415`

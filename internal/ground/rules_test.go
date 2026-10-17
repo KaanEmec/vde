@@ -57,9 +57,9 @@ const rulesSchema = `{
 
 func TestRulesFromSchema(t *testing.T) {
 	t.Parallel()
-	rules, err := RulesFromSchema([]byte(rulesSchema))
-	if err != nil {
-		t.Fatal(err)
+	rules, annotated, err := RulesFromSchema([]byte(rulesSchema))
+	if err != nil || !annotated {
+		t.Fatalf("RulesFromSchema() annotated %v, error %v; want true, nil", annotated, err)
 	}
 	tests := []struct {
 		loc  string
@@ -104,11 +104,11 @@ func TestRulesFromSchema(t *testing.T) {
 
 func TestRulesFromSchema_defaultSkip(t *testing.T) {
 	t.Parallel()
-	rules, err := RulesFromSchema([]byte(`{"type":"object","properties":{
+	rules, annotated, err := RulesFromSchema([]byte(`{"type":"object","properties":{
 		"notes":{"type":"array","items":{"type":"string"}},
 		"items":{"type":"array","items":{"type":"object","properties":{"confidence":{"type":"number"},"name":{"type":"string"}}}}}}`))
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || annotated {
+		t.Fatalf("RulesFromSchema() annotated %v, error %v; want false, nil", annotated, err)
 	}
 	tests := []struct {
 		loc  string
@@ -140,7 +140,7 @@ func TestRulesFromSchema_errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			rules, err := RulesFromSchema([]byte(tt.schema))
+			rules, _, err := RulesFromSchema([]byte(tt.schema))
 			if err == nil || rules != nil {
 				t.Fatalf("RulesFromSchema() = %v, %v, want an error", rules != nil, err)
 			}
@@ -153,7 +153,7 @@ func TestRulesFromSchema_errors(t *testing.T) {
 
 func TestRulesFromSchema_recursive(t *testing.T) {
 	t.Parallel()
-	rules, err := RulesFromSchema([]byte(`{"$ref":"#","allOf":[{"$ref":"#"}],"x-vde-grounding":"skip"}`))
+	rules, _, err := RulesFromSchema([]byte(`{"$ref":"#","allOf":[{"$ref":"#"}],"x-vde-grounding":"skip"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

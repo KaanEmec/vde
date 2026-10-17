@@ -43,6 +43,7 @@ type Schema struct {
 	compiled   *jsonschema.Schema
 	allowArray bool         // the top level may be an array
 	rules      ground.Rules // x-vde-grounding, enum and const per location (ADR 0009)
+	annotated  bool         // some x-vde-grounding annotation: the repair runs under always
 }
 
 // noLoader refuses every resource the schema does not contain itself: remote $refs and
@@ -72,7 +73,7 @@ func CompileSchema(data []byte) (*Schema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidSchema, err)
 	}
-	rules, err := ground.RulesFromSchema(data)
+	rules, annotated, err := ground.RulesFromSchema(data)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidSchema, err)
 	}
@@ -84,6 +85,7 @@ func CompileSchema(data []byte) (*Schema, error) {
 		compiled:   compiled,
 		allowArray: compiled.Types == nil || slices.Contains(compiled.Types.ToStrings(), "array"),
 		rules:      rules,
+		annotated:  annotated,
 	}, nil
 }
 
@@ -94,6 +96,12 @@ func (s *Schema) GroundingRules() ground.Rules {
 		return nil
 	}
 	return s.rules
+}
+
+// GroundingAnnotated reports whether the schema carries any x-vde-grounding annotation;
+// false for a nil schema.
+func (s *Schema) GroundingAnnotated() bool {
+	return s != nil && s.annotated
 }
 
 // Validate returns one feedback entry per violation of the schema by candidate, each with

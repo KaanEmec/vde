@@ -46,6 +46,10 @@ limits: {max_attempts: 3, job_timeout: 5m, judge_reparse_tries: 1}
 const (
 	personSchema = `{"type": "object", "required": ["name"], "additionalProperties": false,
 		"properties": {"name": {"type": "string"}, "born": {"type": "integer"}}}`
+	// annotatedPersonSchema is personSchema with a grounding annotation, so the repair
+	// runs under always too (ADR 0009, amendment 2026-10-18).
+	annotatedPersonSchema = `{"type": "object", "required": ["name"], "additionalProperties": false,
+		"properties": {"name": {"type": "string"}, "born": {"type": "integer", "x-vde-grounding": "critical"}}}`
 	valid       = `{"name": "Ada Lovelace", "born": 1815}`
 	valid2      = `{"name": "Ada King", "born": 1815}`
 	invalid     = `{"name": "Ada Lovelace", "born": "1815"}`
@@ -912,8 +916,20 @@ func TestRun_verification(t *testing.T) {
 // Lovelace, 1815) and valid2's name, with its grounding text.
 func groundedInput(t *testing.T, policy config.JudgePolicy) Input {
 	t.Helper()
-	const text = "Ada Lovelace, later Ada King, was born in 1815."
-	in := input(t, personSchema)
+	return groundableInput(t, personSchema, "Ada Lovelace, later Ada King, was born in 1815.", policy)
+}
+
+// annotatedInput is groundedInput with annotatedPersonSchema: under always an ungrounded
+// candidate takes the repair.
+func annotatedInput(t *testing.T, policy config.JudgePolicy) Input {
+	t.Helper()
+	return groundableInput(t, annotatedPersonSchema, "Ada Lovelace, later Ada King, was born in 1815.", policy)
+}
+
+// groundableInput is input(schema) on a groundable plain-text document.
+func groundableInput(t *testing.T, schema, text string, policy config.JudgePolicy) Input {
+	t.Helper()
+	in := input(t, schema)
 	in.Representation = document.Representation{
 		Kind: document.Text, Parts: []provider.Part{{Text: text}}, MediaTypes: []string{"text/plain"},
 		GroundText: text, Groundable: true,
@@ -970,6 +986,7 @@ func TestRun_judgePolicy(t *testing.T) {
 		maxAttempts        int
 		extractor, judge   fake.Script
 		schemaless         bool
+		annotated          bool // annotatedPersonSchema: the repair runs under always
 		wantStatus         Status
 		wantVerification   string
 		wantExtractorCalls int
@@ -977,36 +994,43 @@ func TestRun_judgePolicy(t *testing.T) {
 		wantDecision       string
 		wantGrounding      int // grounding entries in the outcome's feedback
 	}{
-		{"always grounded", "", 0, 3, fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false,
+		{"always grounded", "", 0, 3, fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false, false,
 			StatusAccepted, VerificationJudge, 1, 1, DecisionJudged, 0},
-		{"always repaired", config.JudgeAlways, 0, 3, fake.Script{fake.Answer(invented), fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false,
+		{"always repaired", config.JudgeAlways, 0, 3, fake.Script{fake.Answer(invented), fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false, true,
 			StatusAccepted, VerificationJudge, 2, 1, DecisionJudged, 0},
 		{"always repair fails, judge rejects to the limit", config.JudgeAlways, 0, 3, fake.Script{{Answer: invented, Repeat: true}},
-			fake.Script{{Answer: reject, Repeat: true}}, false, StatusRejected, VerificationNone, 3, 2, DecisionJudged, 0},
-		{"never", config.JudgeNever, 0, 3, fake.Script{fake.Answer(valid)}, nil, false,
+			fake.Script{{Answer: reject, Repeat: true}}, false, true, StatusRejected, VerificationNone, 3, 2, DecisionJudged, 0},
+		{"always unannotated, no repair", config.JudgeAlways, 0, 3, fake.Script{fake.Answer(invented)}, fake.Script{fake.Answer(accept)}, false, false,
+			StatusAccepted, VerificationJudge, 1, 1, DecisionJudged, 0},
+		{"always schema-less, no repair", config.JudgeAlways, 0, 3, fake.Script{fake.Answer(invented)}, fake.Script{fake.Answer(accept)}, true, false,
+			StatusAccepted, VerificationJudge, 1, 1, DecisionJudged, 0},
+		{"never", config.JudgeNever, 0, 3, fake.Script{fake.Answer(valid)}, nil, false, false,
 			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 0},
-		{"never advisory", config.JudgeNever, 0, 3, fake.Script{fake.Answer(invented)}, nil, false,
+		{"never advisory", config.JudgeNever, 0, 3, fake.Script{fake.Answer(invented)}, nil, false, false,
 			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 1},
-		{"never schema-less", config.JudgeNever, 0, 3, fake.Script{fake.Answer(`{"anything": "Ada King"}`)}, nil, true,
+		{"never schema-less", config.JudgeNever, 0, 3, fake.Script{fake.Answer(`{"anything": "Ada King"}`)}, nil, true, false,
 			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 0},
-		{"never schema violations", config.JudgeNever, 0, 2, fake.Script{{Answer: invalid, Repeat: true}}, nil, false,
+		{"never schema violations", config.JudgeNever, 0, 2, fake.Script{{Answer: invalid, Repeat: true}}, nil, false, false,
 			StatusRejected, VerificationNone, 2, 0, "", 0},
-		{"never failed extractor", config.JudgeNever, 0, 2, fake.Script{{Answer: notJSON, Repeat: true}}, nil, false,
+		{"never failed extractor", config.JudgeNever, 0, 2, fake.Script{{Answer: notJSON, Repeat: true}}, nil, false, false,
 			StatusFailed, VerificationNone, 2, 0, "", 0},
-		{"auto grounded", config.JudgeAuto, 0, 3, fake.Script{fake.Answer(valid)}, nil, false,
+		{"auto grounded", config.JudgeAuto, 0, 3, fake.Script{fake.Answer(valid)}, nil, false, false,
 			StatusAccepted, VerificationGrounded, 1, 0, DecisionGrounded, 0},
-		{"auto sampled", config.JudgeAuto, 1, 3, fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false,
+		{"auto sampled", config.JudgeAuto, 1, 3, fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false, false,
 			StatusAccepted, VerificationJudge, 1, 1, DecisionSampled, 0},
 		{"auto ungrounded after repair, advisory entries", config.JudgeAuto, 0, 3, fake.Script{{Answer: invented, Repeat: true}},
-			fake.Script{fake.Answer(accept)}, false, StatusAccepted, VerificationJudge, 2, 1, DecisionJudged, 1},
+			fake.Script{fake.Answer(accept)}, false, false, StatusAccepted, VerificationJudge, 2, 1, DecisionJudged, 1},
 		{"auto judge rejects then grounded answer to judge feedback", config.JudgeAuto, 0, 3,
 			fake.Script{fake.Answer(invented), fake.Answer(invented), fake.Answer(valid)},
-			fake.Script{fake.Answer(reject), fake.Answer(accept)}, false, StatusAccepted, VerificationJudge, 3, 2, DecisionJudged, 0},
+			fake.Script{fake.Answer(reject), fake.Answer(accept)}, false, false, StatusAccepted, VerificationJudge, 3, 2, DecisionJudged, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := newRig(t, tt.extractor, nil, tt.judge)
 			in := groundedInput(t, tt.policy)
+			if tt.annotated {
+				in = annotatedInput(t, tt.policy)
+			}
 			if tt.schemaless {
 				in.Schema = nil
 			}
@@ -1072,10 +1096,51 @@ func TestRun_groundingRepairOnResume(t *testing.T) {
 // the outcome, even when the attempt after the repair fails.
 func TestRun_groundingRepairDroppedOnFailure(t *testing.T) {
 	r := newRig(t, fake.Script{fake.Answer(invented), fake.Fail(provider.Permanent, 400), fake.Fail(provider.Permanent, 400)}, nil, nil)
-	in := groundedInput(t, config.JudgeAlways)
+	in := annotatedInput(t, config.JudgeAlways)
 	out := Run(t.Context(), in, r.roles)
 	if out.Status != StatusRejected || len(out.Feedback) != 0 || out.Feedback == nil {
 		t.Errorf("outcome %s with feedback %+v; want rejected with no entries", out.Status, out.Feedback)
+	}
+}
+
+// TestRun_alwaysRepairNeedsAnnotation (ADR 0009, amendment 2026-10-18): under always a
+// candidate with a derived value the document does not print (the country code GB of a
+// London address) goes to the judge at once when the schema carries no x-vde-grounding
+// annotation, so the contract path pays no extra extractor call; the same candidate with
+// an annotation elsewhere in the schema still takes the one repair.
+func TestRun_alwaysRepairNeedsAnnotation(t *testing.T) {
+	const (
+		text      = "Booking for Ada Lovelace, 12 Quay Street, London."
+		candidate = `{"name": "Ada Lovelace", "country": "GB"}`
+		props     = `"name": {"type": "string"}, "country": {"type": "string"}`
+	)
+	tests := []struct {
+		name                     string
+		schema                   string
+		wantExtractor, wantJudge int
+		wantRepaired             bool
+	}{
+		{"unannotated", `{"type": "object", "properties": {` + props + `}}`, 1, 1, false},
+		{"annotated", `{"type": "object", "properties": {` + props + `, "notes": {"type": "string", "x-vde-grounding": "skip"}}}`, 2, 1, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, fake.Script{{Answer: candidate, Repeat: true}}, nil, fake.Script{fake.Answer(accept)})
+			in := groundableInput(t, tt.schema, text, config.JudgeAlways)
+			var repaired bool
+			in.OnAttempt = func(p Progress) { repaired = repaired || p.Repaired }
+			out := Run(t.Context(), in, r.roles)
+			if out.Status != StatusAccepted || out.Verification != VerificationJudge || len(out.Feedback) != 0 {
+				t.Errorf("outcome %s, verification %q, feedback %+v; want accepted by the judge, no entries", out.Status, out.Verification, out.Feedback)
+			}
+			if len(r.primary.Calls()) != tt.wantExtractor || len(r.judge.Calls()) != tt.wantJudge || out.JudgeCalls != tt.wantJudge {
+				t.Errorf("calls: extractor %d, judge %d (outcome %d); want %d, %d", len(r.primary.Calls()), len(r.judge.Calls()),
+					out.JudgeCalls, tt.wantExtractor, tt.wantJudge)
+			}
+			if repaired != tt.wantRepaired {
+				t.Errorf("repaired %v, want %v", repaired, tt.wantRepaired)
+			}
+		})
 	}
 }
 
@@ -1105,7 +1170,7 @@ func TestRun_autoNothingChecked(t *testing.T) {
 func TestRun_groundingRepairFlag(t *testing.T) {
 	t.Run("reported", func(t *testing.T) {
 		r := newRig(t, fake.Script{fake.Answer(invented), fake.Answer(valid)}, nil, fake.Script{fake.Answer(accept)})
-		in := groundedInput(t, config.JudgeAlways)
+		in := annotatedInput(t, config.JudgeAlways)
 		var progress []Progress
 		in.OnAttempt = func(p Progress) { progress = append(progress, p) }
 		Run(t.Context(), in, r.roles)

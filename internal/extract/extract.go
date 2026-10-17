@@ -311,8 +311,13 @@ func (l *loop) run(ctx context.Context) Outcome {
 			l.decision, l.feedback = DecisionSkipped, misses // advisory
 			return l.outcome(StatusExtracted, nil)
 		}
-		if grounded.CriticalMissed > 0 && !l.repaired && l.attempts < maxAttempts {
-			// The one grounding repair: back to the extractor, no judge call.
+		// The one grounding repair: back to the extractor, no judge call. Under always only
+		// for a schema with an x-vde-grounding annotation: an unannotated schema has not
+		// said which values are derivations (a city in English, an IATA code), so its
+		// misses are mostly legitimate and the judge decides without the extra call (ADR
+		// 0009, amendment 2026-10-18). Under auto every miss is repaired.
+		repairable := l.policy == config.JudgeAuto || l.in.Schema.GroundingAnnotated()
+		if grounded.CriticalMissed > 0 && repairable && !l.repaired && l.attempts < maxAttempts {
 			l.repaired = true
 			l.feedback, l.next = misses, misses
 			l.progress()
