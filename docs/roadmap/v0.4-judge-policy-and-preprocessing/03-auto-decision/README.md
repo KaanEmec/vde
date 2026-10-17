@@ -1,6 +1,6 @@
 # Epic 03: Auto decision in the loop
 
-Version: v0.4 · Status: done · Depends on: 01, 02
+Version: v0.4 · Status: done· Depends on: 01, 02
 
 The extraction loop behaves according to the job's judge policy. It sends one grounding
 repair before the judge, ends in `extracted` under `never`, and accepts grounded candidates

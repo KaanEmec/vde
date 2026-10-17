@@ -1,6 +1,6 @@
 # Epic 01: Judge policy
 
-Version: v0.4 · Status: done · Depends on: v0.3
+Version: v0.4 · Status: done· Depends on: v0.3
 
 Configuration, data model and API surface for `always | never | auto`, per application and
 optionally per request. The job gains the `verification` field and the `extracted` status.

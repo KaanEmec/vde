@@ -1,6 +1,6 @@
 # Epic 02: Grounding check
 
-Version: v0.4 · Status: done · Depends on: v0.3
+Version: v0.4 · Status: done· Depends on: v0.3
 
 A deterministic check that every string and number value in a candidate occurs in the
 document text. It is the cheap guard against invented values that no tested judge caught

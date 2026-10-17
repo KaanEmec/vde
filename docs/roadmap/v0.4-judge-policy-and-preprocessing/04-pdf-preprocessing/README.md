@@ -1,6 +1,6 @@
 # Epic 04: PDF preprocessing (text layer and rendering)
 
-Version: v0.4 · Status: done · Depends on: v0.3 (independent of 01 to 03)
+Version: v0.4 · Status: in progress· Depends on: v0.3 (independent of 01 to 03)
 
 The service reads a PDF's text layer and renders its pages itself, cgo-free, with
 `go-pdfium` on its WebAssembly runtime. Models without native PDF input then work without

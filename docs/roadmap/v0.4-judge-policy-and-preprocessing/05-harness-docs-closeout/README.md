@@ -1,6 +1,6 @@
 # Epic 05: Harness, docs and closeout
 
-Version: v0.4 · Status: done · Depends on: 01, 02, 03, 04
+Version: v0.4 · Status: done· Depends on: 01, 02, 03, 04
 
 The evaluation harness reports what the judge policy did per case. Operators and callers
 get the documentation for policies, grounding and PDF preprocessing, and the version is
