@@ -17,6 +17,6 @@ and budget are in ADR 0010.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [`internal/pdf` on go-pdfium (WebAssembly)](01-pdf-package.md) | in progress |
-| 02 | [`documents.pdf` and representation selection](02-representation-selection.md) | in progress |
-| 03 | [Text layer for grounding, samples and the owner suite](03-text-layer-and-samples.md) | in progress |
+| 01 | [`internal/pdf` on go-pdfium (WebAssembly)](01-pdf-package.md) | done (overview rows, image `NOTICE`, CI at closeout) |
+| 02 | [`documents.pdf` and representation selection](02-representation-selection.md) | in progress (config, selection, `vde extract` done; submit, worker, `service_version` open) |
+| 03 | [Text layer for grounding, samples and the owner suite](03-text-layer-and-samples.md) | in progress (grounding text done; loop checks open) |

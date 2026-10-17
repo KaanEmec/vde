@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/provider"
@@ -70,6 +71,16 @@ func (k Kind) String() string {
 	return "unknown"
 }
 
+// Source is where a representation's content comes from.
+type Source string
+
+// Sources. Kind says what the models read; Source says how the service got it.
+const (
+	SourceGiven     Source = "given"      // the document or the caller's pages as submitted
+	SourceTextLayer Source = "text_layer" // a PDF's text layer, read by the service (ADR 0010)
+	SourceRendered  Source = "rendered"   // a PDF's pages, rendered by the service (ADR 0010)
+)
+
 // Representation is what both roles read, decided once at submit. Parts is built once:
 // the extractor and the judge are given this same slice.
 type Representation struct {
@@ -80,6 +91,27 @@ type Representation struct {
 	MediaTypes []string
 	// HTMLPolicy is the policy applied to HTML content, "" when the document has none.
 	HTMLPolicy HTMLPolicy
+	// Source is SourceGiven, or for a PDF the service prepared, SourceTextLayer (Kind
+	// Text) or SourceRendered (Kind Pages).
+	Source Source
+
+	// GroundText is the document text the grounding check reads (ADR 0009), which can
+	// differ from what the models read: visible text for HTML under either policy, the
+	// header block and visible body for email, the text layer for a PDF. It is never
+	// sent to a model unless Kind is Text, and never logged. Groundable is false when
+	// there is no such text: images, caller pages, and PDFs whose text layer is too
+	// thin or was not read (see GroundingText for PDFs sent natively or as pages).
+	GroundText string
+	Groundable bool
+}
+
+// Label is the representation as stored in job metadata: the kind, plus the source when
+// the service prepared it ("text+text_layer", "pages+rendered").
+func (r Representation) Label() string {
+	if r.Source == "" || r.Source == SourceGiven {
+		return r.Kind.String()
+	}
+	return r.Kind.String() + "+" + string(r.Source)
 }
 
 // Select chooses the representation from the document and the capabilities of the
@@ -90,8 +122,8 @@ type Representation struct {
 //     supplied and a pair accepts their types;
 //  3. the judge group must read the same choice, else the next option is tried.
 //
-// When nothing fits both roles it returns ErrUnsupportedDocument. The service never
-// renders pages (ADR 0006). Select does not convert images; see SelectWith.
+// When nothing fits both roles it returns ErrUnsupportedDocument. Select neither
+// converts images nor reads PDFs itself; see SelectWith.
 func Select(doc *Document, extractor, judge []config.Capability, policy HTMLPolicy) (Representation, error) {
 	return SelectWith(doc, extractor, judge, policy, ImagePolicy{})
 }
@@ -107,7 +139,14 @@ func Select(doc *Document, extractor, judge []config.Capability, policy HTMLPoli
 //
 // Representation.MediaTypes reports the types after conversion. A disabled policy
 // leaves every image as given.
-func SelectWith(doc *Document, extractor, judge []config.Capability, policy HTMLPolicy, images ImagePolicy) (Representation, error) {
+//
+// An optional PDFPolicy with an engine (ADR 0010) lets the service prepare a PDF that
+// neither a native reader nor the caller's pages serve: under auto, its text layer when
+// every page has at least MinTextChars characters, else its pages rendered at DPI (then
+// through the image policy); text and pages force one; native keeps ADR 0006's refusal.
+// A PDF with more than MaxPages pages is refused then. Without a PDF policy, or with a
+// nil engine, PDFs are selected as before. Only the first PDFPolicy is used.
+func SelectWith(doc *Document, extractor, judge []config.Capability, policy HTMLPolicy, images ImagePolicy, pdfs ...PDFPolicy) (Representation, error) {
 	policy, err := policy.resolve()
 	if err != nil {
 		return Representation{}, err
@@ -121,6 +160,9 @@ func SelectWith(doc *Document, extractor, judge []config.Capability, policy HTML
 			continue
 		}
 		return build(doc, c, policy)
+	}
+	if len(pdfs) > 0 && doc.Category == CategoryPDF && pdfs[0].active() {
+		return selectPDF(doc, extractor, judge, images, pdfs[0])
 	}
 	return Representation{}, refuse(CodeUnsupportedDocument,
 		"no representation of %s is readable by both the extractor and the judge group", doc.BaseType())
@@ -153,9 +195,19 @@ func candidates(doc *Document, images ImagePolicy) ([]candidate, error) {
 	if len(doc.Pages) == 0 {
 		return out, nil
 	}
-	converted := make([]Page, len(doc.Pages))
+	pages, err := pageCandidates(doc.Pages, images)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, pages...), nil
+}
+
+// pageCandidates offers page images converted by the image policy, then as given when
+// the conversion changed any page.
+func pageCandidates(pages []Page, images ImagePolicy) ([]candidate, error) {
+	converted := make([]Page, len(pages))
 	changed := false
-	for i, p := range doc.Pages {
+	for i, p := range pages {
 		forms, err := images.variants(p.Data, p.MediaType)
 		if err != nil {
 			return nil, fmt.Errorf("page %d: %w", i+1, err)
@@ -163,9 +215,9 @@ func candidates(doc *Document, images ImagePolicy) ([]candidate, error) {
 		converted[i] = forms[0]
 		changed = changed || forms[0].MediaType != p.MediaType || !bytes.Equal(forms[0].Data, p.Data)
 	}
-	out = append(out, pagesCandidate(converted))
+	out := []candidate{pagesCandidate(converted)}
 	if changed {
-		out = append(out, pagesCandidate(doc.Pages))
+		out = append(out, pagesCandidate(pages))
 	}
 	return out, nil
 }
@@ -206,7 +258,7 @@ func reads(caps []config.Capability, c candidate) bool {
 }
 
 func build(doc *Document, c candidate, policy HTMLPolicy) (Representation, error) {
-	r := Representation{Kind: c.kind, MediaTypes: c.mediaTypes}
+	r := Representation{Kind: c.kind, MediaTypes: c.mediaTypes, Source: SourceGiven}
 	switch c.kind {
 	case Native:
 		if doc.Category == CategoryPDF {
@@ -225,6 +277,13 @@ func build(doc *Document, c candidate, policy HTMLPolicy) (Representation, error
 		if doc.hasHTML() {
 			r.HTMLPolicy = policy
 		}
+		r.GroundText = text
+		if policy != VisibleText && doc.hasHTML() {
+			if r.GroundText, err = doc.Text(VisibleText); err != nil {
+				return Representation{}, err
+			}
+		}
+		r.Groundable = strings.TrimSpace(r.GroundText) != ""
 	}
 	return r, nil
 }
