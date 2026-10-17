@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -287,7 +288,7 @@ func TestGroundingText(t *testing.T) {
 			if rep.Label() != tt.wantLabel {
 				t.Errorf("Label = %q, want %q", rep.Label(), tt.wantLabel)
 			}
-			got, ok := GroundingText(context.Background(), doc, rep, PDFPolicy{})
+			got, ok, _ := GroundingText(context.Background(), doc, rep, PDFPolicy{})
 			if ok != tt.groundOK || rep.Groundable != tt.groundOK {
 				t.Fatalf("groundable = %v (rep %v), want %v", ok, rep.Groundable, tt.groundOK)
 			}
@@ -335,11 +336,11 @@ func TestGroundingText_pdfSentAsGiven(t *testing.T) {
 			if rep.Groundable || stub.opens.Load() != 0 {
 				t.Fatalf("selection opened the PDF (%d) or made it groundable", stub.opens.Load())
 			}
-			text, ok := GroundingText(context.Background(), doc, rep, p)
+			text, ok, _ := GroundingText(context.Background(), doc, rep, p)
 			if ok != tt.want || (ok && !strings.Contains(text, "HV-48213")) {
 				t.Errorf("GroundingText = %v, want %v", ok, tt.want)
 			}
-			if _, ok := GroundingText(context.Background(), doc, rep, PDFPolicy{}); ok {
+			if _, ok, _ := GroundingText(context.Background(), doc, rep, PDFPolicy{}); ok {
 				t.Error("groundable without an engine")
 			}
 		})
@@ -394,7 +395,7 @@ func TestSelectWith_bookingPDF(t *testing.T) {
 			if rep.Label() != tt.label {
 				t.Errorf("Label = %q, want %q", rep.Label(), tt.label)
 			}
-			text, ok := GroundingText(context.Background(), doc, rep, p)
+			text, ok, _ := GroundingText(context.Background(), doc, rep, p)
 			if !ok || !strings.Contains(text, "HV-48213") || !strings.Contains(text, "412.50") {
 				t.Errorf("GroundingText = %v, %d bytes; want groundable with the booking reference", ok, len(text))
 			}
@@ -435,7 +436,36 @@ func TestSelectWith_imageOnlyPDF(t *testing.T) {
 	if r, g, b, _ := img.At(2, 2).RGBA(); color.Gray16Model.Convert(color.RGBA64{uint16(r), uint16(g), uint16(b), 0xffff}).(color.Gray16).Y < 0xf000 {
 		t.Error("page background is not white")
 	}
-	if _, ok := GroundingText(context.Background(), doc, rep, p); ok {
+	if _, ok, _ := GroundingText(context.Background(), doc, rep, p); ok {
 		t.Error("an image-only PDF is groundable")
+	}
+}
+
+// TestPDFEngineBusy: an engine with no instance free (pdf.ErrBusy) is neither a refusal
+// nor an unreadable PDF: selection and the grounding text report it, so callers retry.
+// An unreadable PDF stays a quiet "not groundable".
+func TestPDFEngineBusy(t *testing.T) {
+	t.Parallel()
+	vision := capsFor(t, []string{"image/png"})
+	pdfNative := capsFor(t, []string{"application/pdf"})
+	doc, err := New(Input{MediaType: "application/pdf", Data: pdfData}, config.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := stubPolicy("auto", &stubPDF{openErr: fmt.Errorf("%w: no instance free", pdf.ErrBusy)})
+	_, err = SelectContext(t.Context(), doc, vision, vision, "", ImagePolicy{}, busy)
+	if !errors.Is(err, pdf.ErrBusy) || errors.Is(err, ErrUnsupportedDocument) {
+		t.Errorf("SelectContext = %v, want pdf.ErrBusy and no refusal", err)
+	}
+	rep, err := SelectWith(doc, pdfNative, pdfNative, "", ImagePolicy{}, busy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := GroundingText(t.Context(), doc, rep, busy); ok || !errors.Is(err, pdf.ErrBusy) {
+		t.Errorf("GroundingText while busy = %v, %v; want pdf.ErrBusy", ok, err)
+	}
+	invalid := stubPolicy("auto", &stubPDF{openErr: pdf.ErrInvalid})
+	if _, ok, err := GroundingText(t.Context(), doc, rep, invalid); ok || err != nil {
+		t.Errorf("GroundingText of an unreadable PDF = %v, %v; want not groundable, no error", ok, err)
 	}
 }

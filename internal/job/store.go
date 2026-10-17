@@ -520,7 +520,7 @@ const jobColumns = `id, application_id, status, attempts, result, feedback, erro
 	service_version, representation, media_type, size, page_count, retention, idempotency_key,
 	body_hash, attachments, extractor_instructions, judge_instructions, schema, max_attempts, created_at,
 	started_at, finished_at, expires_at, lease_until, worker_id, inputs_deleted_at,
-	content_deleted_at, input_tokens, output_tokens, judge_policy, verification`
+	content_deleted_at, input_tokens, output_tokens, judge_policy, verification, grounding_repaired`
 
 func scanJob(r scanner) (Job, error) {
 	var j Job
@@ -531,7 +531,7 @@ func scanJob(r scanner) (Job, error) {
 		&j.ServiceVersion, &j.Representation, &j.MediaType, &j.Size, &j.PageCount, &j.Retention, &key,
 		&j.BodyHash, &attachments, &j.ExtractorInstructions, &j.JudgeInstructions, &j.Schema, &j.MaxAttempts, &created,
 		&started, &finished, &expires, &lease, &j.WorkerID, &inputsDeleted,
-		&contentDeleted, &j.InputTokens, &j.OutputTokens, &j.JudgePolicy, &verification)
+		&contentDeleted, &j.InputTokens, &j.OutputTokens, &j.JudgePolicy, &verification, &j.GroundingRepaired)
 	if err != nil {
 		return Job{}, err
 	}
@@ -709,10 +709,11 @@ func (s *sqlStore) RecordAttempt(ctx context.Context, id, workerID string, p Pro
 	res, err := s.exec(ctx, `
 		UPDATE jobs SET attempts = ?1, result = ?2, feedback = ?3, lease_until = ?4,
 			input_tokens = CASE WHEN input_tokens > ?7 THEN input_tokens ELSE ?7 END,
-			output_tokens = CASE WHEN output_tokens > ?8 THEN output_tokens ELSE ?8 END
+			output_tokens = CASE WHEN output_tokens > ?8 THEN output_tokens ELSE ?8 END,
+			grounding_repaired = (grounding_repaired OR ?9)
 		WHERE id = ?5 AND status = 'running' AND worker_id = ?6 AND attempts <= ?1`,
 		p.Attempts, jsonText(p.Result), jsonText(p.Feedback), leaseUntil.UnixMilli(),
-		id, workerID, p.InputTokens, p.OutputTokens)
+		id, workerID, p.InputTokens, p.OutputTokens, p.GroundingRepaired)
 	if err != nil {
 		return fmt.Errorf("job: record attempt: %w", err)
 	}

@@ -430,7 +430,10 @@ components:
         service_version: { type: string }
         judge_policy: { type: string, enum: [always, never, auto], description: The effective judge policy the job runs under. }
         verification: { type: [string, "null"], enum: [judge, grounded, none, null], description: What accepted the result; null until terminal. }
-        representation: { type: string, enum: [native, pages, text] }
+        representation:
+          type: string
+          enum: [native, pages, text, text+text_layer, pages+rendered]
+          description: "What both roles read: native, pages or text as submitted; text+text_layer or pages+rendered for a PDF the service read or rendered itself (ADR 0010)."
         media_type: { type: string }
         bytes: { type: integer }
         pages: { type: integer }

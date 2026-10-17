@@ -105,6 +105,10 @@ type Input struct {
 	PriorAttempts  int
 	PriorCandidate json.RawMessage
 	PriorFeedback  []Feedback
+	// PriorRepaired is Progress.Repaired as persisted: the job already made its one
+	// grounding repair (ADR 0009), which its saved feedback no longer shows once a judge
+	// answered after it.
+	PriorRepaired bool
 	// JudgePolicy is the job's effective judge policy (request, else application, else
 	// roles.judge.policy); "" means config.JudgeAlways. The grounding check reads
 	// Representation.GroundText; under never and auto the caller fills it for PDFs sent
@@ -129,6 +133,9 @@ type Progress struct {
 	Result   json.RawMessage // the last parseable candidate, nil when none yet
 	Feedback []Feedback      // the feedback on Result, or on an answer that was not JSON
 	Usage    Usage           // of this Run so far (not of Input.PriorAttempts)
+	// Repaired reports that the job made its one grounding repair; persist it and pass
+	// it back as Input.PriorRepaired on resume.
+	Repaired bool
 }
 
 // Usage is the provider token usage of the role calls of one Run, as the providers
@@ -242,7 +249,10 @@ func (l *loop) run(ctx context.Context) Outcome {
 		l.usable, l.result, l.prev = true, l.in.PriorCandidate, l.in.PriorCandidate
 	}
 	l.feedback, l.next = l.in.PriorFeedback, l.in.PriorFeedback
-	l.repaired = slices.ContainsFunc(l.in.PriorFeedback, func(f Feedback) bool { return f.Source == SourceGrounding })
+	// Feedback with grounding entries also marks a repair (a row persisted before the
+	// flag existed).
+	l.repaired = l.in.PriorRepaired ||
+		slices.ContainsFunc(l.in.PriorFeedback, func(f Feedback) bool { return f.Source == SourceGrounding })
 	schemaless := l.in.Schema == nil
 	extractorSystem, judgeSystem := framings(schemaless)
 	allowArray := schemaless || l.in.Schema.allowArray
@@ -308,8 +318,10 @@ func (l *loop) run(ctx context.Context) Outcome {
 			l.progress()
 			continue
 		}
-		// The auto gate: grounded text, every critical leaf grounded, and a candidate that
-		// does not answer schema or judge feedback (a judge's rejection is not overruled).
+		// The auto gate: grounded text, at least one critical leaf checked and every one
+		// grounded (a candidate with nothing to check, such as {} or only nulls, goes to the
+		// judge), and a candidate that does not answer schema or judge feedback (a judge's
+		// rejection is not overruled).
 		gate := l.policy == config.JudgeAuto && grounded.CriticalOK() && !answersFeedback
 		sampled := gate && Sampled(l.in.SampleKey, l.in.SampleRate)
 		switch {
@@ -476,11 +488,7 @@ func (l *loop) failed(code string) Outcome {
 }
 
 func (l *loop) outcome(status Status, jobErr *JobError) Outcome {
-	feedback := l.feedback
-	if l.policy == config.JudgeAlways {
-		// Contract v1 sources only: a repair's entries never reach the job's feedback.
-		feedback = slices.DeleteFunc(slices.Clone(feedback), func(f Feedback) bool { return f.Source == SourceGrounding })
-	}
+	feedback := visibleFeedback(l.policy, l.feedback)
 	if feedback == nil {
 		feedback = []Feedback{}
 	}
@@ -506,9 +514,42 @@ func (l *loop) outcome(status Status, jobErr *JobError) Outcome {
 	}
 }
 
+// visibleFeedback is feedback as the job shows it under policy: under always (contract v1
+// sources only) a grounding repair's entries reach only the extractor, never the job's
+// feedback. feedback itself is never modified.
+func visibleFeedback(policy config.JudgePolicy, feedback []Feedback) []Feedback {
+	if (policy != "" && policy != config.JudgeAlways) || !slices.ContainsFunc(feedback, isGrounding) {
+		return feedback
+	}
+	return slices.DeleteFunc(slices.Clone(feedback), isGrounding)
+}
+
+func isGrounding(f Feedback) bool { return f.Source == SourceGrounding }
+
+// VisibleFeedback is a job row's persisted feedback (a JSON array) as clients may see it
+// under the row's judge policy ("" means always): every place that shows or finalizes
+// saved feedback (GET while running, the worker's and the sweeper's terminal writes
+// without a loop outcome) drops a grounding repair's entries under always, as the loop
+// does. Feedback that does not parse, or has nothing to drop, is returned unchanged.
+func VisibleFeedback(policy string, feedback json.RawMessage) json.RawMessage {
+	var entries []Feedback
+	if len(feedback) == 0 || json.Unmarshal(feedback, &entries) != nil {
+		return feedback
+	}
+	visible := visibleFeedback(config.JudgePolicy(policy), entries)
+	if len(visible) == len(entries) {
+		return feedback
+	}
+	b, err := json.Marshal(visible)
+	if err != nil {
+		return feedback
+	}
+	return b
+}
+
 func (l *loop) progress() {
 	if l.in.OnAttempt != nil {
-		l.in.OnAttempt(Progress{Attempts: l.attempts, Result: l.result, Feedback: l.feedback, Usage: l.usage})
+		l.in.OnAttempt(Progress{Attempts: l.attempts, Result: l.result, Feedback: l.feedback, Usage: l.usage, Repaired: l.repaired})
 	}
 }
 

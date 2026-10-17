@@ -23,6 +23,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 	"github.com/kaanemec/vde/internal/worker"
@@ -795,10 +796,14 @@ func waitFor(t *testing.T, cond func() bool) {
 type stubPDF struct {
 	text  string
 	opens atomic.Int32
+	busy  atomic.Int32 // Opens that report pdf.ErrBusy before one succeeds
 }
 
 func (e *stubPDF) Open(context.Context, []byte) (document.PDFDoc, error) {
 	e.opens.Add(1)
+	if e.busy.Add(-1) >= 0 {
+		return nil, fmt.Errorf("%w: no instance free", pdf.ErrBusy)
+	}
 	return stubPDFDoc{e}, nil
 }
 
@@ -859,6 +864,47 @@ func TestPDFPreparedByService(t *testing.T) {
 				t.Errorf("the PDF was opened %d times, want once (selection reads the text layer)", engine.opens.Load())
 			}
 		})
+	}
+}
+
+// TestPDFEngineBusy: a PDF engine with no instance free (pdf.ErrBusy) costs the job no
+// attempt and does not fail it: the lease is released, the job is leased again and runs
+// once an instance is free.
+func TestPDFEngineBusy(t *testing.T) {
+	ext, judge := accepting()
+	engine := &stubPDF{text: strings.Repeat("Booking for SENTINEL-RESULT. ", 10)}
+	engine.busy.Store(2)
+	r := newRig(t, ext, judge, worker.Options{PDF: engine})
+	j := r.submit(t, "app", func(j *job.Job) {
+		j.MediaType, j.Representation, j.Retention = "application/pdf", "text+text_layer", job.RetentionDefault
+	})
+	r.start(t)
+	got := r.waitTerminal(t, j.ID)
+	if got.Status != job.StatusAccepted || got.Attempts != 1 || len(r.ext.Calls()) != 1 {
+		t.Fatalf("row %s (%s) after %d attempts, %d extractor calls; want accepted after 1", got.Status, got.Error, got.Attempts, len(r.ext.Calls()))
+	}
+	if n := engine.opens.Load(); n != 3 {
+		t.Errorf("the PDF was opened %d times, want 3 (two busy, then one)", n)
+	}
+	if logs := r.logs.String(); !strings.Contains(logs, "pdf engine busy") || strings.Contains(logs, "cannot prepare the job") {
+		t.Errorf("logs:\n%s", logs)
+	}
+}
+
+// TestResumeKeepsGroundingRepairFlag: a job whose persisted progress says it made its
+// grounding repair, while its saved feedback is the judge's, resumes without a second
+// repair (migration 0010): the next ungrounded candidate goes to the judge.
+func TestResumeKeepsGroundingRepairFlag(t *testing.T) {
+	r := newRig(t, fake.Script{{Answer: `{"name":"SENTINEL-INVENTED"}`, Repeat: true}},
+		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{})
+	j := r.submit(t, "app", func(j *job.Job) { j.Retention = job.RetentionDefault })
+	r.crash(t, j, job.Progress{Attempts: 1, Result: json.RawMessage(`{"name":"SENTINEL-INVENTED"}`), GroundingRepaired: true,
+		Feedback: json.RawMessage(`[{"pointer":"/name","message":"wrong","source":"judge"}]`)})
+	r.start(t)
+	got := r.waitTerminal(t, j.ID)
+	if got.Status != job.StatusAccepted || got.Attempts != 2 || len(r.ext.Calls()) != 1 || len(r.judge.Calls()) != 1 {
+		t.Errorf("row %s after %d attempts, %d extractor and %d judge calls; want accepted after 2, 1 and 1 (no second repair)",
+			got.Status, got.Attempts, len(r.ext.Calls()), len(r.judge.Calls()))
 	}
 }
 

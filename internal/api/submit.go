@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kaanemec/vde/internal/blob"
@@ -32,6 +33,9 @@ const (
 	maxOptionBytes         = 32 // retention and max_attempts
 	maxJudgeBytes          = 16 // the judge part: always, never or auto
 	maxIdempotencyKeyChars = 128
+	// pdfBusyRetryAfter is the Retry-After of a submission refused because every PDF
+	// engine instance stayed busy (503 unavailable).
+	pdfBusyRetryAfter = 5 * time.Second
 )
 
 const (
@@ -84,6 +88,7 @@ const (
 	msgQuotaExhausted         = "The quota of %d jobs per window is spent."
 	msgStorageFailed          = "The job could not be stored; submit it again."
 	msgSubmitConfigIncomplete = "The service's document configuration is not usable."
+	msgPDFBusy                = "The service is busy preparing other PDFs; submit again later."
 )
 
 // part is one read part: its declared Content-Type, filename (informational only), bytes
@@ -193,7 +198,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		}
 		schema = string(sub.schema.data)
 	}
-	rep, err := selectRepresentation(cfg, app, doc, s.deps.PDF)
+	rep, err := selectRepresentation(r.Context(), cfg, app, doc, s.deps.PDF)
 	if err != nil {
 		s.refuseDocument(w, r, err)
 		return nil, true
@@ -505,7 +510,7 @@ func (sub *submission) hash() string {
 // is opened here with engine, its pages counted and its text layer measured, and a PDF
 // that cannot be prepared is refused (415). The worker selects again with the same
 // policies.
-func selectRepresentation(cfg *config.Config, app job.Application, doc *document.Document, engine document.PDFEngine) (document.Representation, error) {
+func selectRepresentation(ctx context.Context, cfg *config.Config, app job.Application, doc *document.Document, engine document.PDFEngine) (document.Representation, error) {
 	policy, err := document.ResolveHTMLPolicy(cfg.Documents.HTML, app.HTMLPolicy)
 	if err != nil {
 		return document.Representation{}, err
@@ -514,13 +519,19 @@ func selectRepresentation(cfg *config.Config, app job.Application, doc *document
 	// read the representation.
 	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
 	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, cfg.PDFModeOf(app.ID), engine)
-	return document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
+	return document.SelectContext(ctx, doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
 }
 
 // refuseDocument answers a refused document (*document.Error) with its contract code
 // and a fixed message; any other error is a configuration problem and answers 500.
 func (s *server) refuseDocument(w http.ResponseWriter, r *http.Request, err error) {
 	var de *document.Error
+	if errors.Is(err, pdf.ErrBusy) {
+		// Every pdfium instance stayed busy for the engine's wait: nothing is wrong with
+		// the document or the configuration.
+		writeError(w, r, newError(codeUnavailable, msgPDFBusy).withRetryAfter(pdfBusyRetryAfter))
+		return
+	}
 	if !errors.As(err, &de) {
 		s.log.LogAttrs(r.Context(), slog.LevelError, "document configuration not usable",
 			slog.String("request_id", requestIDFrom(r.Context())))

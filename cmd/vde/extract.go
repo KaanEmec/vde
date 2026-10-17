@@ -344,12 +344,14 @@ func selectRepresentation(ctx context.Context, cfg *config.Config, doc *document
 	// read the representation.
 	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
 	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, "", document.PDFEngineOf(engine))
-	rep, err := document.SelectWith(doc, extractorCaps, judgeCaps, html, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
+	rep, err := document.SelectContext(ctx, doc, extractorCaps, judgeCaps, html, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
 	if err != nil {
 		return document.Representation{}, err
 	}
 	if judgePolicy != config.JudgeAlways {
-		rep.GroundText, rep.Groundable = document.GroundingText(ctx, doc, rep, pdfPolicy)
+		if rep.GroundText, rep.Groundable, err = document.GroundingText(ctx, doc, rep, pdfPolicy); err != nil {
+			return document.Representation{}, err
+		}
 	}
 	return rep, nil
 }

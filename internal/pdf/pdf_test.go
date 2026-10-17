@@ -248,6 +248,31 @@ func TestEngine_Open_serialized(t *testing.T) {
 	}
 }
 
+// TestEngine_Open_busy: when every instance stays in use for the whole wait, Open fails
+// with ErrBusy, not ErrTimeout, so callers can retry instead of failing; a cancelled
+// context is reported as itself.
+func TestEngine_Open_busy(t *testing.T) {
+	t.Parallel()
+	e := newEngine(t, Config{Workers: 1, Timeout: 30 * time.Second})
+	held := open(t, e, booking(t))
+	e.cfg.Timeout = 100 * time.Millisecond // the wait only; held's calls keep their own timeout
+	_, err := e.Open(context.Background(), booking(t))
+	if !errors.Is(err, ErrBusy) || errors.Is(err, ErrTimeout) {
+		t.Fatalf("Open while busy = %v, want ErrBusy", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := e.Open(ctx, booking(t)); !errors.Is(err, context.Canceled) {
+		t.Errorf("Open with a cancelled context = %v, want context.Canceled", err)
+	}
+	held.Close()
+	if d, err := e.Open(context.Background(), booking(t)); err != nil {
+		t.Errorf("Open after release: %v", err)
+	} else {
+		d.Close()
+	}
+}
+
 func TestDoc_call_timeoutKillsInstance(t *testing.T) {
 	t.Parallel()
 	e := newEngine(t, Config{Workers: 1})
@@ -391,7 +416,7 @@ func FuzzOpen(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		d, err := e.Open(context.Background(), data)
 		if err != nil {
-			for _, want := range []error{ErrInvalid, ErrEncrypted, ErrTooManyPages, ErrTooLarge, ErrTimeout} {
+			for _, want := range []error{ErrInvalid, ErrEncrypted, ErrTooManyPages, ErrTooLarge, ErrTimeout, ErrBusy} {
 				if errors.Is(err, want) {
 					return
 				}

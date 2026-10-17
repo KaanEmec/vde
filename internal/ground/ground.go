@@ -85,19 +85,25 @@ func (m Misses) Feedback() []Feedback {
 
 // Result is the outcome of Check.
 type Result struct {
-	Ungrounded     Misses // capped by Options.MaxMisses
-	Checked        int    // leaves compared against the text
-	Skipped        int    // booleans, nulls, enum values, short strings, derived and skip leaves
-	Missed         int    // checked leaves not grounded, uncapped
-	CriticalMissed int    // critical leaves not grounded, uncapped
+	Ungrounded Misses // capped by Options.MaxMisses
+	Checked    int    // leaves compared against the text
+	// CriticalChecked counts the critical leaves among Checked: a candidate with none
+	// (an empty object, only nulls, booleans or enum values) gives grounding no evidence.
+	CriticalChecked int
+	Skipped         int // booleans, nulls, enum values, short strings, derived and skip leaves
+	Missed          int // checked leaves not grounded, uncapped
+	CriticalMissed  int // critical leaves not grounded, uncapped
 	// Ungroundable is set when there is no text to check against (nil *Text) or the
 	// candidate is not valid JSON; nothing was checked.
 	Ungroundable bool
 }
 
-// CriticalOK reports whether the candidate could be checked and every critical leaf is
-// grounded: the grounding condition of the auto judge policy.
-func (r Result) CriticalOK() bool { return !r.Ungroundable && r.CriticalMissed == 0 }
+// CriticalOK reports whether the candidate could be checked, at least one critical leaf
+// was checked and every critical leaf is grounded: the grounding condition of the auto
+// judge policy. A candidate with nothing to check never passes it.
+func (r Result) CriticalOK() bool {
+	return !r.Ungroundable && r.CriticalChecked > 0 && r.CriticalMissed == 0
+}
 
 // Check walks every leaf of candidate in document order and reports the checked leaves
 // that doc does not ground. rules may be nil (schema-less: every leaf checked and
@@ -132,11 +138,14 @@ func Check(doc *Text, candidate json.RawMessage, rules Rules, opts Options) Resu
 			continue
 		}
 		res.Checked++
+		critical := !anyCritical || ruleOf[i] == RuleCritical
+		if critical {
+			res.CriticalChecked++
+		}
 		if ok {
 			continue
 		}
 		res.Missed++
-		critical := !anyCritical || ruleOf[i] == RuleCritical
 		if critical {
 			res.CriticalMissed++
 		}
