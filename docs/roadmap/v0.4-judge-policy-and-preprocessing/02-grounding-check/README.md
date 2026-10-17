@@ -9,6 +9,6 @@ The new package `internal/ground` has no model calls, no I/O and no logging of c
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [Normalization, numbers and dates](01-normalization.md) | in progress |
-| 02 | [`Check` and schema annotations](02-check-and-annotations.md) | in progress |
+| 01 | [Normalization, numbers and dates](01-normalization.md) | done |
+| 02 | [`Check` and schema annotations](02-check-and-annotations.md) | done (extract wiring pending) |
 | 03 | [Document text for grounding](03-document-text.md) | in progress |
