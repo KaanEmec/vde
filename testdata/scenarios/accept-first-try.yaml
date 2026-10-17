@@ -2,7 +2,7 @@
 # document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
 description: the extractor answers once and the judge accepts
 steps:
-  - answer: '{"name": "Ada Lovelace", "born": 1815}'
+  - answer: '{"guest": "Jane Example", "nights": 3}'
   - answer: '{"verdict": "accept", "feedback": {}}'
 ---
 input:
@@ -14,5 +14,5 @@ expect:
   extractor_calls: {primary: 1}
   judge_confidence: null # absent from the verdict
   feedback: []
-  result: '{"name": "Ada Lovelace", "born": 1815}'
+  result: '{"guest": "Jane Example", "nights": 3}'
   document_parts: [text/plain]

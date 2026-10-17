@@ -150,3 +150,18 @@ func TestExtractSyncOutlivesServerTimeouts(t *testing.T) {
 		t.Fatalf("status = %d, body %s", resp.StatusCode, data)
 	}
 }
+
+// TestExtractSyncExtracted: under judge policy never the synchronous endpoint returns the
+// terminal extracted job with its verification, like the job resource (ADR 0009).
+func TestExtractSyncExtracted(t *testing.T) {
+	t.Parallel()
+	rg := newSubmitRig(t, submitRigOptions{pool: true, notify: true,
+		app: func(a *job.Application) { a.JudgePolicy = "never" }})
+	j := syncBody(t, rg.extract(t, validParts(), nil), http.StatusOK)
+	if j.Status != job.StatusExtracted || j.Verification == nil || *j.Verification != job.VerificationNone || string(j.Result) != submitCandidate {
+		t.Errorf("job = %+v, want extracted with verification none", j)
+	}
+	if len(rg.judge.Calls()) != 0 {
+		t.Errorf("the judge was called %d times", len(rg.judge.Calls()))
+	}
+}

@@ -1,12 +1,17 @@
 package extract
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/ground"
 )
 
 const versionConfig = `
@@ -307,5 +312,112 @@ func TestApplicationServiceVersions(t *testing.T) {
 	}
 	if all[config.JudgeAlways] != ServiceVersion(cfg, "v0.4.0") {
 		t.Errorf("always under override = %q, want the global version", all[config.JudgeAlways])
+	}
+}
+
+// TestServiceVersion_v04Fields: v0.4 hashes the grounding rules into every
+// service_version and the PDF policy where it can change what is read (ADR 0009, ADR
+// 0010). Without those two fields the hash is the v0.3 one, pinned here from the v0.3
+// code, so the loop's grounding repair under always changes service_version by these
+// fields only.
+func TestServiceVersion_v04Fields(t *testing.T) {
+	scenario, err := os.ReadFile("../../testdata/scenarios/config/vde.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name    string
+		cfg     *config.Config
+		wantPDF bool
+		v03     string
+	}{
+		// Both configurations read PDFs natively (a group reads a type when one of its
+		// pairs does): under always the PDF policy changes nothing.
+		{"version configuration", parseVersionConfig(t, nil), false, "vde-0.3.0+799f9c64"},
+		{"scenario configuration", loadConfig(t, string(scenario)), false, "vde-0.3.0+f7745a77"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var v versionedConfig
+			if err := json.Unmarshal(canonicalConfig(tt.cfg, config.DefaultSampleRate), &v); err != nil {
+				t.Fatal(err)
+			}
+			if v.Grounding != ground.RulesVersion || (v.PDF != "") != tt.wantPDF {
+				t.Errorf("grounding %q, pdf %q; want %q, pdf hashed %v", v.Grounding, v.PDF, ground.RulesVersion, tt.wantPDF)
+			}
+			v.Grounding, v.PDF = "", ""
+			stripped, err := json.Marshal(v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(stripped)
+			if got := "vde-0.3.0+" + hex.EncodeToString(sum[:4]); got != tt.v03 {
+				t.Errorf("without the v0.4 fields = %s, want the v0.3 %s: something else entered the hash "+
+					"(or the JSON Schema library's version changed)", got, tt.v03)
+			}
+			if ServiceVersion(tt.cfg, "v0.3.0") == tt.v03 {
+				t.Error("service_version did not change in v0.4")
+			}
+		})
+	}
+}
+
+// TestServiceVersion_pdfPolicy: the PDF policy is hashed when a role's groups do not all
+// read PDFs natively and the mode is not native, or when the judge policy is not always
+// (natively sent PDFs are then opened for grounding); dpi, minimum characters and an
+// application's mode then change the hash.
+func TestServiceVersion_pdfPolicy(t *testing.T) {
+	scenario, err := os.ReadFile("../../testdata/scenarios/config/vde.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	capable := loadConfig(t, string(scenario))
+	base := ServiceVersion(capable, "v0.4.0")
+	dpi := *capable
+	dpi.Documents.PDF.DPI = 200
+	if ServiceVersion(&dpi, "v0.4.0") != base {
+		t.Error("dpi changed the hash of a PDF-capable configuration under always")
+	}
+	auto := dpi
+	auto.Roles.Judge.Policy = config.JudgeAuto
+	autoDefault := *capable
+	autoDefault.Roles.Judge.Policy = config.JudgeAuto
+	if ServiceVersion(&auto, "v0.4.0") == ServiceVersion(&autoDefault, "v0.4.0") {
+		t.Error("dpi did not change the hash under auto")
+	}
+
+	cfg := parseVersionConfig(t, nil)
+	cfg.Endpoints["main"].Models["model-a"] = config.Model{Accepts: []string{"text/plain"}} // no group reads PDFs now
+	global := ServiceVersion(cfg, "v0.4.0")
+	var v versionedConfig
+	if err := json.Unmarshal(canonicalConfig(cfg, config.DefaultSampleRate), &v); err != nil || v.PDF != "auto/dpi=150/min_chars=200" {
+		t.Errorf("pdf = %q (%v), want the default policy hashed", v.PDF, err)
+	}
+	for name, edit := range map[string]func(*config.Config){
+		"dpi":       func(c *config.Config) { c.Documents.PDF.DPI = 200 },
+		"min chars": func(c *config.Config) { c.Documents.PDF.MinTextCharsPerPage = 50 },
+		"mode":      func(c *config.Config) { c.Documents.PDF.Mode = config.PDFModeText },
+	} {
+		c := *cfg
+		edit(&c)
+		if ServiceVersion(&c, "v0.4.0") == global {
+			t.Errorf("%s did not change the hash", name)
+		}
+	}
+	workers := *cfg
+	workers.Documents.PDF.Workers = 4
+	if ServiceVersion(&workers, "v0.4.0") != global {
+		t.Error("workers changed the hash")
+	}
+	native := *cfg
+	native.Documents.PDF.Mode, native.Documents.PDF.DPI = config.PDFModeNative, 300
+	native2 := native
+	native2.Documents.PDF.DPI = 72
+	if ServiceVersion(&native, "v0.4.0") != ServiceVersion(&native2, "v0.4.0") {
+		t.Error("under native mode and always, dpi changed the hash")
+	}
+	app := cfg.Applications[0]
+	app.Documents.PDF.Mode = config.PDFModePages
+	if ApplicationServiceVersion(cfg, app, "v0.4.0") == global {
+		t.Error("an application PDF mode did not change its service_version")
 	}
 }

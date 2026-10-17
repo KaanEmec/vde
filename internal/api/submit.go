@@ -20,6 +20,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/pdf"
 )
 
 // Limits of contract §4 that the configuration does not carry; the document, page and
@@ -73,6 +74,7 @@ const (
 	msgDocumentTooLarge       = "The document or a page exceeds its size limit."
 	msgDocumentMediaType      = "The document's media type is not accepted, or a part's content does not match its media type."
 	msgUnsupportedDocument    = "No configured endpoint can read this document."
+	msgPDFTooManyPages        = "The PDF has more than %d pages (documents.pdf.max_pages), and no configured endpoint reads PDFs natively."
 	msgInvalidSchema          = "The schema part is not a valid JSON Schema 2020-12."
 	msgIdempotencyKeyTooLong  = "The Idempotency-Key header exceeds %d characters."
 	msgIdempotencyMismatch    = "The Idempotency-Key was used with a different request."
@@ -191,7 +193,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		}
 		schema = string(sub.schema.data)
 	}
-	rep, err := selectRepresentation(cfg, app, doc)
+	rep, err := selectRepresentation(cfg, app, doc, s.deps.PDF)
 	if err != nil {
 		s.refuseDocument(w, r, err)
 		return nil, true
@@ -213,7 +215,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		ID:                    job.NewID(),
 		ApplicationID:         app.ID,
 		ServiceVersion:        s.serviceVersionFor(app, policy),
-		Representation:        rep.Kind.String(),
+		Representation:        rep.Label(),
 		MediaType:             doc.MediaType,
 		Size:                  int64(len(doc.Data)),
 		PageCount:             len(doc.Pages),
@@ -498,8 +500,12 @@ func (sub *submission) hash() string {
 }
 
 // selectRepresentation chooses what both roles read, from the configured groups'
-// capabilities and the application's HTML policy.
-func selectRepresentation(cfg *config.Config, app job.Application, doc *document.Document) (document.Representation, error) {
+// capabilities, the application's HTML policy, the image policy and the PDF policy
+// (documents.pdf with the application's mode, ADR 0010): a PDF no group reads natively
+// is opened here with engine, its pages counted and its text layer measured, and a PDF
+// that cannot be prepared is refused (415). The worker selects again with the same
+// policies.
+func selectRepresentation(cfg *config.Config, app job.Application, doc *document.Document, engine document.PDFEngine) (document.Representation, error) {
 	policy, err := document.ResolveHTMLPolicy(cfg.Documents.HTML, app.HTMLPolicy)
 	if err != nil {
 		return document.Representation{}, err
@@ -507,7 +513,8 @@ func selectRepresentation(cfg *config.Config, app job.Application, doc *document
 	// Every group that may serve a role (escalation, second judge, feedback group) must
 	// read the representation.
 	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
-	return document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images))
+	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, cfg.PDFModeOf(app.ID), engine)
+	return document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
 }
 
 // refuseDocument answers a refused document (*document.Error) with its contract code
@@ -528,6 +535,9 @@ func (s *server) refuseDocument(w http.ResponseWriter, r *http.Request, err erro
 		e = newError(codeUnsupportedMediaType, msgDocumentMediaType)
 	case document.CodeUnsupportedDocument:
 		e = newError(codeUnsupportedDocument, msgUnsupportedDocument)
+		if errors.Is(err, pdf.ErrTooManyPages) {
+			e = newError(codeUnsupportedDocument, msgPDFTooManyPages, s.deps.Config.Documents.PDF.MaxPages)
+		}
 	}
 	writeError(w, r, e)
 }

@@ -214,7 +214,7 @@ blobs: {driver: s3, bucket: %s, endpoint: %q, region: %s, path_style: true, sse:
 			t.Fatalf("job still %s", final.Status)
 		}
 	}
-	if string(final.Status) != `"accepted"` || !strings.Contains(string(final.Result), "Ada Lovelace") {
+	if string(final.Status) != `"accepted"` || !strings.Contains(string(final.Result), "Jane Example") {
 		t.Errorf("terminal job = %s %s", final.Status, final.Result)
 	}
 	var status string

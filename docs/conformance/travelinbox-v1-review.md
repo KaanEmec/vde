@@ -164,3 +164,9 @@ What TravelInbox needs, without reading the service's code:
   `verification` and would treat `extracted` as not accepted. Both are opt-in supersets:
   `extracted` and `source: "grounding"` appear only for applications an operator moves to
   `never` or `auto`, and the `judge` part only where `judge.allow_override` is set.
+- PDF preparation (v0.4, ADR 0010): with the default `documents.pdf.mode: auto`, a PDF
+  without pages for models that read no `application/pdf` is no longer refused (contract
+  4.11) but sent as its text layer or rendered pages. A deployment that wants 4.11's `415`
+  sets `documents.pdf.mode: native`; the conformance suite's instance without a PDF reader
+  runs that mode. Confirm which TravelInbox wants; when its models read PDFs natively,
+  the mode changes nothing for it.

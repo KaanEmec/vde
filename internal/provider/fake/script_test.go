@@ -132,7 +132,7 @@ func TestLoad_extractorPrimaryDown(t *testing.T) {
 		resp, err := p.Complete(context.Background(), provider.Request{Model: model})
 		got = append(got, outcome(resp, err))
 	}
-	want := []string{"error retryable 503", `{"name": "Ada Lovelace", "born": 1815}`, fake.AcceptVerdict}
+	want := []string{"error retryable 503", `{"guest": "Jane Example", "nights": 3}`, fake.AcceptVerdict}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("outcomes = %q, want %q", got, want)
 	}

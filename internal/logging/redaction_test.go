@@ -94,7 +94,10 @@ func reject(msg string) string {
 
 // TestNoSentinelInLogs runs the extraction loop through its logging paths, with the
 // service logger as slog's default (the loop logs through it), and asserts that no
-// content marker reaches a log line at debug level, the most verbose.
+// content marker reaches a log line at debug level, the most verbose. The document is
+// groundable text, so every run also goes through the grounding check (ADR 0009): its
+// text (Representation.GroundText, the sentDocument line) never reaches a log, and its
+// feedback entries never carry a value.
 func TestNoSentinelInLogs(t *testing.T) {
 	cfg, err := config.Parse([]byte(cfgYAML), func(string) string { return "" })
 	if err != nil {
@@ -105,7 +108,9 @@ func TestNoSentinelInLogs(t *testing.T) {
 	}
 	doc, err := document.New(document.Input{
 		MediaType: "text/plain; charset=utf-8",
-		Data:      []byte("Contract for " + sentDocument),
+		// The document prints the candidates answer("a") and answer("b"), so they are
+		// grounded; answer("x") is not.
+		Data: []byte("Contract for " + sentDocument + ", signed by a" + sentCandidate + " and b" + sentCandidate),
 	}, cfg.Limits)
 	if err != nil {
 		t.Fatal(err)
@@ -127,10 +132,41 @@ func TestNoSentinelInLogs(t *testing.T) {
 	tests := []struct {
 		name                     string
 		primary, fallback, judge provider.Provider
+		policy                   config.JudgePolicy
 		wantStatus               extract.Status
 		wantLogged               bool // the scenario hits a log statement
 		withSchema               bool
 	}{
+		{
+			name:       "grounding repair then accept",
+			primary:    fake.New(fake.Script{fake.Answer(answer("x")), fake.Answer(answer("a"))}),
+			judge:      fake.New(fake.Script{fake.Answer(fake.AcceptVerdict)}),
+			withSchema: true,
+			wantStatus: extract.StatusAccepted,
+		},
+		{
+			name:       "never with advisory grounding entries",
+			primary:    fake.New(fake.Script{fake.Answer(answer("x"))}),
+			judge:      fake.New(nil),
+			policy:     config.JudgeNever,
+			withSchema: true,
+			wantStatus: extract.StatusExtracted,
+		},
+		{
+			name:       "auto grounded without a judge",
+			primary:    fake.New(fake.Script{fake.Answer(answer("a"))}),
+			judge:      fake.New(nil),
+			policy:     config.JudgeAuto,
+			withSchema: true,
+			wantStatus: extract.StatusAccepted,
+		},
+		{
+			name:       "auto ungrounded after the repair, judge rejects",
+			primary:    fake.New(fake.Script{{Answer: answer("x"), Repeat: true}}),
+			judge:      fake.New(fake.Script{{Answer: reject(sentFeedback), Repeat: true}}),
+			policy:     config.JudgeAuto,
+			wantStatus: extract.StatusRejected,
+		},
 		{
 			name:       "accepted",
 			primary:    fake.New(fake.Script{fake.Answer(answer("a"))}),
@@ -231,6 +267,7 @@ func TestNoSentinelInLogs(t *testing.T) {
 				ExtractorInstructions: "Extract the name. " + sentExtractorIns,
 				JudgeInstructions:     "Check the name. " + sentJudgeIns,
 				MaxAttempts:           3,
+				JudgePolicy:           tt.policy,
 			}
 			if tt.withSchema {
 				in.Schema = compiled
@@ -238,6 +275,13 @@ func TestNoSentinelInLogs(t *testing.T) {
 			got := extract.Run(t.Context(), in, roles)
 			if got.Status != tt.wantStatus {
 				t.Fatalf("status = %s (%+v), want %s", got.Status, got.Error, tt.wantStatus)
+			}
+			for _, f := range got.Feedback {
+				for _, s := range sentinels {
+					if f.Source == extract.SourceGrounding && strings.Contains(f.Pointer+f.Message, s) {
+						t.Errorf("grounding feedback %+v carries %q", f, s)
+					}
+				}
 			}
 			text := out.String()
 			if text != "" {

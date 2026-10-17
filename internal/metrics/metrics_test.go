@@ -54,6 +54,11 @@ func TestSeries(t *testing.T) {
 	m.AddSwept(5)
 	m.AddSwept(0)
 	m.AddSwept(-2)
+	m.JudgeDecision("auto", "grounded", 0)
+	m.JudgeDecision("auto", "grounded", 0)
+	m.JudgeDecision("auto", "sampled", 1)
+	m.JudgeDecision("always", "judged", 0)
+	m.JudgeDecision("never", "skipped", 0)
 
 	out := scrape(t, m.Handler())
 	for _, want := range []string{
@@ -76,6 +81,11 @@ func TestSeries(t *testing.T) {
 		`vde_http_requests_total{route="POST /v1/jobs",status="202"} 1`,
 		`vde_http_requests_total{route="none",status="404"} 1`,
 		`vde_swept_jobs_total 5`,
+		`vde_judge_decisions_total{decision="grounded",policy="auto"} 2`,
+		`vde_judge_decisions_total{decision="sampled",policy="auto"} 1`,
+		`vde_judge_decisions_total{decision="judged",policy="always"} 1`,
+		`vde_judge_decisions_total{decision="skipped",policy="never"} 1`,
+		`vde_grounding_disagreements_total 1`,
 	} {
 		if !strings.Contains(out, want+"\n") {
 			t.Errorf("scrape lacks %q", want)

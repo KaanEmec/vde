@@ -110,12 +110,12 @@ func readTextLayer(ctx context.Context, e PDFEngine, data []byte, maxPages int) 
 // wraps anything else (a timeout, a closed engine) as an internal error.
 func pdfError(err error, maxPages int) error {
 	switch {
-	case errors.Is(err, pdf.ErrTooManyPages):
+	case errors.Is(err, pdf.ErrTooManyPages): // still matches pdf.ErrTooManyPages, so the API can name the limit
 		if maxPages > 0 {
-			return refuse(CodeUnsupportedDocument, "the PDF has more than %d pages (documents.pdf.max_pages) "+
-				"and no configured model reads PDFs natively", maxPages)
+			return fmt.Errorf("%w: %w", refuse(CodeUnsupportedDocument, "the PDF has more than %d pages (documents.pdf.max_pages) "+
+				"and no configured model reads PDFs natively", maxPages), pdf.ErrTooManyPages)
 		}
-		return refuse(CodeUnsupportedDocument, "the PDF has too many pages to prepare")
+		return fmt.Errorf("%w: %w", refuse(CodeUnsupportedDocument, "the PDF has too many pages to prepare"), pdf.ErrTooManyPages)
 	case errors.Is(err, pdf.ErrPageTooLarge):
 		return refuse(CodeUnsupportedDocument, "a PDF page is too large to render")
 	case errors.Is(err, pdf.ErrEncrypted), errors.Is(err, pdf.ErrInvalid), errors.Is(err, pdf.ErrTooLarge):

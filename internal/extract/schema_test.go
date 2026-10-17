@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaanemec/vde/internal/ground"
 )
 
 const travelSchemaPath = "../../testdata/travelinbox/extraction-schema.json"
@@ -265,5 +267,30 @@ func TestSchema_Validate_cap(t *testing.T) {
 	}
 	if last := got[maxSchemaFeedback]; last.Pointer != "" || !strings.Contains(last.Message, "10 more") {
 		t.Errorf("summary = %+v, want 10 more on the whole result", last)
+	}
+}
+
+// TestCompileSchema_grounding: CompileSchema reads x-vde-grounding (ADR 0009); an unknown
+// value is an invalid schema, and a nil schema has nil rules (every leaf critical).
+func TestCompileSchema_grounding(t *testing.T) {
+	s, err := CompileSchema([]byte(`{"type": "object", "properties": {
+		"city": {"type": "string", "x-vde-grounding": "derived"},
+		"date": {"type": "string", "x-vde-grounding": "critical"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule, _ := s.GroundingRules()([]string{"city"}); rule != ground.RuleDerived {
+		t.Errorf("city rule = %v, want derived", rule)
+	}
+	if rule, _ := s.GroundingRules()([]string{"date"}); rule != ground.RuleCritical {
+		t.Errorf("date rule = %v, want critical", rule)
+	}
+	_, err = CompileSchema([]byte(`{"type": "object", "properties": {"a": {"x-vde-grounding": "maybe"}}}`))
+	if !errors.Is(err, ErrInvalidSchema) || !errors.Is(err, ground.ErrUnknownRule) {
+		t.Errorf("unknown annotation: err = %v, want ErrInvalidSchema wrapping ground.ErrUnknownRule", err)
+	}
+	var none *Schema
+	if none.GroundingRules() != nil {
+		t.Error("a nil schema has rules")
 	}
 }

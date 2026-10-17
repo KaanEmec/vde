@@ -92,11 +92,11 @@ func TestAdminEndToEnd(t *testing.T) {
 			break
 		}
 	}
-	if r.status != http.StatusOK || !strings.Contains(r.body, `"status":"accepted"`) || strings.Contains(r.body, "Ada") {
+	if r.status != http.StatusOK || !strings.Contains(r.body, `"status":"accepted"`) || strings.Contains(r.body, "Jane Example") {
 		t.Errorf("admin job = %d %s, want accepted metadata without content", r.status, r.body)
 	}
 	r = send(http.MethodGet, admin+"/admin/v1/jobs?app=dyn", adminToken, "")
-	if !strings.Contains(r.body, job.ID) || strings.Contains(r.body, "Ada") || strings.Contains(r.body, "result") {
+	if !strings.Contains(r.body, job.ID) || strings.Contains(r.body, "Jane Example") || strings.Contains(r.body, "result") {
 		t.Errorf("admin job list = %s", r.body)
 	}
 	if r := send(http.MethodDelete, admin+"/admin/v1/jobs/"+job.ID, adminToken, ""); r.status != http.StatusNoContent {

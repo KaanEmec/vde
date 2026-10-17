@@ -37,7 +37,7 @@ var samples = map[audit.Kind]audit.Details{
 	audit.JobCreatedKind: audit.JobCreated{
 		CreatedAt: t0, MediaType: "application/pdf", Size: 1234, PageCount: 3, Retention: "none", ServiceVersion: "vde-0.2.0+c0ffee12",
 	},
-	audit.JobFinishedKind: audit.JobFinished{Status: "failed", Attempts: 2, ErrorCode: "timeout", ServiceVersion: "vde-0.2.0+c0ffee12"},
+	audit.JobFinishedKind: audit.JobFinished{Status: "failed", Attempts: 2, ErrorCode: "timeout", ServiceVersion: "vde-0.2.0+c0ffee12", Verification: "grounded", JudgePolicy: "auto"},
 	audit.JobDeletedKind:  audit.JobDeleted{Reason: audit.DeletedFirstRead, Retention: "none"},
 	audit.JobExpiredKind:  audit.JobExpired{Status: "accepted", Retention: "default"},
 	audit.AuthFailedKind:  audit.AuthFailed{Reason: "expired"},
@@ -164,7 +164,7 @@ func TestJobHelpers(t *testing.T) {
 		d     audit.Details
 	}{
 		{audit.JobCreatedKind, "", audit.JobCreated{CreatedAt: j.CreatedAt, MediaType: j.MediaType, Size: 42, Retention: "none", ServiceVersion: "vde-test"}},
-		{audit.JobFinishedKind, "sweeper", audit.JobFinished{Status: "failed", Attempts: 2, ErrorCode: "timeout", ServiceVersion: "vde-test"}},
+		{audit.JobFinishedKind, "sweeper", audit.JobFinished{Status: "failed", Attempts: 2, ErrorCode: "timeout", ServiceVersion: "vde-test", Verification: "none", JudgePolicy: "always"}},
 		{audit.JobDeletedKind, "", audit.JobDeleted{Reason: "request", Retention: "none"}},
 		{audit.JobExpiredKind, "sweeper", audit.JobExpired{Status: "failed", Retention: "none"}},
 	}

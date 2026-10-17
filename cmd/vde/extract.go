@@ -18,6 +18,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/logging"
+	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 	"github.com/kaanemec/vde/internal/version"
@@ -39,7 +40,9 @@ result's usage counts the provider calls of the run (failed ones included) and t
 and output tokens the providers reported.
 
 --judge sets the judge policy of the run (default: roles.judge.policy); the result's
-verification says what accepted it: judge, grounded or none.
+verification says what accepted it: judge, grounded or none. Under auto the sample of
+grounded runs judged anyway (5 %) is decided on the document's bytes, so a rerun of the
+same document is sampled the same way.
 
 Exit codes: 0 accepted, 2 rejected, 3 failed, 4 extracted (no judge asked, judge policy
 never), 1 usage or configuration error.
@@ -266,16 +269,12 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 			return jobOutput{}, fmt.Errorf("%s: %w", o.schema, err)
 		}
 	}
-	// Every group that may serve a role (escalation, second judge, feedback group) must
-	// read the representation.
-	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
 	pdfEngine, err := newPDFEngine(cfg, cliPDFCacheDir())
 	if err != nil {
 		return jobOutput{}, err
 	}
 	defer func() { _ = pdfEngine.Close() }()
-	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, "", document.PDFEngineOf(pdfEngine))
-	rep, err := document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
+	rep, err := selectRepresentation(ctx, cfg, doc, policy, pdfEngine, judgePolicy)
 	if err != nil {
 		return jobOutput{}, err
 	}
@@ -303,12 +302,14 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		Schema:                schema,
 		MaxAttempts:           maxAttempts,
 		JudgePolicy:           judgePolicy,
+		SampleRate:            config.DefaultSampleRate,
+		SampleKey:             doc.Data,
 		Deadline:              time.Now().Add(timeout),
 		OnAttempt:             func(p extract.Progress) { obs.logf("attempt %d: %s", p.Attempts, describeProgress(p)) },
 	}, roles)
 
 	calls, in, outTokens := obs.usage()
-	summary := string(res.Status)
+	summary := string(res.Status) + ", verification " + res.Verification
 	if res.Error != nil {
 		summary += " (" + res.Error.Code + ")"
 	}
@@ -331,6 +332,26 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		out.Attachments = append(out.Attachments, attachment{Name: a.Filename, MediaType: a.MediaType, Bytes: a.Size})
 	}
 	return out, nil
+}
+
+// selectRepresentation chooses what both roles read as the service does: the image and
+// PDF policies, the PDF prepared with engine when no group reads it natively. Under
+// judge policy never and auto it also reads the grounding text of a PDF sent natively or
+// as pages; under always it does not, so pdfium never starts for PDF-capable models.
+func selectRepresentation(ctx context.Context, cfg *config.Config, doc *document.Document, html document.HTMLPolicy,
+	engine *pdf.Engine, judgePolicy config.JudgePolicy) (document.Representation, error) {
+	// Every group that may serve a role (escalation, second judge, feedback group) must
+	// read the representation.
+	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
+	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, "", document.PDFEngineOf(engine))
+	rep, err := document.SelectWith(doc, extractorCaps, judgeCaps, html, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
+	if err != nil {
+		return document.Representation{}, err
+	}
+	if judgePolicy != config.JudgeAlways {
+		rep.GroundText, rep.Groundable = document.GroundingText(ctx, doc, rep, pdfPolicy)
+	}
+	return rep, nil
 }
 
 // readDocument reads the document and its pages and validates them like the service.
@@ -359,17 +380,22 @@ func readDocument(o extractOptions, limits config.Limits) (*document.Document, e
 
 // describeProgress says why an attempt did not end the job, from counts only.
 func describeProgress(p extract.Progress) string {
-	judge, schema := 0, 0
+	judge, schema, grounding := 0, 0, 0
 	for _, f := range p.Feedback {
-		if f.Source == extract.SourceJudge {
+		switch f.Source {
+		case extract.SourceJudge:
 			judge++
-		} else {
+		case extract.SourceGrounding:
+			grounding++
+		default:
 			schema++
 		}
 	}
 	switch {
 	case judge > 0:
 		return fmt.Sprintf("judge rejected the candidate, %d feedback entries", judge)
+	case grounding > 0 && schema == 0:
+		return fmt.Sprintf("values not found in the document, %d feedback entries, judge not called (grounding repair)", grounding)
 	case schema > 0:
 		return fmt.Sprintf("answer not JSON or not valid against the schema, %d feedback entries, judge not called", schema)
 	}

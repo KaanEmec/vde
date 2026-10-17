@@ -14,6 +14,8 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+
+	"github.com/kaanemec/vde/internal/ground"
 )
 
 // ErrInvalidSchema: the schema is not valid JSON Schema (draft 2020-12 unless it names
@@ -39,7 +41,8 @@ type Schema struct {
 	doc        any    // the decoded schema, for descriptions in messages
 	base       string // the root resource's location, without fragment
 	compiled   *jsonschema.Schema
-	allowArray bool // the top level may be an array
+	allowArray bool         // the top level may be an array
+	rules      ground.Rules // x-vde-grounding, enum and const per location (ADR 0009)
 }
 
 // noLoader refuses every resource the schema does not contain itself: remote $refs and
@@ -51,7 +54,8 @@ func (noLoader) Load(string) (any, error) {
 }
 
 // CompileSchema compiles a JSON Schema, draft 2020-12 by default, with format assertions
-// on. Any error wraps ErrInvalidSchema.
+// on, and reads its grounding annotations (x-vde-grounding, ADR 0009). Any error,
+// including an unknown annotation value, wraps ErrInvalidSchema.
 func CompileSchema(data []byte) (*Schema, error) {
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
 	if err != nil {
@@ -68,6 +72,10 @@ func CompileSchema(data []byte) (*Schema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidSchema, err)
 	}
+	rules, err := ground.RulesFromSchema(data)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidSchema, err)
+	}
 	base, _, _ := strings.Cut(compiled.Location, "#")
 	return &Schema{
 		raw:        bytes.Clone(data),
@@ -75,7 +83,17 @@ func CompileSchema(data []byte) (*Schema, error) {
 		base:       base,
 		compiled:   compiled,
 		allowArray: compiled.Types == nil || slices.Contains(compiled.Types.ToStrings(), "array"),
+		rules:      rules,
 	}, nil
+}
+
+// GroundingRules returns the grounding rules read from the schema; nil (every leaf
+// checked and critical) for a nil schema.
+func (s *Schema) GroundingRules() ground.Rules {
+	if s == nil {
+		return nil
+	}
+	return s.rules
 }
 
 // Validate returns one feedback entry per violation of the schema by candidate, each with

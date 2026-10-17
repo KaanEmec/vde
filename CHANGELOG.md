@@ -6,6 +6,31 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+### Added
+
+- Judge policy in the extraction loop (ADR 0009). `never` ends a schema-valid candidate
+  `extracted` without a judge, with grounding entries as advisory feedback. `auto` accepts a
+  candidate without a judge (`verification: grounded`) when the document has text, the
+  candidate answers no schema or judge feedback and every critical value is in the
+  document; a deterministic sample (`judge.sample_rate`, FNV-1a of the job id, of the
+  document bytes in the CLI) is judged anyway. Metrics `vde_judge_decisions_total{policy,
+  decision}` and `vde_grounding_disagreements_total`; `job.finished` audit details gain
+  `verification` and `judge_policy`.
+- PDF preparation in the service (ADR 0010): submit, the workers, `vde extract` and
+  `vde eval` select a PDF's text layer or rendered pages with one pdfium engine per
+  process when no group reads PDFs natively. A PDF over `documents.pdf.max_pages` answers
+  `415` naming the limit. The container image carries `LICENSE` and `NOTICE`.
+
+### Changed
+
+- Under every judge policy but `never`, a schema-valid candidate whose critical values are
+  not in the document goes back to the extractor once, before any judge call (one extractor
+  call, no judge call, never on the last attempt). Under `always` the grounding entries
+  reach only the extractor, never the job's `feedback`, so TravelInbox sees contract v1
+  sources only.
+- Every `service_version` changes once in v0.4: the grounding rules (`ground-1`) are hashed,
+  and the PDF policy (mode, dpi, minimum text characters) where it can change what is read.
+
 ## [0.3.0] - 2026-10-17
 
 Hardening and extensions: alternative storage, more providers, other delivery shapes, an

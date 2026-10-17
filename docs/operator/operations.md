@@ -87,7 +87,7 @@ never content.
 
 | Series | Type | Labels | Meaning |
 | --- | --- | --- | --- |
-| `vde_jobs_total` | counter | `app`, `status` | Jobs that reached `accepted`, `rejected` or `failed`. |
+| `vde_jobs_total` | counter | `app`, `status` | Jobs that reached `accepted`, `rejected`, `failed` or `extracted`. |
 | `vde_job_attempts` | histogram | | Extractor attempts per terminal job. |
 | `vde_job_duration_seconds` | histogram | `status` | Creation to terminal status, queue time included. |
 | `vde_provider_calls_total` | counter | `role`, `group`, `endpoint`, `model`, `outcome` | Provider calls; `outcome` is `ok`, `retryable` or `permanent`. `group` tells escalation steps and the second judge apart. |
@@ -99,6 +99,8 @@ never content.
 | `vde_jobs_in_progress` | gauge | `app` | Jobs queued or running. |
 | `vde_http_requests_total` | counter | `route`, `status` | Requests by route pattern and status. |
 | `vde_swept_jobs_total` | counter | | Jobs deleted by the sweeper. |
+| `vde_judge_decisions_total` | counter | `policy`, `decision` | Finished jobs by judge policy (`always`, `never`, `auto`) and how their last schema-valid candidate was decided: `judged`, `grounded` (`auto`, accepted on the grounding check without a judge), `sampled` (`auto`, judged although grounded) or `skipped` (`never`). Jobs with no schema-valid candidate are not counted. |
+| `vde_grounding_disagreements_total` | counter | | Sampled judge calls under `auto` that rejected a candidate the grounding check alone would have accepted (ADR 0009): the measured false-accept risk of `grounded`. |
 
 `metrics.go_runtime: true` adds the Go runtime and process series.
 
@@ -165,7 +167,7 @@ never contain document content, instructions, results or tokens.
 | `token.revoked` | `vde token revoke` | `cli` | `token_id` |
 | `auth.failed` | A request was refused | `api` | `reason` (see [applications and tokens](applications-and-tokens.md#what-the-caller-sees)) |
 | `job.created` | A job was accepted | `api` | `media_type`, `bytes`, `pages`, `retention`, `service_version` |
-| `job.finished` | A job reached a terminal status | `worker` | `status`, `attempts`, `error_code`, `service_version` |
+| `job.finished` | A job reached a terminal status | `worker` | `status`, `attempts`, `error_code`, `service_version`, `input_tokens`, `output_tokens`, `verification` (`judge`, `grounded` or `none`), `judge_policy` |
 | `job.deleted` | Content deleted before expiry | `api` | `reason` (`request` or `first_read`), `retention` |
 | `job.expired` | The sweeper removed a job | `sweeper` | `status`, `retention` |
 | `webhook.delivered` | A completion webhook was answered `2xx` | `webhook` | `event`, `attempt`, `status_code` |

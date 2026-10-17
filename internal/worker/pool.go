@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,6 +38,10 @@ type Observer interface {
 	// JobFinished is called after the terminal state was written; duration is counted
 	// from created_at, queue time included.
 	JobFinished(applicationID string, status job.Status, attempts int, duration time.Duration)
+	// JudgeDecision is called once per job the loop finished with a decision on a
+	// schema-valid candidate (extract.Decision*), under the job's judge policy, with the
+	// sampled judge calls that rejected a grounded candidate.
+	JudgeDecision(policy, decision string, disagreements int)
 }
 
 // NopObserver discards everything.
@@ -46,6 +52,9 @@ func (NopObserver) JobStarted(string) {}
 
 // JobFinished implements Observer.
 func (NopObserver) JobFinished(string, job.Status, int, time.Duration) {}
+
+// JudgeDecision implements Observer.
+func (NopObserver) JudgeDecision(string, string, int) {}
 
 // Options configure a Pool. Zero values take the defaults.
 type Options struct {
@@ -66,6 +75,11 @@ type Options struct {
 	// audited and its retention applied: the completion hook that wakes POST
 	// /v1/extract waiters (Notifier) and queues webhooks. It must not block.
 	OnFinish func(job.Job)
+	// PDF prepares PDFs that no group reads natively (text layer or rendered pages, ADR
+	// 0010) and reads the grounding text of the others under judge policy never and
+	// auto; nil keeps the v0.3 selection. It must be the engine submit selected with,
+	// so the worker re-selects the same representation.
+	PDF document.PDFEngine
 }
 
 // Pool is a fixed set of workers leasing jobs from the store and running the
@@ -222,6 +236,7 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	remaining := p.maxAttempts(app, j) - j.Attempts
 
 	var out job.Outcome
+	var loop extract.Outcome // the loop's metadata (judge decision), zero when it did not run
 	switch {
 	case !time.Now().Before(deadline):
 		out = fromRow(j, job.StatusFailed, extract.CodeTimeout) // no provider call
@@ -229,7 +244,7 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 		out = exhausted(j)
 	default:
 		var ok bool
-		if out, ok = p.extract(ctx, log, workerID, app, j, deadline, remaining); !ok {
+		if out, loop, ok = p.extract(ctx, log, workerID, app, j, deadline, remaining); !ok {
 			return
 		}
 	}
@@ -246,11 +261,16 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 		log.Error("worker: finish failed", "error", err)
 		return
 	}
-	log.Info("worker: job finished", "status", string(out.Status), "attempts", out.Attempts, "error_code", errorCode(out),
-		"input_tokens", out.InputTokens, "output_tokens", out.OutputTokens)
-	p.opts.Observer.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
 	j.Status, j.Attempts, j.Error, j.FinishedAt = out.Status, out.Attempts, out.Error, finishedAt
 	j.InputTokens, j.OutputTokens = out.InputTokens, out.OutputTokens
+	j.Verification = cmp.Or(out.Verification, job.DefaultVerification(out.Status))
+	j.JudgePolicy = cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy)
+	log.Info("worker: job finished", "status", string(out.Status), "verification", j.Verification, "attempts", out.Attempts,
+		"error_code", errorCode(out), "input_tokens", out.InputTokens, "output_tokens", out.OutputTokens)
+	p.opts.Observer.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
+	if loop.Decision != "" {
+		p.opts.Observer.JudgeDecision(j.JudgePolicy, loop.Decision, loop.Disagreements)
+	}
 	p.opts.Audit.JobFinished(fctx, j)
 	p.applyRetention(fctx, log, app, j)
 	if p.opts.OnFinish != nil {
@@ -260,14 +280,14 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 
 // extract runs the loop for the remaining attempts. ok is false when the job must be
 // left alone: the pool was cancelled or the lease was lost.
-func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, app config.Application, j job.Job, deadline time.Time, remaining int) (job.Outcome, bool) {
+func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, app config.Application, j job.Job, deadline time.Time, remaining int) (job.Outcome, extract.Outcome, bool) {
 	in, reason, err := p.input(ctx, app, j)
 	if err != nil {
 		if ctx.Err() != nil {
-			return job.Outcome{}, false
+			return job.Outcome{}, extract.Outcome{}, false
 		}
 		log.Error("worker: cannot prepare the job", "reason", reason)
-		return fromRow(j, job.StatusFailed, extract.CodeInternal), true
+		return fromRow(j, job.StatusFailed, extract.CodeInternal), extract.Outcome{}, true
 	}
 	in.Deadline = deadline
 	// A resumed job continues from its persisted state: the loop counts on from
@@ -312,12 +332,12 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, a
 	switch {
 	case lost.Load():
 		log.Warn("worker: lease lost, result discarded")
-		return job.Outcome{}, false
+		return job.Outcome{}, extract.Outcome{}, false
 	case ctx.Err() != nil:
 		log.Info("worker: stopped during the job, left for the next lease")
-		return job.Outcome{}, false
+		return job.Outcome{}, extract.Outcome{}, false
 	}
-	return merge(j, o), true
+	return merge(j, o), o, true
 }
 
 // input builds the loop input from the row and its blobs. reason names the failing
@@ -341,12 +361,20 @@ func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in
 	if err != nil {
 		return in, "html policy", err
 	}
-	rep, err := document.Select(doc, p.extractorCaps, p.judgeCaps, policy)
+	// The same selection as at submit: the image policy, and the PDF policy with the
+	// process's engine (a PDF chosen as text at submit is read as text again).
+	pdfPolicy := document.NewPDFPolicy(p.cfg.Documents.PDF, app.Documents.PDF.Mode, p.opts.PDF)
+	rep, err := document.SelectWith(doc, p.extractorCaps, p.judgeCaps, policy, document.NewImagePolicy(p.cfg.Documents.Images), pdfPolicy)
 	if err != nil {
 		return in, "representation", err
 	}
-	if j.Representation != "" && rep.Kind.String() != j.Representation {
+	if j.Representation != "" && rep.Label() != j.Representation {
 		return in, "representation changed since submit", errors.New("worker: representation changed")
+	}
+	judgePolicy := config.JudgePolicy(cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy))
+	if judgePolicy != config.JudgeAlways {
+		// A PDF sent natively or as caller pages is opened for its text layer only here.
+		rep.GroundText, rep.Groundable = document.GroundingText(ctx, doc, rep, pdfPolicy)
 	}
 	var schema *extract.Schema
 	if j.Schema != "" {
@@ -359,7 +387,9 @@ func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in
 		ExtractorInstructions: j.ExtractorInstructions,
 		JudgeInstructions:     j.JudgeInstructions,
 		Schema:                schema,
-		JudgePolicy:           config.JudgePolicy(j.JudgePolicy),
+		JudgePolicy:           judgePolicy,
+		SampleRate:            app.Judge.Rate(),
+		SampleKey:             []byte(j.ID), // a resumed job keeps its sampling decision
 	}, "", nil
 }
 
@@ -373,14 +403,15 @@ func (p *Pool) read(ctx context.Context, jobID, name string) ([]byte, error) {
 }
 
 // application is the job's application as the API sees it: the store row (declared in
-// the YAML or created over the admin API, as changed by PATCH) for the attempt limit
-// and the HTML policy over the configuration entry, which alone carries
-// delete_blobs_at_terminal; force_none from either deletes the inputs at the terminal
-// state. When the row cannot be read the configuration entry is used.
+// the YAML or created over the admin API, as changed by PATCH) for the attempt limit,
+// the HTML policy and the judge sample rate over the configuration entry, which alone
+// carries delete_blobs_at_terminal and the PDF mode; force_none from either deletes the
+// inputs at the terminal state. When the row cannot be read the configuration entry is
+// used.
 func (p *Pool) application(ctx context.Context, id string) config.Application {
 	a := p.apps[id]
 	if row, err := p.store.GetApplication(ctx, id); err == nil {
-		a.MaxAttempts, a.Documents.HTML = row.MaxAttempts, row.HTMLPolicy
+		a.MaxAttempts, a.Documents.HTML, a.Judge.SampleRate = row.MaxAttempts, row.HTMLPolicy, row.JudgeSampleRate
 		a.Retention.ForceNone = a.Retention.ForceNone || row.ForceNone
 	}
 	return a
@@ -441,10 +472,16 @@ func feedbackJSON(f []extract.Feedback) json.RawMessage {
 }
 
 // fromRow is a terminal state written without running the loop, keeping the persisted
-// candidate and feedback.
+// candidate and feedback. Under judge policy always a persisted grounding repair's
+// entries are dropped, as the loop drops them: contract v1 sources only.
 func fromRow(j job.Job, status job.Status, code string) job.Outcome {
 	o := job.Outcome{Status: status, Attempts: j.Attempts, Result: j.Result, Feedback: j.Feedback,
 		InputTokens: j.InputTokens, OutputTokens: j.OutputTokens}
+	var persisted []extract.Feedback
+	if cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy) == string(config.JudgeAlways) && json.Unmarshal(j.Feedback, &persisted) == nil &&
+		slices.ContainsFunc(persisted, func(f extract.Feedback) bool { return f.Source == extract.SourceGrounding }) {
+		o.Feedback = feedbackJSON(slices.DeleteFunc(persisted, func(f extract.Feedback) bool { return f.Source == extract.SourceGrounding }))
+	}
 	if o.Feedback == nil {
 		o.Feedback = feedbackJSON(nil)
 	}

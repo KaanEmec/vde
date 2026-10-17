@@ -47,7 +47,7 @@ at peak, so the pool is small and starts lazily.
 - [x] Architectures: the wazero compiler on amd64 and arm64. Elsewhere it falls back to the
       interpreter (about 60 times slower), and `Engine` reports it so `config check` can
       warn.
-- [ ] `NOTICE` at the repository root: go-pdfium (MIT), wazero (Apache-2.0), pdfium
+- [x] `NOTICE` at the repository root: go-pdfium (MIT), wazero (Apache-2.0), pdfium
       (BSD-3-Clause). The Dockerfile copies it into the image.
 - [ ] `Dockerfile` and `make image`: build unchanged (`CGO_ENABLED=0`). Record the binary
       and image size before and after in the job outcome, and check the binary is under its
@@ -113,10 +113,10 @@ Apple M-series laptop (darwin/arm64), Go 1.27.1, 2026-10-17.
   `config check`; the engine does not report it.
 - Text is normalized in `Doc.Text`: CRLF to LF, control characters other than tab and
   newline dropped.
-- Carried to the epic 05 closeout (unticked above), outside this wave's files: the dependency rows in
-  `docs/architecture/overview.md`, copying `NOTICE` into the image (the Dockerfile only got
-  a comment), `make image` sizes (no image was built), and running `FuzzOpen` and the
-  linux/amd64 and linux/arm64 builds in CI. Both cross builds succeed locally. `go.mod`
+- Carried to the epic 05 closeout (unticked above), outside this wave's files: `make image`
+  sizes (no image was built), and running `FuzzOpen` and the linux/amd64 and linux/arm64
+  builds in CI. The dependency row in `docs/architecture/overview.md` and copying `NOTICE`
+  (with `LICENSE`) into the image were done with epic 03's wiring (job 03-03). Both cross builds succeed locally. `go.mod`
   lists go-pdfium and wazero as `// indirect` until the next `go mod tidy`.
 
 ## Out of scope

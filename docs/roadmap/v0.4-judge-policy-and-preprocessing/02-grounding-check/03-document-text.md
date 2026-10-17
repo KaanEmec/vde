@@ -22,9 +22,9 @@ grounding needs the text layer (epic 04). Images have no text, since there is no
       meaningful headers and the body). HTML: the visible text (`html.go`'s converter, link
       targets included) whatever the HTML policy. PDF: empty and not groundable until epic
       04 job 03 fills it from the text layer. Images and caller pages: not groundable.
-- [ ] `internal/ground`: `NewText(s string) *Text` builds the normalized index once per
+- [x] `internal/ground`: `NewText(s string) *Text` builds the normalized index once per
       job. `internal/extract` builds it lazily, only when a policy or repair needs it.
-- [ ] `internal/logging/redaction_test.go`: add `GroundText` to the content that must never
+- [x] `internal/logging/redaction_test.go`: add `GroundText` to the content that must never
       appear in logs.
 - [x] `internal/document/userdocs_test.go`: with `VDE_USER_DOCS=1`, report per file whether
       it is groundable and the text length (metadata only).
@@ -50,9 +50,10 @@ grounding needs the text layer (epic 04). Images have no text, since there is no
   pages. `GroundingText` returns `rep.GroundText` for every other document, so the loop
   can call it for any representation.
 - `NewText` was built in job 01 (`internal/ground`). Building it lazily in
-  `internal/extract` and adding `GroundText` to the redaction test in
-  `internal/logging/redaction_test.go` move to epic 03's wiring, whose files those are
-  (unticked above).
+  `internal/extract` (once per run, on the first schema-valid candidate of a groundable
+  representation) and the redaction test (the planted document sentinel is the
+  `GroundText` of a text document; new cases run the repair, `never` and `auto`) were done
+  with epic 03's wiring (job 03-03).
 - The grounding test over `booking.html` and `booking.eml` with a correct candidate needs
   `ground.Check` from the same wave: `TestGroundingText` checks that the text holds the
   sample's values (`HV-48213`, `EUR 412.50`) and no markup; the end-to-end check is epic

@@ -13,6 +13,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/document"
+	"github.com/kaanemec/vde/internal/ground"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/router"
 )
@@ -54,7 +55,16 @@ const (
 	SourceJudge  = "judge"
 	// SourceGrounding marks an entry of the grounding check (ADR 0009): a value not found
 	// in the document text. In the job's feedback only under judge policy never or auto.
-	SourceGrounding = "grounding"
+	SourceGrounding = ground.Source
+)
+
+// Judge decisions (Outcome.Decision): how the last schema-valid candidate of a job was
+// decided, for vde_judge_decisions_total.
+const (
+	DecisionJudged   = "judged"   // the judge was asked (always, or auto when the gate failed)
+	DecisionGrounded = "grounded" // auto: the grounding gate accepted without a judge
+	DecisionSampled  = "sampled"  // auto: the gate passed, and the sampled judge was asked anyway
+	DecisionSkipped  = "skipped"  // never: no judge
 )
 
 // Loop defaults.
@@ -96,8 +106,15 @@ type Input struct {
 	PriorCandidate json.RawMessage
 	PriorFeedback  []Feedback
 	// JudgePolicy is the job's effective judge policy (request, else application, else
-	// roles.judge.policy); "" means config.JudgeAlways.
+	// roles.judge.policy); "" means config.JudgeAlways. The grounding check reads
+	// Representation.GroundText; under never and auto the caller fills it for PDFs sent
+	// natively or as pages (document.GroundingText), under always it does not.
 	JudgePolicy config.JudgePolicy
+	// SampleRate (auto) is the share of grounded jobs judged anyway, and SampleKey the
+	// bytes it is decided on (Sampled): the job id in the service, the document bytes in
+	// the CLI. A resumed job keeps its key, so its sampling decision.
+	SampleRate float64
+	SampleKey  []byte
 	// Deadline is when the job must be terminal (created_at plus limits.job_timeout);
 	// the zero time adds no deadline to ctx.
 	Deadline time.Time
@@ -141,6 +158,14 @@ type Outcome struct {
 	Verification string `json:"verification"`
 	// Usage is the token usage of this Run (metadata, not part of the job resource).
 	Usage Usage `json:"-"`
+	// JudgeCalls counts the judge-role calls of this Run that answered: judge, re-asks,
+	// second judge and feedback group (metadata, for the evaluation report).
+	JudgeCalls int `json:"-"`
+	// Decision is how the last schema-valid candidate was decided (Decision*), "" when no
+	// candidate reached the decision; Disagreements counts sampled judge calls that
+	// rejected a grounded candidate. Both are metadata for the metrics.
+	Decision      string `json:"-"`
+	Disagreements int    `json:"-"`
 }
 
 // errTimeout and errUnavailable end the loop with their job error codes; any other
@@ -160,7 +185,10 @@ func Run(ctx context.Context, in Input, roles Roles) (out Outcome) {
 		ctx, cancel = context.WithDeadline(ctx, in.Deadline)
 		defer cancel()
 	}
-	l := &loop{in: &in, roles: roles, maxChars: roles.FeedbackMessageChars}
+	l := &loop{in: &in, roles: roles, maxChars: roles.FeedbackMessageChars, policy: in.JudgePolicy}
+	if l.policy == "" {
+		l.policy = config.JudgeAlways
+	}
 	if l.maxChars <= 0 {
 		l.maxChars = DefaultFeedbackMessageChars
 	}
@@ -195,6 +223,13 @@ type loop struct {
 	next       []Feedback      // the feedback for the next extractor request
 	confidence *float64        // of the last parsed verdict
 	usage      Usage
+
+	policy        config.JudgePolicy
+	doc           *ground.Text // the grounding index, built on first use
+	repaired      bool         // the one grounding repair of the job was made
+	judgeCalls    int
+	decision      string
+	disagreements int
 }
 
 func (l *loop) run(ctx context.Context) Outcome {
@@ -207,6 +242,7 @@ func (l *loop) run(ctx context.Context) Outcome {
 		l.usable, l.result, l.prev = true, l.in.PriorCandidate, l.in.PriorCandidate
 	}
 	l.feedback, l.next = l.in.PriorFeedback, l.in.PriorFeedback
+	l.repaired = slices.ContainsFunc(l.in.PriorFeedback, func(f Feedback) bool { return f.Source == SourceGrounding })
 	schemaless := l.in.Schema == nil
 	extractorSystem, judgeSystem := framings(schemaless)
 	allowArray := schemaless || l.in.Schema.allowArray
@@ -247,6 +283,7 @@ func (l *loop) run(ctx context.Context) Outcome {
 			l.progress()
 			continue
 		}
+		answersFeedback := slices.ContainsFunc(l.next, func(f Feedback) bool { return f.Source != SourceGrounding })
 		l.usable, l.result, l.feedback, l.prev = true, candidate, nil, candidate
 
 		if !schemaless {
@@ -256,6 +293,36 @@ func (l *loop) run(ctx context.Context) Outcome {
 				l.progress()
 				continue // no judge call
 			}
+		}
+
+		// The candidate validates: ground it, then decide by the judge policy (ADR 0009).
+		grounded, misses := l.ground(candidate)
+		if l.policy == config.JudgeNever {
+			l.decision, l.feedback = DecisionSkipped, misses // advisory
+			return l.outcome(StatusExtracted, nil)
+		}
+		if grounded.CriticalMissed > 0 && !l.repaired && l.attempts < maxAttempts {
+			// The one grounding repair: back to the extractor, no judge call.
+			l.repaired = true
+			l.feedback, l.next = misses, misses
+			l.progress()
+			continue
+		}
+		// The auto gate: grounded text, every critical leaf grounded, and a candidate that
+		// does not answer schema or judge feedback (a judge's rejection is not overruled).
+		gate := l.policy == config.JudgeAuto && grounded.CriticalOK() && !answersFeedback
+		sampled := gate && Sampled(l.in.SampleKey, l.in.SampleRate)
+		switch {
+		case gate && !sampled:
+			l.decision, l.feedback, l.confidence = DecisionGrounded, nil, nil
+			return l.outcome(StatusAccepted, nil)
+		case sampled:
+			l.decision = DecisionSampled
+		case l.decision != DecisionSampled: // a sampled job stays sampled for the metrics
+			l.decision = DecisionJudged
+		}
+		if l.policy != config.JudgeAuto {
+			misses = nil // under always, grounding entries reach only the extractor
 		}
 
 		v, err := l.verdict(ctx, at(l.roles.Judge, l.roles.JudgeEscalation, l.attempts), judgeSystem, candidate)
@@ -277,11 +344,14 @@ func (l *loop) run(ctx context.Context) Outcome {
 			v = second
 		}
 		if v.accept {
-			l.feedback = v.feedback // advisory entries
+			l.feedback = slices.Concat(v.feedback, misses) // advisory entries
 			return l.outcome(StatusAccepted, nil)
 		}
-		l.feedback = v.feedback
-		l.next = v.feedback
+		if sampled {
+			l.disagreements++ // the judge rejected what grounding alone would have accepted
+		}
+		l.feedback = slices.Concat(v.feedback, misses)
+		l.next = l.feedback
 		l.progress()
 	}
 
@@ -289,6 +359,25 @@ func (l *loop) run(ctx context.Context) Outcome {
 		return l.failed(CodeExtractorFailed)
 	}
 	return l.outcome(StatusRejected, nil)
+}
+
+// ground checks a schema-valid candidate against the document text, when the
+// representation has any, and returns the result with its feedback entries (nil when
+// every leaf is grounded or there is no text: the result is then Ungroundable).
+func (l *loop) ground(candidate json.RawMessage) (ground.Result, []Feedback) {
+	rep := l.in.Representation
+	if !rep.Groundable {
+		return ground.Result{Ungroundable: true}, nil
+	}
+	if l.doc == nil {
+		l.doc = ground.NewText(rep.GroundText)
+	}
+	res := ground.Check(l.doc, candidate, l.in.Schema.GroundingRules(), ground.Options{MaxMisses: maxSchemaFeedback})
+	var out []Feedback
+	for _, f := range res.Ungrounded.Feedback() {
+		out = append(out, Feedback(f))
+	}
+	return res, out
 }
 
 // errJudgeFailed: the judge's answer could not be parsed on any try.
@@ -327,6 +416,7 @@ func (l *loop) judge(ctx context.Context, g *router.Group, system string, candid
 		if err != nil {
 			return verdict{}, router.Served{}, err
 		}
+		l.judgeCalls++
 		v, err := parseVerdict(resp.Text, l.maxChars)
 		if err != nil {
 			continue
@@ -387,12 +477,19 @@ func (l *loop) failed(code string) Outcome {
 
 func (l *loop) outcome(status Status, jobErr *JobError) Outcome {
 	feedback := l.feedback
+	if l.policy == config.JudgeAlways {
+		// Contract v1 sources only: a repair's entries never reach the job's feedback.
+		feedback = slices.DeleteFunc(slices.Clone(feedback), func(f Feedback) bool { return f.Source == SourceGrounding })
+	}
 	if feedback == nil {
 		feedback = []Feedback{}
 	}
 	verification := VerificationNone
 	if status == StatusAccepted {
-		verification = VerificationJudge // the loop accepts only on a judge's accept
+		verification = VerificationJudge // a judge's accept, or the auto grounding gate
+		if l.decision == DecisionGrounded {
+			verification = VerificationGrounded
+		}
 	}
 	return Outcome{
 		Status:          status,
@@ -403,6 +500,9 @@ func (l *loop) outcome(status Status, jobErr *JobError) Outcome {
 		Error:           jobErr,
 		Verification:    verification,
 		Usage:           l.usage,
+		JudgeCalls:      l.judgeCalls,
+		Decision:        l.decision,
+		Disagreements:   l.disagreements,
 	}
 }
 

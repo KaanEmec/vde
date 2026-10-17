@@ -1,8 +1,10 @@
-# Only go.mod, go.sum, cmd/ and internal/ are copied by the Dockerfile; keep the build
-# context small and free of local state or secrets.
+# Only go.mod, go.sum, cmd/, internal/, LICENSE and NOTICE are copied by the Dockerfile;
+# keep the build context small and free of local state or secrets.
 *
 !go.mod
 !go.sum
 !cmd/
 !internal/
+!LICENSE
+!NOTICE
 **/*_test.go

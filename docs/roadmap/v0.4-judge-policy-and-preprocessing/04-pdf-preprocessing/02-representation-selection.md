@@ -1,6 +1,6 @@
 # Job: `documents.pdf` and representation selection
 
-Version: v0.4 · Epic: 04 PDF preprocessing · Status: in progress · Depends on: 01
+Version: v0.4 · Epic: 04 PDF preprocessing · Status: done · Depends on: 01
 
 ## Goal
 
@@ -24,7 +24,7 @@ representation.
       `min_text_chars_per_page` (200, ≥ 0) and `workers` (1, 1 to 16). Validation and
       defaults are in `validate.go`. Per application: `applications[].documents.pdf.mode`
       only, the others are process-wide.
-- [ ] `internal/extract/version.go`: hash mode, dpi and min chars (not `workers`) into
+- [x] `internal/extract/version.go`: hash mode, dpi and min chars (not `workers`) into
       `service_version`, only when the mode is not `native` or a group cannot read PDF, so
       v0.3 hashes stay for PDF-capable deployments.
 - [x] `internal/document/representation.go`: `SelectWith` gains a `PDFPolicy` (mode, dpi,
@@ -37,17 +37,17 @@ representation.
       `Text`, rendered pages are `Pages`. A new field `Source` (`given`, `text_layer`,
       `rendered`) is stored in the `representation` metadata column as `pages+rendered` or
       `text+text_layer`, and shown in admin job metadata.
-- [ ] Submit (`internal/api/submit.go`, `submit_json.go`, `sync.go`): open the PDF, count
+- [x] Submit (`internal/api/submit.go`, `submit_json.go`, `sync.go`): open the PDF, count
       pages and measure text under the engine's timeout. Too many pages answers
       `415 unsupported_document` with a message naming the limit. An encrypted or invalid
       PDF answers `415` with a generic message.
-- [ ] Worker (`internal/worker/pool.go`): build `Pages` parts by rendering at the configured
+- [x] Worker (`internal/worker/pool.go`): build `Pages` parts by rendering at the configured
       dpi, then apply the image policy (`documents.images.max_dimension`). Text parts come
       from the text layer, pages joined with a form-feed separator and a `--- page N ---`
       marker.
-- [ ] `cmd/vde/extract.go` and `cmd/vde/eval.go`: the same selection, with an engine
+- [x] `cmd/vde/extract.go` and `cmd/vde/eval.go`: the same selection, with an engine
       created per process.
-- [ ] `cmd/vde/serve.go`: one `pdf.Engine` per process, closed on shutdown. With
+- [x] `cmd/vde/serve.go`: one `pdf.Engine` per process, closed on shutdown. With
       `--role api` it is used for selection only. Rendering happens on workers.
 - [x] `internal/config/validate.go` and `cmd/vde/config.go`: replace the warning "no
       endpoint-model pair in group … reads application/pdf natively" with: under `native`,
@@ -72,7 +72,12 @@ representation.
 ## Progress
 
 Done (wave 1): configuration and validation, the selection in `internal/document`, `vde
-extract`, and `config check`. Open, in files owned by the judge-policy wiring of this wave:
+extract`, and `config check`. Done with epic 03's wiring (job 03-03, 2026-10-17): the PDF
+policy in `service_version`, submit (415 naming `documents.pdf.max_pages`), the worker
+(re-selection with the same policies and engine, `TestPDFPreparedByService` for text layer
+and rendered pages with a stub engine), `vde eval` and `vde serve` (one engine per
+process for submit and the workers, also with `--role api`). Originally open, in files
+owned by the judge-policy wiring of this wave:
 hashing the PDF policy into `service_version` (`internal/extract/version.go`, use
 `document.PDFPolicy.String()`), submit (`internal/api`), the worker (`internal/worker`),
 `vde eval` and `vde serve`. Until then the service keeps the v0.3 behaviour, since its

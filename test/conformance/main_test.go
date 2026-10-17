@@ -121,6 +121,9 @@ type instanceOptions struct {
 	trustedProxy bool     // server.trusted_proxy
 	retention    string   // appDev's retention.default; default devRetention
 	sweep        string   // retention.sweep_interval; default 1m
+	// pdfMode is documents.pdf.mode; default auto (ADR 0010: the service prepares a PDF
+	// no model reads natively). native keeps contract 4.11's refusal of such a PDF.
+	pdfMode string
 }
 
 // instance is one running vde serve.
@@ -168,6 +171,7 @@ roles:
 limits: {max_attempts: {{.MaxAttempts}}, job_timeout: {{.JobTimeout}}}
 worker: {size: 4, poll_interval: 20ms}
 retention: {sweep_interval: {{.Sweep}}}
+documents: {pdf: {mode: {{.PDFMode}}}}
 logging: {level: debug, format: json}
 applications:
   - id: travelinbox-dev
@@ -234,7 +238,7 @@ func tryStartInstance(o instanceOptions) (*instance, error) {
 	type ep struct{ Name, Model, URL string }
 	data := struct {
 		Listen, AdminListen, DataDir, Accepts, JobTimeout, FailoverTime, CallTimeout string
-		Retention, Sweep                                                             string
+		Retention, Sweep, PDFMode                                                    string
 		TrustedProxy                                                                 bool
 		MaxAttempts, QuotaLimit, RateLimit                                           int
 		Endpoints                                                                    []ep
@@ -243,6 +247,7 @@ func tryStartInstance(o instanceOptions) (*instance, error) {
 		Accepts:    strings.Join(defaultAccepts, ", "),
 		JobTimeout: or(o.jobTimeout, "5m"), FailoverTime: or(o.failoverTime, "20s"), CallTimeout: or(o.callTimeout, "10s"),
 		MaxAttempts: or(o.maxAttempts, 3), QuotaLimit: quotaLimit, RateLimit: rateLimit, Retention: or(o.retention, devRetention.String()), Sweep: or(o.sweep, "1m"),
+		PDFMode: or(o.pdfMode, "auto"),
 	}
 	if o.accepts != nil {
 		data.Accepts = strings.Join(o.accepts, ", ")

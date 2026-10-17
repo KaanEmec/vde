@@ -907,3 +907,174 @@ func TestRun_verification(t *testing.T) {
 		})
 	}
 }
+
+// groundedInput is input(personSchema) on a text document that prints valid (Ada
+// Lovelace, 1815) and valid2's name, with its grounding text.
+func groundedInput(t *testing.T, policy config.JudgePolicy) Input {
+	t.Helper()
+	const text = "Ada Lovelace, later Ada King, was born in 1815."
+	in := input(t, personSchema)
+	in.Representation = document.Representation{
+		Kind: document.Text, Parts: []provider.Part{{Text: text}}, MediaTypes: []string{"text/plain"},
+		GroundText: text, Groundable: true,
+	}
+	in.JudgePolicy = policy
+	return in
+}
+
+// invented has a year the document does not print.
+const invented = `{"name": "Ada Lovelace", "born": 1816}`
+
+// TestRun_autoNeverGroundsInvented is the epic's exit criterion as a property: under auto,
+// whatever the attempt limit, the sample rate, an earlier schema violation or the judge's
+// answer, a candidate with an invented value is never accepted without a judge, and
+// accepted only after a judge call that answered.
+func TestRun_autoNeverGroundsInvented(t *testing.T) {
+	judges := map[string]fake.Script{
+		"accepts": {{Answer: accept, Repeat: true}},
+		"rejects": {{Answer: reject, Repeat: true}},
+		"fails":   fake.AlwaysRetryable(503),
+		"garbage": {{Answer: garbage, Repeat: true}},
+	}
+	for name, judge := range judges {
+		for _, maxAttempts := range []int{1, 2, 3} {
+			for _, schemaFirst := range []bool{false, true} {
+				for _, rate := range []float64{0, 1} {
+					extractor := fake.Script{{Answer: invented, Repeat: true}}
+					if schemaFirst {
+						extractor = fake.Script{fake.Answer(invalid), {Answer: invented, Repeat: true}}
+					}
+					r := newRig(t, extractor, nil, judge)
+					in := groundedInput(t, config.JudgeAuto)
+					in.MaxAttempts, in.SampleRate, in.SampleKey = maxAttempts, rate, []byte("key")
+					out := Run(t.Context(), in, r.roles)
+					if out.Verification == VerificationGrounded || out.Decision == DecisionGrounded {
+						t.Errorf("judge %s, max %d, schema first %v, rate %g: accepted on grounding: %+v", name, maxAttempts, schemaFirst, rate, out)
+					}
+					if out.Status == StatusAccepted && (out.JudgeCalls == 0 || len(r.judge.Calls()) == 0) {
+						t.Errorf("judge %s, max %d: accepted without a judge call", name, maxAttempts)
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestRun_judgePolicy covers the loop's policy paths on a groundable text document: the
+// outcome, the calls, the decision for the metrics and where grounding entries go.
+func TestRun_judgePolicy(t *testing.T) {
+	tests := []struct {
+		name               string
+		policy             config.JudgePolicy
+		rate               float64
+		maxAttempts        int
+		extractor, judge   fake.Script
+		schemaless         bool
+		wantStatus         Status
+		wantVerification   string
+		wantExtractorCalls int
+		wantJudgeCalls     int
+		wantDecision       string
+		wantGrounding      int // grounding entries in the outcome's feedback
+	}{
+		{"always grounded", "", 0, 3, fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false,
+			StatusAccepted, VerificationJudge, 1, 1, DecisionJudged, 0},
+		{"always repaired", config.JudgeAlways, 0, 3, fake.Script{fake.Answer(invented), fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false,
+			StatusAccepted, VerificationJudge, 2, 1, DecisionJudged, 0},
+		{"always repair fails, judge rejects to the limit", config.JudgeAlways, 0, 3, fake.Script{{Answer: invented, Repeat: true}},
+			fake.Script{{Answer: reject, Repeat: true}}, false, StatusRejected, VerificationNone, 3, 2, DecisionJudged, 0},
+		{"never", config.JudgeNever, 0, 3, fake.Script{fake.Answer(valid)}, nil, false,
+			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 0},
+		{"never advisory", config.JudgeNever, 0, 3, fake.Script{fake.Answer(invented)}, nil, false,
+			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 1},
+		{"never schema-less", config.JudgeNever, 0, 3, fake.Script{fake.Answer(`{"anything": "Ada King"}`)}, nil, true,
+			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 0},
+		{"never schema violations", config.JudgeNever, 0, 2, fake.Script{{Answer: invalid, Repeat: true}}, nil, false,
+			StatusRejected, VerificationNone, 2, 0, "", 0},
+		{"never failed extractor", config.JudgeNever, 0, 2, fake.Script{{Answer: notJSON, Repeat: true}}, nil, false,
+			StatusFailed, VerificationNone, 2, 0, "", 0},
+		{"auto grounded", config.JudgeAuto, 0, 3, fake.Script{fake.Answer(valid)}, nil, false,
+			StatusAccepted, VerificationGrounded, 1, 0, DecisionGrounded, 0},
+		{"auto sampled", config.JudgeAuto, 1, 3, fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false,
+			StatusAccepted, VerificationJudge, 1, 1, DecisionSampled, 0},
+		{"auto ungrounded after repair, advisory entries", config.JudgeAuto, 0, 3, fake.Script{{Answer: invented, Repeat: true}},
+			fake.Script{fake.Answer(accept)}, false, StatusAccepted, VerificationJudge, 2, 1, DecisionJudged, 1},
+		{"auto judge rejects then grounded answer to judge feedback", config.JudgeAuto, 0, 3,
+			fake.Script{fake.Answer(invented), fake.Answer(invented), fake.Answer(valid)},
+			fake.Script{fake.Answer(reject), fake.Answer(accept)}, false, StatusAccepted, VerificationJudge, 3, 2, DecisionJudged, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, tt.extractor, nil, tt.judge)
+			in := groundedInput(t, tt.policy)
+			if tt.schemaless {
+				in.Schema = nil
+			}
+			in.MaxAttempts, in.SampleRate, in.SampleKey = tt.maxAttempts, tt.rate, []byte("key")
+			var progress []Progress
+			in.OnAttempt = func(p Progress) { progress = append(progress, p) }
+			out := Run(t.Context(), in, r.roles)
+			code := ""
+			if tt.wantStatus == StatusFailed {
+				code = CodeExtractorFailed
+			}
+			checkOutcome(t, in, out, tt.wantStatus, tt.wantExtractorCalls, code)
+			if out.Verification != tt.wantVerification || out.Decision != tt.wantDecision {
+				t.Errorf("verification %q, decision %q; want %q, %q", out.Verification, out.Decision, tt.wantVerification, tt.wantDecision)
+			}
+			if len(r.primary.Calls()) != tt.wantExtractorCalls || len(r.judge.Calls()) != tt.wantJudgeCalls || out.JudgeCalls != tt.wantJudgeCalls {
+				t.Errorf("calls: extractor %d, judge %d (outcome %d); want %d, %d", len(r.primary.Calls()), len(r.judge.Calls()),
+					out.JudgeCalls, tt.wantExtractorCalls, tt.wantJudgeCalls)
+			}
+			grounding := 0
+			for _, f := range out.Feedback {
+				if f.Source == SourceGrounding {
+					grounding++
+					if f.Message != "value not found in the document" || f.Pointer != "/born" {
+						t.Errorf("grounding entry %+v", f)
+					}
+				}
+			}
+			if grounding != tt.wantGrounding {
+				t.Errorf("%d grounding entries in %+v, want %d", grounding, out.Feedback, tt.wantGrounding)
+			}
+			if out.Status == StatusAccepted && out.Verification == VerificationGrounded && out.JudgeConfidence != nil {
+				t.Error("a grounded acceptance carries a judge confidence")
+			}
+			// The repair's entries reach the extractor (and OnAttempt, which persists them).
+			for i, c := range r.primary.Calls() {
+				if i > 0 && tt.name == "always repaired" && !hasText(c, `- "/born" (grounding): value not found in the document`) {
+					t.Errorf("extractor call %d lacks the grounding feedback", i+1)
+				}
+			}
+			if tt.name == "always repaired" && (len(progress) != 1 || progress[0].Feedback[0].Source != SourceGrounding) {
+				t.Errorf("progress after the repair = %+v", progress)
+			}
+		})
+	}
+}
+
+// TestRun_groundingRepairOnResume: a resumed job whose persisted feedback holds grounding
+// entries already had its repair, so an ungrounded candidate goes to the judge.
+func TestRun_groundingRepairOnResume(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(invented)}, nil, fake.Script{fake.Answer(accept)})
+	in := groundedInput(t, config.JudgeAlways)
+	in.PriorAttempts, in.PriorCandidate = 1, json.RawMessage(invented)
+	in.PriorFeedback = []Feedback{{Pointer: "/born", Message: "value not found in the document", Source: SourceGrounding}}
+	out := Run(t.Context(), in, r.roles)
+	if out.Status != StatusAccepted || out.Attempts != 2 || len(r.primary.Calls()) != 1 || len(r.judge.Calls()) != 1 || len(out.Feedback) != 0 {
+		t.Errorf("outcome %+v after %d extractor and %d judge calls; want accepted at once, no second repair",
+			out, len(r.primary.Calls()), len(r.judge.Calls()))
+	}
+}
+
+// TestRun_groundingRepairDroppedOnFailure: under always a repair's entries never reach
+// the outcome, even when the attempt after the repair fails.
+func TestRun_groundingRepairDroppedOnFailure(t *testing.T) {
+	r := newRig(t, fake.Script{fake.Answer(invented), fake.Fail(provider.Permanent, 400), fake.Fail(provider.Permanent, 400)}, nil, nil)
+	in := groundedInput(t, config.JudgeAlways)
+	out := Run(t.Context(), in, r.roles)
+	if out.Status != StatusRejected || len(out.Feedback) != 0 || out.Feedback == nil {
+		t.Errorf("outcome %s with feedback %+v; want rejected with no entries", out.Status, out.Feedback)
+	}
+}

@@ -95,6 +95,17 @@ Exit codes: 0 when every case ran, whatever the quality; 1 for a usage or config
 error or when a case could not be run at all (unreadable file, unsupported document,
 transport failure).
 
+The local engine runs each case under `roles.judge.policy` (ADR 0009); under `auto` the
+sample of grounded cases judged anyway is decided on the document's bytes, so reruns sample
+the same cases. `vde extract` does the same and exits 4 when a case ends `extracted`
+(policy `never`).
+
+### Owner suite
+
+PDFs run from their original bytes: the service reads their text layer or renders their
+pages itself (ADR 0010), so the hand-rasterized copies (`pdftoppm` page images) in the
+untracked `testdata/user-docs` are no longer needed and can be deleted.
+
 ### The numbers
 
 Progress lines on stderr and the table on stdout carry case ids, statuses, counts and JSON
