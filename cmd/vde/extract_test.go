@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -206,6 +207,7 @@ func runScenarioDirect(t *testing.T, path string, sc scenario) observedRun {
 		out: jobOutput{
 			Status: res.Status, Result: res.Result, Feedback: res.Feedback, Attempts: res.Attempts,
 			ServiceVersion: extract.ServiceVersion(cfg, version.Version), JudgeConfidence: res.JudgeConfidence, Error: res.Error,
+			Verification: res.Verification,
 		},
 		extractorCalls: map[string]int{},
 	}
@@ -377,7 +379,7 @@ func compareRuns(t *testing.T, direct, cli jobOutput) {
 	if direct.Status != cli.Status || direct.Attempts != cli.Attempts ||
 		!reflect.DeepEqual(direct.Error, cli.Error) || !reflect.DeepEqual(direct.Feedback, cli.Feedback) ||
 		!equalConfidence(direct.JudgeConfidence, cli.JudgeConfidence) || direct.ServiceVersion != cli.ServiceVersion ||
-		!equalJSON(t, direct.Result, cli.Result) || direct.Usage != cli.Usage {
+		!equalJSON(t, direct.Result, cli.Result) || direct.Usage != cli.Usage || direct.Verification != cli.Verification {
 		t.Errorf("extract.Run and vde extract differ:\n%+v\n%+v", direct, cli)
 	}
 }
@@ -568,7 +570,14 @@ func TestRunExtract(t *testing.T) {
 			name:       "help",
 			args:       []string{"extract", "-h"},
 			wantCode:   exitOK,
-			wantStderr: []string{"Exit codes: 0 accepted, 2 rejected, 3 failed, 1 usage or configuration error.", "-provider-script"},
+			wantStderr: []string{"Exit codes: 0 accepted, 2 rejected, 3 failed, 4 extracted", "-provider-script", "-judge"},
+		},
+		{
+			name: "bad judge policy",
+			args: []string{"extract", "--document", "d.txt", "--extractor-instructions", "e.md",
+				"--judge-instructions", "j.md", "--judge", "sometimes"},
+			wantCode:   exitUsage,
+			wantStderr: []string{`vde extract: --judge: judge policy "sometimes" is not one of always, never, auto`},
 		},
 	}
 	for _, tt := range tests {
@@ -604,5 +613,58 @@ func TestMediaTypesByExtension(t *testing.T) {
 		if !slices.Contains(slices.Collect(maps.Values(mediaTypesByExtension)), mt.Name) {
 			t.Errorf("no extension maps to accepted media type %s", mt.Name)
 		}
+	}
+}
+
+// TestExtractJudgeFlag: --judge reaches extract.Input and the service_version of the run
+// is the policy's; the result carries verification.
+func TestExtractJudgeFlag(t *testing.T) {
+	t.Parallel()
+	cfg, _, err := loadConfigEnv(scenarioConfig, false, func(string) string { return "unused" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	never := *cfg
+	never.Roles.Judge.Policy = config.JudgeNever
+	for _, tt := range []struct {
+		flag        string
+		wantPolicy  config.JudgePolicy
+		wantVersion string
+	}{
+		{"", config.JudgeAlways, extract.ServiceVersion(cfg, version.Version)},
+		{"never", config.JudgeNever, extract.ServiceVersion(&never, version.Version)},
+	} {
+		t.Run("judge="+tt.flag, func(t *testing.T) {
+			t.Parallel()
+			var got extract.Input
+			o := extractOptions{
+				config:                scenarioConfig,
+				document:              filepath.Join(samples, "booking.txt"),
+				extractorInstructions: filepath.Join(samples, "extractor.md"),
+				judgeInstructions:     filepath.Join(samples, "judge.md"),
+				providerScript:        filepath.Join(scenarioDir, "accept-first-try.yaml"),
+				judge:                 tt.flag,
+				run: func(ctx context.Context, in extract.Input, roles extract.Roles) extract.Outcome {
+					got = in
+					return extract.Run(ctx, in, roles)
+				},
+			}
+			out, err := extractFile(t.Context(), o, io.Discard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.JudgePolicy != tt.wantPolicy {
+				t.Errorf("Input.JudgePolicy = %q, want %q", got.JudgePolicy, tt.wantPolicy)
+			}
+			if out.ServiceVersion != tt.wantVersion {
+				t.Errorf("service_version = %s, want %s", out.ServiceVersion, tt.wantVersion)
+			}
+			if out.Status != extract.StatusAccepted || out.Verification != extract.VerificationJudge {
+				t.Errorf("status %s, verification %q; want accepted, judge", out.Status, out.Verification)
+			}
+		})
+	}
+	if extract.ServiceVersion(cfg, version.Version) == extract.ServiceVersion(&never, version.Version) {
+		t.Error("never and always share a service_version")
 	}
 }

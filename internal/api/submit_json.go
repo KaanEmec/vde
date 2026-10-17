@@ -46,6 +46,7 @@ type jsonSubmission struct {
 	Schema                json.RawMessage `json:"schema"`
 	Retention             *string         `json:"retention"`
 	MaxAttempts           json.RawMessage `json:"max_attempts"` // a JSON integer
+	Judge                 *string         `json:"judge"`        // always, never or auto (allow_override only)
 }
 
 // readJSONSubmission decodes a JSON body into the same submission the multipart path
@@ -134,6 +135,12 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 	}
 	if in.Retention != nil {
 		sub.retention = newPart("text/plain", "", []byte(*in.Retention))
+	}
+	if in.Judge != nil {
+		if len(*in.Judge) > maxJudgeBytes {
+			return nil, optionError(partJudge), false
+		}
+		sub.judge = newPart("text/plain", "", []byte(*in.Judge))
 	}
 	// The integer's literal goes through the multipart rules: "3" (a string), 3.0 or -1
 	// are refused there.

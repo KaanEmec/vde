@@ -2,6 +2,7 @@ package job
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -937,6 +938,168 @@ func TestCountInProgressAndListJobs(t *testing.T) {
 			if err != nil || !slices.Equal(gotIDs, tt.want) {
 				t.Errorf("ListJobs(%+v, %d) = %v, %v; want %v", tt.f, tt.limit, gotIDs, err, tt.want)
 			}
+		}
+	})
+}
+
+// TestJudgePolicyAndVerification: both columns round-trip; an unset policy is stored as
+// always; verification is "" until terminal, the outcome's when given, and derived from
+// the status when not.
+func TestJudgePolicyAndVerification(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		seedApp(t, s, testApp("app"))
+		plain := createJob(t, s, newJob("app"))
+		auto := newJob("app")
+		auto.JudgePolicy, auto.CreatedAt = "auto", t0.Add(time.Second)
+		createJob(t, s, auto)
+		got, err := s.GetJobAny(ctx, plain.ID)
+		if err != nil || got.JudgePolicy != DefaultJudgePolicy || got.Verification != "" {
+			t.Fatalf("queued = policy %q, verification %q, %v; want always and none yet", got.JudgePolicy, got.Verification, err)
+		}
+
+		finishJob(t, s, plain.ID, StatusAccepted) // no verification given: derived
+		if got, _ := s.GetJobAny(ctx, plain.ID); got.Verification != VerificationJudge {
+			t.Errorf("accepted without verification = %q, want judge", got.Verification)
+		}
+		if _, err := s.LeaseNextQueued(ctx, "w", t0, t0.Add(time.Minute), nil); err != nil {
+			t.Fatal(err)
+		}
+		o := Outcome{Status: StatusAccepted, Attempts: 1, Result: json.RawMessage(`{}`), Feedback: json.RawMessage(`[]`),
+			Verification: VerificationGrounded}
+		if err := s.Finish(ctx, auto.ID, "w", o, t0.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		got, _ = s.GetJobAny(ctx, auto.ID)
+		if got.JudgePolicy != "auto" || got.Verification != VerificationGrounded {
+			t.Errorf("auto job = policy %q, verification %q", got.JudgePolicy, got.Verification)
+		}
+		// The idempotency lookup reads the same columns.
+		keyed := newJob("app")
+		keyed.IdempotencyKey, keyed.JudgePolicy, keyed.CreatedAt = "k1", "never", t0.Add(2*time.Second)
+		createJob(t, s, keyed)
+		if found, err := s.FindByIdempotencyKey(ctx, "app", "k1"); err != nil || found.JudgePolicy != "never" {
+			t.Errorf("replayed policy = %q, %v", found.JudgePolicy, err)
+		}
+		if err := s.Finish(ctx, auto.ID, "w", o, t0); !errors.Is(err, ErrConflict) {
+			t.Errorf("second finish: %v", err)
+		}
+	})
+}
+
+// TestVerificationOfOlderRows: a terminal row written before migration 0008 has no
+// verification; it reads as judge when accepted and none otherwise, on both dialects.
+func TestVerificationOfOlderRows(t *testing.T) {
+	for _, d := range []struct {
+		name string
+		open func(t *testing.T) (db *sql.DB, reopen func() Store)
+	}{
+		{"sqlite", func(t *testing.T) (*sql.DB, func() Store) {
+			path := filepath.Join(t.TempDir(), "vde.db")
+			db, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return db, func() Store {
+				s, err := Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = s.Close() })
+				return s
+			}
+		}},
+		{"postgres", func(t *testing.T) (*sql.DB, func() Store) {
+			dsn, _ := pgTestSchema(t)
+			db, err := sql.Open("pgx", dsn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return db, func() Store {
+				s, err := OpenPostgres(t.Context(), dsn, 2)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = s.Close() })
+				return s
+			}
+		}},
+	} {
+		t.Run(d.name, func(t *testing.T) {
+			db, reopen := d.open(t)
+			pg := d.name == "postgres"
+			ctx := t.Context()
+			if err := migrate(ctx, db, pg, 7); err != nil {
+				t.Fatal(err)
+			}
+			old := &sqlStore{db: db, pg: pg}
+			if _, err := old.exec(ctx, `INSERT INTO applications (id, max_attempts, quota_limit, quota_window,
+				requests_per_minute, submits_per_minute, max_in_progress, retention_default, created_at, updated_at)
+				VALUES ('app', 3, 10, 'P1D', 10, 10, 10, '24h', 0, 0)`); err != nil {
+				t.Fatal(err)
+			}
+			for id, status := range map[string]string{"j_acc": "accepted", "j_rej": "rejected", "j_fail": "failed", "j_run": "running"} {
+				var finished any = int64(1)
+				if status == "running" {
+					finished = nil
+				}
+				if _, err := old.exec(ctx, `INSERT INTO jobs (id, application_id, status, service_version,
+					representation, media_type, size, retention, created_at, expires_at, finished_at)
+					VALUES (?, 'app', ?, 'v', 'text', 'text/plain', 1, 'default', 0, 1, ?)`, id, status, finished); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_ = db.Close()
+			s := reopen()
+			for id, want := range map[string]string{"j_acc": VerificationJudge, "j_rej": VerificationNone, "j_fail": VerificationNone, "j_run": ""} {
+				j, err := s.GetJobAny(ctx, id)
+				if err != nil || j.Verification != want || j.JudgePolicy != DefaultJudgePolicy {
+					t.Errorf("%s: verification %q, policy %q, %v; want %q, always", id, j.Verification, j.JudgePolicy, err, want)
+				}
+			}
+			app, err := s.GetApplication(ctx, "app")
+			if err != nil || app.JudgePolicy != "" || app.JudgeAllowOverride || app.JudgeSampleRate != nil {
+				t.Errorf("older application = %+v, %v; want no judge settings", app, err)
+			}
+		})
+	}
+}
+
+// TestApplicationJudgeColumns: the judge settings of an application round-trip through
+// upsert, create and update.
+func TestApplicationJudgeColumns(t *testing.T) {
+	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+		ctx := t.Context()
+		rate := 0.25
+		a := testApp("cfg")
+		a.JudgePolicy, a.JudgeAllowOverride, a.JudgeSampleRate = "auto", true, &rate
+		seedApp(t, s, a)
+		got, err := s.GetApplication(ctx, "cfg")
+		if err != nil || got.JudgePolicy != "auto" || !got.JudgeAllowOverride || got.JudgeSampleRate == nil || *got.JudgeSampleRate != 0.25 {
+			t.Fatalf("upserted = %+v, %v", got, err)
+		}
+		a.JudgePolicy, a.JudgeAllowOverride, a.JudgeSampleRate = "", false, nil
+		seedApp(t, s, a)
+		if got, _ := s.GetApplication(ctx, "cfg"); got.JudgePolicy != "" || got.JudgeAllowOverride || got.JudgeSampleRate != nil {
+			t.Errorf("upsert did not rewrite the judge settings: %+v", got)
+		}
+
+		d := testApp("dyn")
+		d.JudgePolicy, d.Enabled = "never", true
+		if err := s.CreateApplication(ctx, d, t0); err != nil {
+			t.Fatal(err)
+		}
+		d.JudgePolicy, d.JudgeAllowOverride, d.JudgeSampleRate = "always", true, &rate
+		if err := s.UpdateApplication(ctx, d, t0); err != nil {
+			t.Fatal(err)
+		}
+		got, _ = s.GetApplication(ctx, "dyn")
+		if got.JudgePolicy != "always" || !got.JudgeAllowOverride || got.JudgeSampleRate == nil || *got.JudgeSampleRate != rate {
+			t.Errorf("updated = %+v", got)
+		}
+		apps, err := s.ListApplications(ctx)
+		if err != nil || len(apps) != 2 {
+			t.Fatalf("list = %v, %v", apps, err)
 		}
 	})
 }

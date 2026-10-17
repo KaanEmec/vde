@@ -39,12 +39,13 @@ type Deps struct {
 	// reads its token from it; nil refuses every /v1 request with 500.
 	Store job.Store
 	// ServiceVersion is sent as X-Service-Version on every /v1/jobs response
-	// (contract §11). AppServiceVersion, when set, gives it per application for
-	// authenticated requests and new jobs (extract.ApplicationServiceVersion over the
-	// application's stored row, so admin API changes count at once); "" falls back to
-	// ServiceVersion.
+	// (contract §11). AppServiceVersion, when set, gives it per application and judge
+	// policy for authenticated requests and new jobs (extract.ApplicationServiceVersionFor
+	// over the application's stored row, so admin API changes count at once); "" falls
+	// back to ServiceVersion. Authenticated requests carry the version of the
+	// application's own policy; a submission's response, that of the job's policy.
 	ServiceVersion    string
-	AppServiceVersion func(job.Application) string
+	AppServiceVersion func(job.Application, config.JudgePolicy) string
 	Logger            *slog.Logger     // nil means slog.Default()
 	Now               func() time.Time // nil means time.Now; tests set it
 	// Extractor and Judge are the role groups checked by /healthz. They may be the

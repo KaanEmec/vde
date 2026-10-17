@@ -770,7 +770,7 @@ func TestOutcome_json(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `{"status":"failed","result":null,"feedback":[],"attempts":1,"judge_confidence":null,` +
-		`"error":{"code":"provider_unavailable","message":"Every endpoint of a role's group failed."}}`
+		`"error":{"code":"provider_unavailable","message":"Every endpoint of a role's group failed."},"verification":"none"}`
 	if string(data) != want {
 		t.Errorf("JSON = %s\nwant   %s", data, want)
 	}
@@ -880,4 +880,30 @@ func TestRun_resume(t *testing.T) {
 			t.Errorf("request %+v: want feedback and no previous candidate", c.Request.Parts)
 		}
 	})
+}
+
+// TestRun_verification: under the default policy accepted pairs with judge and every other
+// terminal status with none (ADR 0009).
+func TestRun_verification(t *testing.T) {
+	tests := []struct {
+		name   string
+		judge  fake.Script
+		status Status
+		want   string
+	}{
+		{"accepted", fake.Script{fake.Answer(accept)}, StatusAccepted, VerificationJudge},
+		{"rejected", fake.Script{fake.Answer(reject)}, StatusRejected, VerificationNone},
+		{"failed", fake.AlwaysRetryable(503), StatusFailed, VerificationNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, fake.Script{fake.Answer(valid)}, nil, tt.judge)
+			in := input(t, personSchema)
+			in.MaxAttempts = 1
+			out := Run(t.Context(), in, r.roles)
+			if out.Status != tt.status || out.Verification != tt.want {
+				t.Errorf("status %s, verification %q; want %s, %q", out.Status, out.Verification, tt.status, tt.want)
+			}
+		})
+	}
 }

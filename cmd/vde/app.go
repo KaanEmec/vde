@@ -63,18 +63,32 @@ func cliAudit(store job.Store) *audit.Recorder {
 // storeApplication is the store row of a configured application (defaults applied).
 func storeApplication(a config.Application) job.Application {
 	return job.Application{
-		ID:                a.ID,
-		Name:              a.Name,
-		MaxAttempts:       a.MaxAttempts,
-		QuotaLimit:        a.Quota.Limit,
-		QuotaWindow:       a.Quota.Window,
-		RequestsPerMinute: a.Rate.RequestsPerMinute,
-		SubmitsPerMinute:  a.Rate.SubmitsPerMinute,
-		MaxInProgress:     a.Rate.MaxInProgress,
-		RetentionDefault:  a.Retention.Default,
-		ForceNone:         a.Retention.ForceNone,
-		HTMLPolicy:        a.Documents.HTML,
-		Enabled:           true,
+		ID:                 a.ID,
+		Name:               a.Name,
+		MaxAttempts:        a.MaxAttempts,
+		QuotaLimit:         a.Quota.Limit,
+		QuotaWindow:        a.Quota.Window,
+		RequestsPerMinute:  a.Rate.RequestsPerMinute,
+		SubmitsPerMinute:   a.Rate.SubmitsPerMinute,
+		MaxInProgress:      a.Rate.MaxInProgress,
+		RetentionDefault:   a.Retention.Default,
+		ForceNone:          a.Retention.ForceNone,
+		HTMLPolicy:         a.Documents.HTML,
+		JudgePolicy:        string(a.Judge.Policy),
+		JudgeAllowOverride: a.Judge.AllowOverride,
+		JudgeSampleRate:    a.Judge.SampleRate,
+		Enabled:            true,
+	}
+}
+
+// storedApplication is the configuration entry that a store row stands for, with the
+// fields that the service_version hashes.
+func storedApplication(a job.Application) config.Application {
+	return config.Application{
+		ID: a.ID, MaxAttempts: a.MaxAttempts, Documents: config.AppDocuments{HTML: a.HTMLPolicy},
+		Judge: config.AppJudge{
+			Policy: config.JudgePolicy(a.JudgePolicy), AllowOverride: a.JudgeAllowOverride, SampleRate: a.JudgeSampleRate,
+		},
 	}
 }
 

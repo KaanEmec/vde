@@ -166,6 +166,9 @@ type Role struct {
 	// Escalation moves later attempts to other groups, in increasing from_attempt order;
 	// failover stays inside each group.
 	Escalation []Escalation `yaml:"escalation,omitempty"`
+	// Policy is when the judge is asked (judge.go); roles.judge only, JudgeAlways when
+	// unset. Validate refuses it on roles.extractor.
+	Policy JudgePolicy `yaml:"policy,omitempty"`
 }
 
 // Escalation serves a role from Group from attempt FromAttempt on.
@@ -220,6 +223,7 @@ type Limits struct {
 type Documents struct {
 	HTML   string `yaml:"html"` // raw_html or visible_text
 	Images Images `yaml:"images"`
+	PDF    PDF    `yaml:"pdf"`   // text layer and page rendering (ADR 0010)
 	Fetch  Fetch  `yaml:"fetch"` // document URLs in JSON submissions (delivery.go)
 }
 
@@ -233,6 +237,18 @@ type Images struct {
 	Quality      int    `yaml:"quality"`       // JPEG quality 1-100
 }
 
+// PDF is how a PDF reaches groups that cannot read application/pdf natively (ADR 0010):
+// as its text layer, as pages rendered by the service, or refused (native). Mode, DPI and
+// MinTextCharsPerPage are part of service_version; Workers is a memory decision (each
+// pdfium instance takes up to about 500 MB).
+type PDF struct {
+	Mode                string `yaml:"mode"`                    // auto, native, text or pages
+	DPI                 int    `yaml:"dpi"`                     // rendering resolution, 72 to 300
+	MaxPages            int    `yaml:"max_pages"`               // longer PDFs are refused unless read natively
+	MinTextCharsPerPage int    `yaml:"min_text_chars_per_page"` // auto sends text when every page has this many
+	Workers             int    `yaml:"workers"`                 // pdfium instances, 1 to 16
+}
+
 // Application is one caller with its own limits (used from v0.2).
 type Application struct {
 	ID          string       `yaml:"id"`
@@ -243,6 +259,7 @@ type Application struct {
 	Retention   Retention    `yaml:"retention"`
 	Documents   AppDocuments `yaml:"documents"`
 	Webhook     Webhook      `yaml:"webhook,omitempty"` // completion webhook (delivery.go); empty url means none
+	Judge       AppJudge     `yaml:"judge,omitempty"`   // judge policy (judge.go)
 }
 
 // Quota is the number of submissions allowed per window.
@@ -270,6 +287,13 @@ type Retention struct {
 // AppDocuments overrides the representation policy for one application.
 type AppDocuments struct {
 	HTML string `yaml:"html,omitempty"` // empty means documents.html
+	PDF  AppPDF `yaml:"pdf,omitempty"`
+}
+
+// AppPDF overrides documents.pdf.mode for one application; the other PDF settings are
+// process-wide.
+type AppPDF struct {
+	Mode string `yaml:"mode,omitempty"` // empty means documents.pdf.mode
 }
 
 // Auth bounds the access tokens the operator issues.
@@ -303,6 +327,10 @@ const (
 	defaultPages             = 20
 	defaultImageMaxDimension = 2048
 	defaultImageQuality      = 85
+	defaultPDFDPI            = 150
+	defaultPDFMaxPages       = 20
+	defaultPDFMinTextChars   = 200
+	defaultPDFWorkers        = 1
 	defaultRequestBytes      = 128 << 20
 	defaultQuotaLimit        = 1000
 	defaultQuotaWindow       = "P1D"
@@ -339,6 +367,8 @@ func defaults() *Config {
 		Documents: Documents{
 			HTML:   "raw_html",
 			Images: Images{Enabled: true, MaxDimension: defaultImageMaxDimension, ConvertTo: "image/jpeg", Quality: defaultImageQuality},
+			PDF: PDF{Mode: "auto", DPI: defaultPDFDPI, MaxPages: defaultPDFMaxPages,
+				MinTextCharsPerPage: defaultPDFMinTextChars, Workers: defaultPDFWorkers},
 		},
 		Auth:      Auth{MaxTokenTTL: defaultMaxTokenTTL},
 		Logging:   Logging{Level: "info", Format: "json"},
@@ -391,6 +421,7 @@ func Parse(data []byte, getenv func(string) string) (*Config, error) {
 // applyDefaults fills values inside maps and lists, which cannot be pre-populated before
 // decoding. A zero value there means "use the default".
 func (c *Config) applyDefaults() {
+	setDefault(&c.Roles.Judge.Policy, JudgeAlways)
 	for _, e := range c.Endpoints {
 		if e == nil {
 			continue

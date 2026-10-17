@@ -29,6 +29,7 @@ const (
 	maxInstructionsBytes   = 64 << 10
 	maxSchemaBytes         = 256 << 10
 	maxOptionBytes         = 32 // retention and max_attempts
+	maxJudgeBytes          = 16 // the judge part: always, never or auto
 	maxIdempotencyKeyChars = 128
 )
 
@@ -47,6 +48,7 @@ const (
 	partSchema                = "schema"
 	partRetention             = "retention"
 	partMaxAttempts           = "max_attempts"
+	partJudge                 = "judge"
 )
 
 // Messages of the submit path (errors.go explains the rules).
@@ -65,6 +67,8 @@ const (
 	msgRequestTooLarge        = "The request body exceeds %d bytes."
 	msgBadRetention           = "The retention part must be none or default."
 	msgBadMaxAttempts         = "The max_attempts part must be a positive integer."
+	msgBadJudge               = "The judge part must be always, never or auto."
+	msgJudgeNotAllowed        = "The judge part is not allowed: the application does not allow a per-request judge policy."
 	msgDocumentUnreadable     = "The document or a page is empty or cannot be decoded."
 	msgDocumentTooLarge       = "The document or a page exceeds its size limit."
 	msgDocumentMediaType      = "The document's media type is not accepted, or a part's content does not match its media type."
@@ -98,6 +102,7 @@ type submission struct {
 	schema                *part
 	retention             *part
 	maxAttempts           *part
+	judge                 *part
 }
 
 // submitJob is POST /v1/jobs (contract §4, §6 step 1): createJob, then 202 with the
@@ -161,6 +166,11 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		refuse(e)
 		return nil, true
 	}
+	policy, e, ok := sub.judgePolicy(app, cfg)
+	if !ok {
+		refuse(e)
+		return nil, true
+	}
 
 	pages := make([]document.Page, len(sub.pages))
 	for i, p := range sub.pages {
@@ -202,7 +212,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	j := &job.Job{
 		ID:                    job.NewID(),
 		ApplicationID:         app.ID,
-		ServiceVersion:        s.serviceVersion(app),
+		ServiceVersion:        s.serviceVersionFor(app, policy),
 		Representation:        rep.Kind.String(),
 		MediaType:             doc.MediaType,
 		Size:                  int64(len(doc.Data)),
@@ -215,6 +225,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		JudgeInstructions:     string(sub.judgeInstructions.data),
 		Schema:                schema,
 		MaxAttempts:           maxAttempts,
+		JudgePolicy:           string(policy),
 		CreatedAt:             s.now(),
 	}
 	err = s.storeJob(ctx, j, doc)
@@ -227,7 +238,8 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
 		return nil, true
 	}
-	s.deps.Audit.JobCreated(ctx, *j) // nil-safe
+	w.Header().Set(headerServiceVersion, j.ServiceVersion) // the version of the job's policy
+	s.deps.Audit.JobCreated(ctx, *j)                       // nil-safe
 	s.refreshInProgress(ctx, app.ID)
 	if s.deps.Wake != nil {
 		s.deps.Wake()
@@ -292,6 +304,11 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 			slot, limit = &sub.retention, maxOptionBytes
 		case partMaxAttempts:
 			slot, limit = &sub.maxAttempts, maxOptionBytes
+		case partJudge:
+			slot, limit = &sub.judge, maxJudgeBytes
+			if !mediaTypeIn(p.Header.Get("Content-Type"), "text/plain", "text/plain") {
+				return nil, newError(codeBadRequest, msgPartMediaType, name), false
+			}
 		default:
 			return nil, newError(codeBadRequest, msgUnknownPart), false
 		}
@@ -300,7 +317,7 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 		}
 		read, err := readPart(p, limit)
 		switch {
-		case errors.Is(err, errPartTooLarge) && (name == partRetention || name == partMaxAttempts):
+		case errors.Is(err, errPartTooLarge) && (name == partRetention || name == partMaxAttempts || name == partJudge):
 			return nil, optionError(name), false
 		case errors.Is(err, errPartTooLarge):
 			return nil, newError(codePayloadTooLarge, msgPartTooLarge, name), false
@@ -394,10 +411,41 @@ func mediaTypeIn(value, missing string, types ...string) bool {
 }
 
 func optionError(name string) apiError {
-	if name == partRetention {
+	switch name {
+	case partRetention:
 		return newError(codeBadRequest, msgBadRetention)
+	case partJudge:
+		return newError(codeBadRequest, msgBadJudge)
 	}
 	return newError(codeBadRequest, msgBadMaxAttempts)
+}
+
+// judgePolicy is the job's effective judge policy (ADR 0009): the judge part when the
+// application allows override, else the application's, else roles.judge.policy. The part
+// is refused when the application does not allow override, whatever its value.
+func (sub *submission) judgePolicy(app job.Application, cfg *config.Config) (config.JudgePolicy, apiError, bool) {
+	if sub.judge == nil {
+		return appJudgePolicy(app, cfg), newError(codeInternal, msgInternal), true
+	}
+	if !app.JudgeAllowOverride {
+		return "", newError(codeBadRequest, msgJudgeNotAllowed), false
+	}
+	p, err := config.ParseJudgePolicy(strings.TrimSpace(string(sub.judge.data)))
+	if err != nil {
+		return "", optionError(partJudge), false
+	}
+	return p, newError(codeInternal, msgInternal), true
+}
+
+// appJudgePolicy is the application's effective judge policy: its own, else the role's.
+func appJudgePolicy(app job.Application, cfg *config.Config) config.JudgePolicy {
+	if p, err := config.ParseJudgePolicy(app.JudgePolicy); err == nil {
+		return p
+	}
+	if cfg == nil {
+		return config.JudgeAlways
+	}
+	return cfg.RolePolicy()
 }
 
 // options reads retention (default when absent) and max_attempts (0, the
@@ -438,6 +486,7 @@ func (sub *submission) hash() string {
 	}
 	write(h, partDocument, sub.document)
 	write(h, partExtractorInstructions, sub.extractorInstructions)
+	write(h, partJudge, sub.judge)
 	write(h, partJudgeInstructions, sub.judgeInstructions)
 	write(h, partMaxAttempts, sub.maxAttempts)
 	for i := range sub.pages {
@@ -574,10 +623,16 @@ func (s *server) storeJob(ctx context.Context, j *job.Job, doc *document.Documen
 	return s.deps.Store.CreateJob(ctx, j)
 }
 
-// serviceVersion is the service_version of the application's jobs.
+// serviceVersion is the service_version of the application's jobs under its own judge
+// policy.
 func (s *server) serviceVersion(app job.Application) string {
+	return s.serviceVersionFor(app, appJudgePolicy(app, s.deps.Config))
+}
+
+// serviceVersionFor is the service_version of the application's jobs run under policy.
+func (s *server) serviceVersionFor(app job.Application, policy config.JudgePolicy) string {
 	if s.deps.AppServiceVersion != nil {
-		if v := s.deps.AppServiceVersion(app); v != "" {
+		if v := s.deps.AppServiceVersion(app, policy); v != "" {
 			return v
 		}
 	}

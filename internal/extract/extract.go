@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/router"
@@ -19,11 +20,23 @@ import (
 // Status is a job's terminal status (contract §5).
 type Status string
 
-// Terminal statuses. Only StatusAccepted is acceptance.
+// Terminal statuses. Only StatusAccepted is acceptance. StatusExtracted (judge policy
+// never, ADR 0009) is a schema-valid final candidate no judge looked at: never
+// acceptance, and outside contract v1, whose clients treat it as not accepted.
 const (
-	StatusAccepted Status = "accepted"
-	StatusRejected Status = "rejected"
-	StatusFailed   Status = "failed"
+	StatusAccepted  Status = "accepted"
+	StatusRejected  Status = "rejected"
+	StatusFailed    Status = "failed"
+	StatusExtracted Status = "extracted"
+)
+
+// Verifications: what made a terminal job's outcome (Outcome.Verification, the job's
+// verification field). With judge policy always, accepted pairs with VerificationJudge
+// and every other status with VerificationNone.
+const (
+	VerificationJudge    = "judge"    // the judge accepted
+	VerificationGrounded = "grounded" // the grounding check accepted without a judge (auto)
+	VerificationNone     = "none"     // nothing accepted the result
 )
 
 // Job error codes (contract §9).
@@ -39,6 +52,9 @@ const (
 const (
 	SourceSchema = "schema"
 	SourceJudge  = "judge"
+	// SourceGrounding marks an entry of the grounding check (ADR 0009): a value not found
+	// in the document text. In the job's feedback only under judge policy never or auto.
+	SourceGrounding = "grounding"
 )
 
 // Loop defaults.
@@ -79,6 +95,9 @@ type Input struct {
 	PriorAttempts  int
 	PriorCandidate json.RawMessage
 	PriorFeedback  []Feedback
+	// JudgePolicy is the job's effective judge policy (request, else application, else
+	// roles.judge.policy); "" means config.JudgeAlways.
+	JudgePolicy config.JudgePolicy
 	// Deadline is when the job must be terminal (created_at plus limits.job_timeout);
 	// the zero time adds no deadline to ctx.
 	Deadline time.Time
@@ -118,6 +137,8 @@ type Outcome struct {
 	// JudgeConfidence is the confidence of the last parsed verdict, nil when absent.
 	JudgeConfidence *float64  `json:"judge_confidence"`
 	Error           *JobError `json:"error"` // set exactly when Status is StatusFailed
+	// Verification is VerificationJudge, VerificationGrounded or VerificationNone.
+	Verification string `json:"verification"`
 	// Usage is the token usage of this Run (metadata, not part of the job resource).
 	Usage Usage `json:"-"`
 }
@@ -369,6 +390,10 @@ func (l *loop) outcome(status Status, jobErr *JobError) Outcome {
 	if feedback == nil {
 		feedback = []Feedback{}
 	}
+	verification := VerificationNone
+	if status == StatusAccepted {
+		verification = VerificationJudge // the loop accepts only on a judge's accept
+	}
 	return Outcome{
 		Status:          status,
 		Result:          l.result,
@@ -376,6 +401,7 @@ func (l *loop) outcome(status Status, jobErr *JobError) Outcome {
 		Attempts:        l.attempts,
 		JudgeConfidence: l.confidence,
 		Error:           jobErr,
+		Verification:    verification,
 		Usage:           l.usage,
 	}
 }

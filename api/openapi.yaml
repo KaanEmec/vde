@@ -88,6 +88,8 @@ paths:
                 contentType: text/plain
               max_attempts:
                 contentType: text/plain
+              judge:
+                contentType: text/plain
           application/json:
             schema:
               $ref: "#/components/schemas/SubmitJobJSON"
@@ -472,6 +474,15 @@ components:
           description: Lowers the attempt limit for this job; higher values are clamped to the application's limit.
           type: string
           pattern: "^[1-9][0-9]*$"
+        judge:
+          description: |
+            Added by vde (ADR 0009). The judge policy of this job: `always`, `never` or `auto`.
+            Only for an application whose operator set `judge.allow_override`; otherwise the
+            part is refused with `400 bad_request`, whatever its value. Absent means the
+            application's policy. The job's `service_version` is that of the policy it runs
+            under. TravelInbox does not send it.
+          type: string
+          enum: [always, never, auto]
 
     SubmitJobJSON:
       description: |
@@ -517,6 +528,7 @@ components:
           type: [object, "null"]
         retention: { type: string, enum: [none, default] }
         max_attempts: { type: integer, minimum: 1, description: A JSON integer; a string is refused. }
+        judge: { type: string, enum: [always, never, auto], description: "As the `judge` part of `SubmitJob`: only with `judge.allow_override`, else `400`." }
 
     WebhookPayload:
       description: The body of a completion webhook. Never `result`, `feedback` or `error`.
@@ -531,8 +543,12 @@ components:
         finished_at: { type: string, format: date-time }
 
     JobStatus:
+      description: |
+        `extracted` (added by vde, ADR 0009) is terminal and never acceptance: a schema-valid
+        result no judge looked at, produced only under judge policy `never`. A client that
+        does not know it treats it as not accepted (contract §5).
       type: string
-      enum: [queued, running, accepted, rejected, failed]
+      enum: [queued, running, accepted, rejected, failed, extracted]
 
     FeedbackEntry:
       type: object
@@ -545,9 +561,12 @@ components:
           description: For a human. May quote the source document.
           type: string
         source:
-          description: Who produced the entry.
+          description: |
+            Who produced the entry. `grounding` (added by vde, ADR 0009): a value the
+            deterministic grounding check did not find in the document; only under judge
+            policy `never` or `auto`.
           type: string
-          enum: [judge, schema]
+          enum: [judge, schema, grounding]
 
     JobError:
       type: object
@@ -595,6 +614,15 @@ components:
           type: [number, "null"]
           minimum: 0
           maximum: 1
+        verification:
+          description: |
+            Added by vde (ADR 0009). What accepted the result: `judge` (the judge accepted),
+            `grounded` (the grounding check accepted without a judge, judge policy `auto`) or
+            `none`. Null while queued or running, present on every terminal job. Under the
+            default policy `always`, `accepted` pairs with `judge` and every other status with
+            `none`.
+          type: [string, "null"]
+          enum: [judge, grounded, none, null]
         error:
           oneOf:
             - $ref: "#/components/schemas/JobError"
@@ -674,7 +702,7 @@ components:
 
   responses:
     BadRequest:
-      description: Malformed multipart, missing or repeated part, bad `retention` or `max_attempts`, or plain HTTP where HTTPS is required. Not retried.
+      description: Malformed multipart, missing or repeated part, bad `retention`, `max_attempts` or `judge`, a `judge` part the application does not allow, or plain HTTP where HTTPS is required. Not retried.
       headers:
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
       content:

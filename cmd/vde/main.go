@@ -12,11 +12,12 @@ import (
 // Exit codes: 0 success (vde extract: accepted), 1 usage or configuration error or other
 // failure, 2 rejected and 3 failed (vde extract only).
 const (
-	exitOK       = 0
-	exitFailure  = 1
-	exitUsage    = 1
-	exitRejected = 2
-	exitFailed   = 3
+	exitOK        = 0
+	exitFailure   = 1
+	exitUsage     = 1
+	exitRejected  = 2
+	exitFailed    = 3
+	exitExtracted = 4 // vde extract: a result no judge verified (judge policy never)
 )
 
 const usage = `Usage: vde <command> [arguments]

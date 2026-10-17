@@ -9,22 +9,53 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// Status is a job's state (contract §5): queued → running → accepted | rejected | failed.
+// Status is a job's state (contract §5): queued → running → accepted | rejected | failed,
+// or extracted under judge policy never (ADR 0009).
 type Status string
 
-// Job statuses. Only StatusAccepted is acceptance.
+// Job statuses. Only StatusAccepted is acceptance; StatusExtracted is a schema-valid
+// result no judge looked at, outside contract v1.
 const (
-	StatusQueued   Status = "queued"
-	StatusRunning  Status = "running"
-	StatusAccepted Status = "accepted"
-	StatusRejected Status = "rejected"
-	StatusFailed   Status = "failed"
+	StatusQueued    Status = "queued"
+	StatusRunning   Status = "running"
+	StatusAccepted  Status = "accepted"
+	StatusRejected  Status = "rejected"
+	StatusFailed    Status = "failed"
+	StatusExtracted Status = "extracted"
 )
+
+// Statuses lists every status, in state-machine order.
+var Statuses = []Status{StatusQueued, StatusRunning, StatusAccepted, StatusRejected, StatusFailed, StatusExtracted}
 
 // Terminal reports whether s is one of the final states, which never change.
 func (s Status) Terminal() bool {
-	return s == StatusAccepted || s == StatusRejected || s == StatusFailed
+	return s == StatusAccepted || s == StatusRejected || s == StatusFailed || s == StatusExtracted
 }
+
+// Verifications of a terminal job (ADR 0009): what made its outcome. "" while queued or
+// running.
+const (
+	VerificationJudge    = "judge"
+	VerificationGrounded = "grounded"
+	VerificationNone     = "none"
+)
+
+// DefaultVerification is the verification of a terminal job that recorded none (a row
+// written before v0.4, or a terminal state written without running the loop): judge
+// when accepted, none otherwise; "" when s is not terminal.
+func DefaultVerification(s Status) string {
+	switch {
+	case s == StatusAccepted:
+		return VerificationJudge
+	case s.Terminal():
+		return VerificationNone
+	}
+	return ""
+}
+
+// DefaultJudgePolicy is the judge policy stored for a job created without one
+// (config.JudgeAlways; this package does not import config).
+const DefaultJudgePolicy = "always"
 
 // Retention is a job's effective retention (contract §10).
 type Retention string
@@ -83,6 +114,12 @@ type Job struct {
 	Schema                string // "" in schema-less mode
 	MaxAttempts           int    // the job's attempt limit; 0 means the application's
 
+	// JudgePolicy is the effective judge policy the job runs under: always, never or
+	// auto ("" is stored as always). Verification is judge, grounded or none once
+	// terminal, "" before.
+	JudgePolicy  string
+	Verification string
+
 	CreatedAt  time.Time
 	StartedAt  time.Time
 	FinishedAt time.Time
@@ -125,6 +162,8 @@ type Outcome struct {
 	Feedback        json.RawMessage
 	Error           json.RawMessage
 	JudgeConfidence *float64
+	// Verification is judge, grounded or none; "" means DefaultVerification(Status).
+	Verification string
 	// InputTokens and OutputTokens are the job's total usage, as in Progress.
 	InputTokens  int64
 	OutputTokens int64
@@ -174,10 +213,16 @@ type Application struct {
 	RetentionDefault  string // a duration such as 24h, or none
 	ForceNone         bool
 	HTMLPolicy        string // "" means documents.html
-	Enabled           bool
-	Source            string // SourceConfig or SourceAdmin; "" reads as SourceConfig
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// JudgePolicy is applications[].judge.policy: "" means roles.judge.policy.
+	// JudgeAllowOverride lets a request choose the policy; JudgeSampleRate nil means
+	// config.DefaultSampleRate.
+	JudgePolicy        string
+	JudgeAllowOverride bool
+	JudgeSampleRate    *float64
+	Enabled            bool
+	Source             string // SourceConfig or SourceAdmin; "" reads as SourceConfig
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // Token is one row of the tokens table. Only the hash of the secret is stored.

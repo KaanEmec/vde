@@ -202,6 +202,51 @@ func TestAdminApplications(t *testing.T) {
 	}
 }
 
+// TestAdminApplicationJudge: an application's judge settings are created, patched and
+// read over the admin API and validated like applications[].judge.
+func TestAdminApplicationJudge(t *testing.T) {
+	t.Parallel()
+	rg := newAdminRig(t)
+	judgeOf := func(app map[string]any) map[string]any {
+		j, _ := app["judge"].(map[string]any)
+		return j
+	}
+	plain := rg.do(t, http.MethodPost, "/admin/v1/applications", `{"id": "plain"}`, http.StatusCreated)
+	if j := judgeOf(plain); j["policy"] != "" || j["allow_override"] != false || j["sample_rate"] != nil {
+		t.Errorf("default judge = %v, want the role's policy, no override, default rate", j)
+	}
+	created := rg.do(t, http.MethodPost, "/admin/v1/applications",
+		`{"id": "lab", "judge": {"policy": "auto", "allow_override": true, "sample_rate": 0.25}}`, http.StatusCreated)
+	if j := judgeOf(created); j["policy"] != "auto" || j["allow_override"] != true || j["sample_rate"] != 0.25 {
+		t.Errorf("created judge = %v", j)
+	}
+	row, err := rg.store.GetApplication(t.Context(), "lab")
+	if err != nil || row.JudgePolicy != "auto" || !row.JudgeAllowOverride || row.JudgeSampleRate == nil || *row.JudgeSampleRate != 0.25 {
+		t.Errorf("stored = %+v, %v", row, err)
+	}
+	patched := rg.do(t, http.MethodPatch, "/admin/v1/applications/lab", `{"judge": {"policy": "never"}}`, http.StatusOK)
+	if j := judgeOf(patched); j["policy"] != "never" || j["allow_override"] != true || j["sample_rate"] != 0.25 {
+		t.Errorf("PATCH policy only = %v, want the other judge fields kept", j)
+	}
+	if j := judgeOf(rg.do(t, http.MethodGet, "/admin/v1/applications/lab", "", http.StatusOK)); j["policy"] != "never" {
+		t.Errorf("GET after PATCH = %v", j)
+	}
+	for _, tt := range []struct{ method, path, body, field string }{
+		{http.MethodPost, "/admin/v1/applications", `{"id": "bad-1", "judge": {"policy": "sometimes"}}`, "judge.policy"},
+		{http.MethodPost, "/admin/v1/applications", `{"id": "bad-2", "judge": {"sample_rate": 1.5}}`, "judge.sample_rate"},
+		{http.MethodPatch, "/admin/v1/applications/lab", `{"judge": {"sample_rate": -1}}`, "judge.sample_rate"},
+		{http.MethodPatch, "/admin/v1/applications/lab", `{"judge": {"allow_override": "yes"}}`, ""},
+	} {
+		w := do(rg.admin, tt.method, tt.path, rg.token, tt.body)
+		if e := decodeError(t, w); w.Code != http.StatusBadRequest || !strings.Contains(e.Message, tt.field) {
+			t.Errorf("%s %s = %d %q, want 400 naming %q", tt.method, tt.body, w.Code, e.Message, tt.field)
+		}
+	}
+	if row, _ := rg.store.GetApplication(t.Context(), "lab"); row.JudgePolicy != "never" || *row.JudgeSampleRate != 0.25 {
+		t.Errorf("a refused PATCH changed the row: %+v", row)
+	}
+}
+
 func TestAdminTokens(t *testing.T) {
 	t.Parallel()
 	rg := newAdminRig(t)
@@ -263,8 +308,9 @@ func TestAdminTokens(t *testing.T) {
 // adminJobKeys is the complete key set of a job in the admin API: metadata only.
 var adminJobKeys = []string{
 	"application_id", "attempts", "bytes", "content_deleted_at", "created_at", "error_code", "expires_at",
-	"finished_at", "id", "input_tokens", "inputs_deleted_at", "max_attempts", "media_type", "output_tokens",
-	"pages", "representation", "retention", "service_version", "started_at", "status",
+	"finished_at", "id", "input_tokens", "inputs_deleted_at", "judge_policy", "max_attempts", "media_type",
+	"output_tokens", "pages", "representation", "retention", "service_version", "started_at", "status",
+	"verification",
 }
 
 func TestAdminJobs(t *testing.T) {

@@ -123,20 +123,29 @@ func TestGetJobBodies(t *testing.T) {
 		{name: "accepted", outcome: &job.Outcome{Status: job.StatusAccepted, Attempts: 2, Result: acceptedResult,
 			Feedback: json.RawMessage(`[]`), JudgeConfidence: confidence(0.9)}, want: map[string]string{
 			"status": `"accepted"`, "result": string(acceptedResult), "feedback": `[]`, "attempts": `2`,
-			"error": `null`, "judge_confidence": `0.9`,
+			"error": `null`, "judge_confidence": `0.9`, "verification": `"judge"`,
 		}},
 		{name: "rejected", outcome: &job.Outcome{Status: job.StatusRejected, Attempts: 3, Result: rejectedResult,
 			Feedback: judgeFeedback}, want: map[string]string{
 			"status": `"rejected"`, "result": string(rejectedResult), "feedback": string(judgeFeedback),
-			"attempts": `3`, "error": `null`,
+			"attempts": `3`, "error": `null`, "verification": `"none"`,
 		}},
 		{name: "failed", outcome: &job.Outcome{Status: job.StatusFailed, Attempts: 1, Error: failedError},
 			want: map[string]string{
 				"status": `"failed"`, "result": `null`, "feedback": `[]`, "attempts": `1`, "error": string(failedError),
+				"verification": `"none"`,
 			}},
+		{name: "extracted", outcome: &job.Outcome{Status: job.StatusExtracted, Attempts: 1, Result: acceptedResult,
+			Feedback: json.RawMessage(`[]`)}, want: map[string]string{
+			"status": `"extracted"`, "result": string(acceptedResult), "verification": `"none"`, "error": `null`,
+		}},
+		{name: "grounded", outcome: &job.Outcome{Status: job.StatusAccepted, Attempts: 1, Result: acceptedResult,
+			Feedback: json.RawMessage(`[]`), Verification: job.VerificationGrounded}, want: map[string]string{
+			"status": `"accepted"`, "verification": `"grounded"`,
+		}},
 		{name: "queued", want: map[string]string{
 			"status": `"queued"`, "result": `null`, "feedback": `[]`, "attempts": `0`, "error": `null`,
-			"finished_at": `null`, "judge_confidence": `null`,
+			"finished_at": `null`, "judge_confidence": `null`, "verification": `null`,
 		}},
 	}
 	for _, tt := range tests { // sequential: finish leases the only queued job, so queued is last
@@ -505,5 +514,46 @@ func TestJobResponseMatchesOpenAPI(t *testing.T) {
 	slices.Sort(props)
 	if !slices.Equal(tags, props) {
 		t.Errorf("jobResponse json fields %v, Job schema properties %v", tags, props)
+	}
+}
+
+// TestGetJobRunningVerification: a running job's verification is null.
+func TestGetJobRunningVerification(t *testing.T) {
+	t.Parallel()
+	f := newJobFixture(t)
+	j := f.create(t, testApp, job.RetentionDefault, time.Time{})
+	now := time.Now()
+	if _, err := f.store.LeaseNextQueued(context.Background(), "w", now, now.Add(time.Minute), nil); err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]json.RawMessage
+	resp := f.do(http.MethodGet, j.ID, f.token)
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil || string(body["status"]) != `"running"` {
+		t.Fatalf("running job = %s, %v", resp.Body, err)
+	}
+	if v, ok := body["verification"]; !ok || string(v) != "null" {
+		t.Errorf("running verification = %s (present %t), want null", v, ok)
+	}
+}
+
+// TestGetJobRetentionNoneExtracted: an extracted job is terminal like the others: its
+// first read under retention: none deletes its content.
+func TestGetJobRetentionNoneExtracted(t *testing.T) {
+	t.Parallel()
+	f := newJobFixture(t)
+	j := f.create(t, testApp, job.RetentionNone, time.Time{})
+	f.finish(t, j, job.Outcome{Status: job.StatusExtracted, Attempts: 1, Result: acceptedResult, Feedback: json.RawMessage(`[]`)})
+	first := f.do(http.MethodGet, j.ID, f.token)
+	if first.Code != http.StatusOK || !bytes.Contains(first.Body.Bytes(), []byte(`"extracted"`)) {
+		t.Fatalf("first read = %d %s", first.Code, first.Body)
+	}
+	if second := f.do(http.MethodGet, j.ID, f.token); second.Code != http.StatusNotFound {
+		t.Errorf("second read = %d, want 404", second.Code)
+	}
+	if row, err := f.store.GetJobAny(context.Background(), j.ID); err != nil || row.ContentDeletedAt.IsZero() || row.Result != nil {
+		t.Errorf("row after the first read = %+v, %v", row, err)
+	}
+	if f.blobsLeft(t, j.ID) {
+		t.Error("blob directory left after the first read")
 	}
 }

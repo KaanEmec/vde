@@ -160,6 +160,14 @@ func TestServiceVersion_stability(t *testing.T) {
 				Questions: []config.Question{{ID: "accuracy", Text: "Accurate?", Threshold: 0.7}},
 			}
 		}, true},
+		{"judge policy always spelled out", func(c *config.Config) { c.Roles.Judge.Policy = config.JudgeAlways }, false},
+		{"judge policy unset", func(c *config.Config) { c.Roles.Judge.Policy = "" }, false},
+		{"judge policy never", func(c *config.Config) { c.Roles.Judge.Policy = config.JudgeNever }, true},
+		{"judge policy auto", func(c *config.Config) { c.Roles.Judge.Policy = config.JudgeAuto }, true},
+		{"application judge settings", func(c *config.Config) {
+			r := 0.5
+			c.Applications[0].Judge = config.AppJudge{Policy: config.JudgeNever, AllowOverride: true, SampleRate: &r}
+		}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -198,5 +206,106 @@ func TestModuleVersion(t *testing.T) {
 	}
 	if got := moduleVersion(validatorModule); !strings.HasPrefix(got, "v6.") {
 		t.Errorf("moduleVersion(validator) = %q, want v6.x", got)
+	}
+}
+
+// TestServiceVersion_judgePolicyDefault: the default policy adds nothing to the hashed
+// configuration, so a v0.3 configuration keeps its service_version.
+func TestServiceVersion_judgePolicyDefault(t *testing.T) {
+	cfg := parseVersionConfig(t, nil)
+	unset := *cfg
+	unset.Roles.Judge.Policy = ""
+	for _, c := range []*config.Config{cfg, &unset} {
+		data := string(canonicalConfig(c, config.DefaultSampleRate))
+		if strings.Contains(data, "judge_policy") || strings.Contains(data, "sample_rate") {
+			t.Errorf("canonical configuration under always carries the policy: %s", data)
+		}
+	}
+	if string(canonicalConfig(cfg, 0.9)) != string(canonicalConfig(&unset, config.DefaultSampleRate)) {
+		t.Error("the sample rate changes the hash under always")
+	}
+}
+
+func TestApplicationServiceVersion_judge(t *testing.T) {
+	cfg := parseVersionConfig(t, nil)
+	global := ServiceVersion(cfg, "v0.4.0")
+	app := cfg.Applications[0]
+	if got := ApplicationServiceVersion(cfg, app, "v0.4.0"); got != global {
+		t.Errorf("default application = %q, want the global %q", got, global)
+	}
+	explicit := app
+	explicit.Judge.Policy = config.JudgeAlways
+	if got := ApplicationServiceVersion(cfg, explicit, "v0.4.0"); got != global {
+		t.Errorf("explicit always = %q, want the global %q", got, global)
+	}
+	rate := 0.2
+	explicit.Judge.SampleRate = &rate
+	if got := ApplicationServiceVersion(cfg, explicit, "v0.4.0"); got != global {
+		t.Errorf("a sample rate under always = %q, want the global %q", got, global)
+	}
+
+	seen := map[string]string{global: "always"}
+	for _, tt := range []struct {
+		name string
+		app  func(a *config.Application)
+	}{
+		{"never", func(a *config.Application) { a.Judge.Policy = config.JudgeNever }},
+		{"auto", func(a *config.Application) { a.Judge.Policy = config.JudgeAuto }},
+		{"auto, sample rate 0.2", func(a *config.Application) {
+			r := 0.2
+			a.Judge.Policy, a.Judge.SampleRate = config.JudgeAuto, &r
+		}},
+	} {
+		a := app
+		tt.app(&a)
+		got := ApplicationServiceVersion(cfg, a, "v0.4.0")
+		if prev, dup := seen[got]; dup {
+			t.Errorf("%s has the service_version of %s: %q", tt.name, prev, got)
+		}
+		seen[got] = tt.name
+	}
+
+	// The role's policy is the application's default.
+	never := *cfg
+	never.Roles.Judge.Policy = config.JudgeNever
+	viaRole := ApplicationServiceVersion(&never, app, "v0.4.0")
+	own := app
+	own.Judge.Policy = config.JudgeNever
+	if viaRole != ApplicationServiceVersion(cfg, own, "v0.4.0") || viaRole == global {
+		t.Errorf("roles.judge.policy never = %q, want the application never version", viaRole)
+	}
+	if cfg.Roles.Judge.Policy != config.JudgeAlways {
+		t.Error("ApplicationServiceVersion changed the configuration")
+	}
+}
+
+func TestApplicationServiceVersions(t *testing.T) {
+	cfg := parseVersionConfig(t, nil)
+	app := cfg.Applications[0]
+	one := ApplicationServiceVersions(cfg, app, "v0.4.0")
+	if len(one) != 1 || one[config.JudgeAlways] != ApplicationServiceVersion(cfg, app, "v0.4.0") {
+		t.Errorf("without allow_override = %v, want only always", one)
+	}
+	app.Judge = config.AppJudge{Policy: config.JudgeAuto}
+	if got := ApplicationServiceVersions(cfg, app, "v0.4.0"); len(got) != 1 || got[config.JudgeAuto] == "" {
+		t.Errorf("auto without allow_override = %v, want only auto", got)
+	}
+	app.Judge.AllowOverride = true
+	all := ApplicationServiceVersions(cfg, app, "v0.4.0")
+	if len(all) != 3 {
+		t.Fatalf("with allow_override = %v, want three", all)
+	}
+	distinct := map[string]bool{}
+	for p, v := range all {
+		distinct[v] = true
+		if v != ApplicationServiceVersionFor(cfg, app, p, "v0.4.0") {
+			t.Errorf("%s: %q, want ApplicationServiceVersionFor's", p, v)
+		}
+	}
+	if len(distinct) != 3 {
+		t.Errorf("versions %v are not distinct", all)
+	}
+	if all[config.JudgeAlways] != ServiceVersion(cfg, "v0.4.0") {
+		t.Errorf("always under override = %q, want the global version", all[config.JudgeAlways])
 	}
 }

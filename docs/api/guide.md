@@ -62,6 +62,7 @@ required part is `400 bad_request`.
 | `schema` | 0 or 1 | `application/schema+json` | JSON Schema 2020-12 the result must satisfy. Optional; without it see [schema-less mode](#schema-less-mode). |
 | `retention` | 0 or 1 | `text/plain` | `none` or `default`. See [Retention](#retention). |
 | `max_attempts` | 0 or 1 | `text/plain` | A positive integer that lowers the attempt limit for this job. Higher values are clamped, not refused. |
+| `judge` | 0 or 1 | `text/plain` | `always`, `never` or `auto`: the [judge policy](#judge-policy) of this job. Only when the operator allows it for your application; otherwise `400 bad_request`. |
 
 Accepted document types: `application/pdf`, `image/jpeg`, `image/png`, `image/webp`,
 `image/heic`, `text/html`, `text/plain`, `text/markdown`, `message/rfc822`. A
@@ -218,12 +219,13 @@ failures in a row. A `404` while polling means the job expired, was deleted, or 
 
 | Field | Meaning |
 | --- | --- |
-| `status` | `queued`, `running`, then exactly one terminal status: `accepted`, `rejected` or `failed`. A terminal status never changes. |
+| `status` | `queued`, `running`, then exactly one terminal status: `accepted`, `rejected` or `failed` (or `extracted` under [judge policy](#judge-policy) `never`). A terminal status never changes. |
 | `result` | The last candidate the extractor produced, parsed. `null` while in progress and when no attempt produced JSON. On `rejected` and `failed` it is kept as produced, valid or not, so nothing is lost. |
 | `feedback` | Final feedback on `result`; empty on `accepted` and while in progress (see below). |
 | `attempts` | Extractor calls made. |
 | `service_version` | Identifies the release and role configuration that produced the result. Store it with the result; two results with the same string came from the same setup. Also in the `X-Service-Version` header. |
 | `judge_confidence` | The judge's optional confidence in its verdict, 0 to 1, or `null`. Advisory; it never changes the status. |
+| `verification` | Added by vde: what accepted `result`, `judge`, `grounded` or `none`; `null` while queued or running. See [Judge policy](#judge-policy). |
 | `error` | `null` unless `status` is `failed`: `{"code", "message"}`. |
 | `attachments` | For `message/rfc822` documents only: `[{"name", "media_type", "bytes"}]`. |
 | `expires_at` | When the job becomes `404`. |
@@ -258,6 +260,28 @@ Each entry has three fields:
 On `rejected` the feedback is the last round's. On `accepted` the judge may have added
 advisory entries; they do not block acceptance. The pointer is relative to `result` exactly
 as returned, so you can attach each message to the field it concerns.
+
+## Judge policy
+
+Draft (v0.4, [ADR 0009](../architecture/decisions/0009-judge-policy-and-grounding.md)).
+The operator sets per application when the judge is asked:
+
+- `always` (the default): every schema-valid candidate goes to the judge, and `accepted`
+  means the judge accepted it. This is contract v1; `verification` is `judge` on
+  `accepted` and `none` otherwise.
+- `never`: no judge. A schema-valid final candidate ends in the terminal status
+  `extracted`, which is never acceptance. Treat it like any status you do not know.
+- `auto`: a candidate whose values are all found in the document text may be accepted
+  without a judge, with `verification: grounded`; everything else, and a small sample, goes
+  to the judge.
+
+When the operator sets `judge.allow_override` for your application you may choose the
+policy per job with the `judge` part (or JSON field `judge`). Without that setting the part
+is refused with `400 bad_request`, whatever its value; an unknown value is also `400`. The
+part counts towards the [idempotency](#idempotency) body hash, and the job's
+`service_version` is the one of the policy it runs under. Under `never` and `auto`,
+`feedback` may carry entries with `source: "grounding"`: a value the grounding check did not
+find in the document.
 
 ## Idempotency
 
