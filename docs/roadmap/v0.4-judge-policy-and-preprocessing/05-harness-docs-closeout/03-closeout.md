@@ -1,6 +1,6 @@
 # Job: Closeout: changelog, overview, exit criterion check
 
-Version: v0.4 · Epic: 05 Harness, docs and closeout · Status: planned · Depends on: 01, 02
+Version: v0.4 · Epic: 05 Harness, docs and closeout · Status: in progress · Depends on: 01, 02
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # Job: `vde eval`: verification, judge calls, case lists
 
-Version: v0.4 · Epic: 05 Harness, docs and closeout · Status: planned · Depends on: 03-03
+Version: v0.4 · Epic: 05 Harness, docs and closeout · Status: in progress · Depends on: 03-03
 
 ## Goal
 
