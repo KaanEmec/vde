@@ -1,0 +1,25 @@
+Nordlicht Reisedienst GmbH
+Hafenstraße 12, 20457 Hamburg
+USt-IdNr. DE 999 999 999
+
+RECHNUNG / INVOICE
+Rechnungsnummer: NR-2027-0415
+Rechnungsdatum: 21. März 2027
+Kundennummer: K-88412
+
+Rechnung an:
+Beispiel Analytik B.V.
+Keizersgracht 100
+1015 CJ Amsterdam
+
+Pos  Beschreibung                    Menge   Einzelpreis   Betrag
+1    Veranstaltungspauschale         1       950,00        950,00
+2    Servicegebühr                   1       87,40         87,40
+3    Bearbeitungsgebühr              2       98,55         197,10
+
+Nettobetrag                                                1.234,50 EUR
+MwSt. 0 % (steuerfrei)                                     0,00 EUR
+Gesamtbetrag                                               1.234,50 EUR
+
+Zahlbar innerhalb von 14 Tagen bis 04.04.2027.
+Dieses Dokument ist synthetisch und nur für Tests geschrieben.

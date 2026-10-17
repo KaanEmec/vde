@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "$defs": {
+    "person": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "is_lead": {"type": "boolean"}
+      }
+    },
+    "party": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "city": {"type": "string"},
+        "country": {"type": "string"}
+      }
+    }
+  },
+  "properties": {
+    "supplier": {"$ref": "#/$defs/party"},
+    "invoice": {
+      "type": "object",
+      "properties": {
+        "number": {"type": "string"},
+        "date": {"type": "string", "format": "date"},
+        "due_date": {"type": "string", "format": "date"},
+        "total": {"type": "number"},
+        "currency": {"type": "string", "x-vde-grounding": "derived"},
+        "line_items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "description": {"type": "string"},
+              "amount": {"type": ["number", "string"]}
+            }
+          }
+        }
+      }
+    },
+    "event": {
+      "type": ["object", "null"],
+      "properties": {
+        "start_date": {"type": "string"},
+        "end_date": {"type": "string"},
+        "venue": {"type": "string"},
+        "organiser": {"type": "string"}
+      }
+    },
+    "travellers": {"type": "array", "items": {"$ref": "#/$defs/person"}},
+    "notes": {"type": "string", "x-vde-grounding": "skip"},
+    "confidence": {"type": "number", "x-vde-grounding": "skip"},
+    "document_type": {"enum": ["invoice", "booking", "ticket"]}
+  }
+}

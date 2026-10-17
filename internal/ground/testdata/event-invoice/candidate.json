@@ -1,0 +1,28 @@
+{
+  "supplier": {"name": "Nordlicht Reisedienst GmbH", "city": "Hamburg", "country": "DE"},
+  "invoice": {
+    "number": "NR-2027-0415",
+    "date": "2027-03-21",
+    "due_date": "2027-04-04",
+    "total": 1234.5,
+    "currency": "EUR",
+    "line_items": [
+      {"description": "Veranstaltungspauschale", "amount": 950},
+      {"description": "Servicegebühr", "amount": 87.4},
+      {"description": "BEARBEITUNGSGEBUHR", "amount": "197,10"}
+    ]
+  },
+  "event": {
+    "start_date": "2027-05-14",
+    "end_date": "2027-05-16T18:00",
+    "venue": "Kongresszentrum Seeblick",
+    "organiser": "Verband Nordischer Logistik e.V."
+  },
+  "travellers": [
+    {"name": "Anna Bergmann", "is_lead": true},
+    {"name": "Mehmet Yılmaz", "is_lead": false}
+  ],
+  "notes": "Event details inferred from the service description.",
+  "confidence": 0.82,
+  "document_type": "invoice"
+}
