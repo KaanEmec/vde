@@ -1,6 +1,6 @@
 # v1.0 Stable
 
-Status: planned · Depends on: v0.2 (required), v0.3 (whatever has shipped)
+Status: planned · Depends on: v0.2 (required), v0.3 and v0.4 (whatever has shipped)
 
 ## Goal
 
