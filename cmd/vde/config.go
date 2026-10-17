@@ -150,7 +150,7 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 		}
 		if role.name == "judge" {
 			fmt.Fprintf(tw, "    policy: %s\n", cfg.RolePolicy())
-			fmt.Fprintf(tw, "    grounding: rules %s, one repair before the judge (always, auto)\n", ground.RulesVersion)
+			fmt.Fprintf(tw, "    grounding: rules %s, one repair before the judge (auto; always with an annotated schema)\n", ground.RulesVersion)
 			if g := cfg.Roles.SecondJudge.Group; g != "" {
 				fmt.Fprintf(tw, "    second judge: group %s\n", g)
 			}

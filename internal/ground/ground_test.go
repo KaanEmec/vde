@@ -22,7 +22,7 @@ func pointers(m ground.Misses) []string {
 
 func mustRules(t *testing.T, schema string) ground.Rules {
 	t.Helper()
-	rules, err := ground.RulesFromSchema([]byte(schema))
+	rules, _, err := ground.RulesFromSchema([]byte(schema))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -245,8 +245,8 @@ and S3 a second blob implementation. See ADR 0007.
   configuration (groups, endpoint-model pairs, capabilities, escalation, second judge,
   attempt limit), the fixed framings, the representation policy (HTML, images, and the PDF
   mode, dpi and minimum characters when a PDF may be prepared), the judge policy (`never`
-  and `auto`; the sample rate under `auto`) and the grounding rules version (`ground-1`,
-  under every policy, since `always` makes the grounding repair). An application has one
+  and `auto`; the sample rate under `auto`) and the grounding rules version (`ground-2`,
+  under every policy, since `always` makes the grounding repair for annotated schemas). An application has one
   `service_version` per policy it may run under, and each job carries the one it ran with.
   It is computed at start and logged.
 - Semantic versioning for the binary and image; v0.x may change configuration keys with a

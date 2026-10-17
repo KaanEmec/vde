@@ -28,7 +28,7 @@ supersets. The owner's policy comparison has not been run yet (see Known gaps).
 - `internal/ground`: the deterministic grounding check. Every string, number and ISO date
   leaf of a candidate must occur in the normalized document text (casefolding, diacritics,
   thousands separators and decimal conventions, a documented date and time table in six
-  languages, rules version `ground-1`). Schemas steer it with
+  languages, rules version `ground-2`). Schemas steer it with
   `x-vde-grounding: critical | check | derived | skip`; misses are feedback entries with
   `source: "grounding"` that never carry the value.
 - Judge policy in the loop: `never` ends `extracted` with advisory grounding entries;
@@ -73,12 +73,14 @@ supersets. The owner's policy comparison has not been run yet (see Known gaps).
   when a group cannot read PDFs: it prints how each role gets a PDF under the mode, warns
   only under `native` or when a group reads PDFs only through their text layer, prints the
   pdfium memory estimate, and warns when wazero would interpret instead of compile.
-- Under `always` and `auto` a schema-valid candidate whose critical values are not in the
+- Under `auto`, and under `always` only for a schema with an `x-vde-grounding` annotation
+  (ADR 0009 amendment 2026-10-18: unannotated schemas such as TravelInbox's take no repair,
+  rules `ground-2`), a schema-valid candidate whose critical values are not in the
   document goes back to the extractor once before any judge call (one extractor call, no
   judge call, never on the last attempt; whether it was made is stored with the job).
   Under `always` the grounding entries reach only the extractor, never the job's
   `feedback`, so TravelInbox sees contract-v1 sources only.
-- Every `service_version` changes once with v0.4: the grounding rules (`ground-1`) are
+- Every `service_version` changes once with v0.4: the grounding rules (`ground-2`) are
   hashed under every policy (the repair under `always` changes results), and the PDF policy
   (mode, dpi, minimum text characters) where it can change what is read.
 - `vde eval --url` treats `extracted` as terminal.

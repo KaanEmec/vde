@@ -52,8 +52,8 @@ a judge where a deterministic check is stronger.
   schema's enum values are skipped. Callers steer it with the schema annotation
   `x-vde-grounding: derived | skip | critical`. When no property is marked `critical`,
   every checked leaf is critical. A miss is a feedback entry with `source: "grounding"`.
-- **Grounding repair.** Under `always` and `auto`, a candidate with ungrounded critical
-  leaves goes back to the extractor once, with the grounding feedback, before the judge is
+- **Grounding repair.** Under `always` (narrowed by the amendment below) and `auto`, a
+  candidate with ungrounded critical leaves goes back to the extractor once, with the grounding feedback, before the judge is
   asked. This happens at most once per job and only while an attempt remains; it costs one
   extractor call and no judge call.
 - **Where grounding entries appear.** Under `always` they reach only the extractor, the
@@ -91,3 +91,18 @@ unless the schema marks them `derived` or `skip`.
 - The job store gains `judge_policy` and `verification` columns. The loop's never-accept
   rules still hold: a failed judge call is never acceptance, and an ungroundable or
   ungrounded candidate is never accepted without a judge.
+
+## Amendment 2026-10-18
+
+Under `always` the grounding repair runs only when the job's schema carries at least one
+`x-vde-grounding` annotation anywhere (`ground.RulesFromSchema` reports it); schema-less
+jobs and unannotated schemas go to the judge without it. An unannotated schema has not
+said which values are derivations, and legitimately derived values (a city in English, a
+country or IATA code, a currency) are not printed in the document, so the repair fired on
+most such jobs: the TravelInbox contract path (unannotated schema, `always`) paid one extra
+extractor call per job, which v0.4 promised not to do (`make eval`: 42 of the 50
+TravelInbox cases repaired before, 0 after). The judge still decides every candidate, so
+nothing is accepted that was not before. `never` and `auto` are unchanged: under `auto` an
+unannotated derived value is a critical miss that is repaired once and sends the job to
+the judge. The rule is part of the grounding rules, so `ground.RulesVersion` is `ground-2`
+and every `service_version` changes once; nothing new is hashed.

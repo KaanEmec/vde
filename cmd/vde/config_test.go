@@ -162,7 +162,7 @@ func TestRunConfigCheck(t *testing.T) {
 			wantCode: exitOK,
 			wantStdout: []string{
 				"    policy: never\n",
-				"    grounding: rules ground-1, one repair before the judge (always, auto)\n",
+				"    grounding: rules ground-2, one repair before the judge (auto; always with an annotated schema)\n",
 				"  inbox: judge policy never (roles.judge.policy), override not allowed, documents.pdf.mode text\n",
 				"  lab: judge policy auto, override allowed, sample rate 0.2\n",
 			},

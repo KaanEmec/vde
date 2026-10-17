@@ -10,7 +10,7 @@ Callers read the result through the job's `status` and `verification` fields
 
 | Policy | What happens to a schema-valid candidate | Terminal statuses | `verification` |
 | --- | --- | --- | --- |
-| `always` (default) | The judge decides, as in contract v1. A candidate with critical values missing from the document goes back to the extractor once (the grounding repair) before the judge is asked. | `accepted`, `rejected`, `failed` | `judge` on `accepted`, `none` otherwise |
+| `always` (default) | The judge decides, as in contract v1. When the schema carries an `x-vde-grounding` annotation, a candidate with critical values missing from the document goes back to the extractor once (the grounding repair) before the judge is asked. | `accepted`, `rejected`, `failed` | `judge` on `accepted`, `none` otherwise |
 | `never` | No judge. The final candidate ends `extracted`, never `accepted`; grounding misses are attached as advisory `feedback`. Schema violations still retry up to the attempt limit and can end `rejected`. | `extracted`, `rejected`, `failed` | `none` |
 | `auto` | Accepted without a judge when the grounding gate passes (below); otherwise, and for a deterministic sample, the judge decides as under `always`. | `accepted`, `rejected`, `failed` | `grounded` when the gate accepted, `judge` when the judge did, `none` otherwise |
 
@@ -28,8 +28,12 @@ Under `auto` the gate passes, and the job ends `accepted` with `verification: gr
   from the job id (FNV-1a), so it is deterministic: a sampled job that the judge rejects
   counts as a disagreement and feeds the next attempt like any rejection.
 
-The grounding repair (under `always` and `auto`) happens at most once per job, only while
-an attempt remains, and costs one extractor call and no judge call. Whether it was made is
+The grounding repair happens at most once per job, only while an attempt remains, and
+costs one extractor call and no judge call. Under `auto` it runs for every critical miss;
+under `always` only when the schema carries at least one `x-vde-grounding` annotation
+(any value, anywhere in the schema), because an unannotated schema has not said which
+values are derivations: a schema-less job or an unannotated schema such as TravelInbox's
+goes straight to the judge, with no extra extractor call. Whether it was made is
 stored with the job, so a resumed job does not repeat it. Under `always` grounding entries
 reach only the extractor, the metrics and the evaluation report, never the job's
 `feedback`: a contract-v1 client sees only `judge` and `schema` sources, while a job is
@@ -225,7 +229,7 @@ Time forms (`{HH}` and `{H}` 24-hour, `{hh}` and `{h}` 12-hour, `{MM}` minutes, 
 
 Month names: English, Turkish, German, French, Spanish and Dutch, full and short. The
 table is `ground.DateForms`, `ground.TimeForms` and `ground.Months`, versioned by
-`ground.RulesVersion` (`ground-1`), which is hashed into `service_version`; a test keeps
+`ground.RulesVersion` (`ground-2`), which is hashed into `service_version`; a test keeps
 this page and the code in step.
 
 ## Metrics to watch

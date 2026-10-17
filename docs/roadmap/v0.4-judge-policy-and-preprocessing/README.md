@@ -72,8 +72,10 @@ Open after v0.4, none of which changes `/v1` under `always`:
   TravelInbox corpus) and criteria 1 to 3 on real documents and models: pending owner run,
   recorded in `docs/quality.md`.
 - The TravelInbox schema has no `x-vde-grounding` annotations: its derived values (codes,
-  kinds, canonical names) are critical misses, so under `auto` its emails go to the judge
-  and under `always` most take the grounding repair (one extra extractor call). Annotating
+  kinds, canonical names) are critical misses, so under `auto` its emails go to the judge.
+  Under `always` it takes no grounding repair (ADR 0009 amendment 2026-10-18: the repair
+  needs an annotated schema; `make eval` 42 of 50 TravelInbox cases repaired before, 0
+  after). Annotating
   it is TravelInbox's choice; it does not affect contract fidelity.
 - The image size (`make image`) was not measured.
 - pdfium has no system fonts (fallback glyphs for non-embedded fonts); about 500 MB of

@@ -3,7 +3,7 @@
 # TestRun_judgePolicyScenarios in internal/extract. Every scenario runs with
 # testdata/scenarios/config/vde.yaml. A candidate's date 2026-04-18 and organiser
 # "Grand Gala Events" are invented: booking.txt prints neither.
-description: "always: the repair does not fix the invented values; the judge is asked and its accept stands (contract §5), with no grounding entry in the feedback"
+description: "always, annotated schema: the repair does not fix the invented values; the judge is asked and its accept stands (contract §5), with no grounding entry in the feedback"
 steps:
   - role: extractor
     answer: '{"title": "Harbour View Hotel - booking confirmation", "reference": "HV-48213", "date": "2026-04-18", "parties": [{"name": "Jane Example", "role": "guest"}, {"name": "Grand Gala Events", "role": "organiser"}], "total": {"amount": 412.50, "currency": "EUR"}, "line_items": [{"description": "Room", "quantity": 3, "unit_amount": 120.00, "amount": 360.00}, {"description": "Breakfast", "quantity": 3, "unit_amount": 15.00, "amount": 45.00}, {"description": "City tax", "quantity": 3, "unit_amount": 2.50, "amount": 7.50}]}'
@@ -14,7 +14,7 @@ steps:
 ---
 input:
   document: examples/samples/booking.txt
-  schema: examples/samples/schema.json
+  schema: testdata/scenarios/judge-policy/schema-annotated.json
   judge: always
 expect:
   status: accepted

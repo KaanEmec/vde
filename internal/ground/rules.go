@@ -68,21 +68,23 @@ var defaultSkip = map[string]bool{"confidence": true, "notes": true}
 // annotation applies to every leaf below it unless a deeper annotation overrides it; at
 // one level the referencing schema wins over its $ref target and branches. When the
 // schema has no annotation anywhere, leaves under a property named confidence or notes
-// are skipped. An annotation value other than check, derived, skip or critical is an
-// error wrapping ErrUnknownRule.
-func RulesFromSchema(schema []byte) (Rules, error) {
+// are skipped. annotated reports whether the schema carries any x-vde-grounding
+// annotation: only such a schema states which values may be derived, so the loop makes
+// the grounding repair under the always policy only for it (ADR 0009, amendment). An
+// annotation value other than check, derived, skip or critical is an error wrapping
+// ErrUnknownRule.
+func RulesFromSchema(schema []byte) (rules Rules, annotated bool, err error) {
 	dec := json.NewDecoder(bytes.NewReader(schema))
 	dec.UseNumber()
 	var root any
 	if err := dec.Decode(&root); err != nil {
-		return nil, fmt.Errorf("ground: schema: %w", err)
+		return nil, false, fmt.Errorf("ground: schema: %w", err)
 	}
-	annotated, err := checkAnnotations(root, "")
-	if err != nil {
-		return nil, err
+	if annotated, err = checkAnnotations(root, ""); err != nil {
+		return nil, false, err
 	}
 	r := &resolver{root: root, annotated: annotated}
-	return r.rules, nil
+	return r.rules, annotated, nil
 }
 
 // checkAnnotations validates every x-vde-grounding value below v and reports whether
