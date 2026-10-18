@@ -5,6 +5,7 @@
 !go.sum
 !cmd/
 !internal/
+!api/
 !LICENSE
 !NOTICE
 **/*_test.go
