@@ -77,12 +77,15 @@ func jobToResponse(j *job.Job) jobResponse {
 // is gone (read once under retention: none, or past its expires_at, swept or not yet)
 // keeps its id and status but answers result null, feedback [], error null and
 // content_deleted_at set: the result was delivered or has expired, and the client must
-// not re-submit (docs/api/guide.md).
+// not re-submit (docs/api/guide.md). A terminal retention: none job not read yet answers
+// the same without content_deleted_at: its content is kept for the first GET, which
+// delivers and deletes it (contract §10), and a replay never does either.
 func replayResponse(j job.Job, now time.Time) jobResponse {
-	if j.ContentDeletedAt.IsZero() && now.Before(j.ExpiresAt) {
+	live := j.ContentDeletedAt.IsZero() && now.Before(j.ExpiresAt)
+	if live && (j.Retention != job.RetentionNone || !j.Status.Terminal()) {
 		return jobToResponse(&j)
 	}
-	if j.ContentDeletedAt.IsZero() {
+	if !live && j.ContentDeletedAt.IsZero() {
 		j.ContentDeletedAt = j.ExpiresAt
 	}
 	j.Result, j.Feedback, j.Error, j.JudgeConfidence, j.Attachments = nil, nil, nil, nil, nil

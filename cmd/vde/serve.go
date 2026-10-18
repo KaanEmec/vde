@@ -205,18 +205,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		return err
 	}
 	defer func() { _ = pdfEngine.Close() }()
-	if cerr := pdfEngine.CacheErr(); cerr != nil {
-		logger.Warn("pdfium compilation cache unavailable; PDFs are prepared uncached (slower first start)", "error", cerr)
-	}
-	if cfg.Documents.PDF.Mode != "native" {
-		// Compile the module before accepting requests, so no submit pays the cold start.
-		warmStart := time.Now()
-		if err := pdfEngine.Warm(ctx); err != nil {
-			logger.Warn("pdfium warm-up failed; the first PDF will retry", "error", err)
-		} else {
-			logger.Info("pdfium ready", "duration_ms", time.Since(warmStart).Milliseconds())
-		}
-	}
+	warmPDF(ctx, logger, pdfEngine, cfg.Documents.PDF.Mode != "native")
 
 	if len(cfg.Applications) == 0 {
 		logger.Warn("no applications are configured: every /v1 request is refused")

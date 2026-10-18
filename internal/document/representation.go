@@ -163,7 +163,7 @@ func SelectContext(ctx context.Context, doc *Document, extractor, judge []config
 	if err != nil {
 		return Representation{}, err
 	}
-	cands, err := candidates(doc, images)
+	cands, err := candidates(ctx, doc, images)
 	if err != nil {
 		return Representation{}, err
 	}
@@ -187,14 +187,14 @@ type candidate struct {
 	images     []Page // the image parts of a Native image or Pages candidate
 }
 
-func candidates(doc *Document, images ImagePolicy) ([]candidate, error) {
+func candidates(ctx context.Context, doc *Document, images ImagePolicy) ([]candidate, error) {
 	switch doc.Category {
 	case CategoryText, CategoryEmail:
 		return []candidate{{kind: Text, mediaTypes: []string{"text/plain"}}}, nil
 	}
 	var out []candidate
 	if doc.Category == CategoryImage {
-		forms, err := images.variants(doc.Data, doc.BaseType())
+		forms, err := images.variants(ctx, doc.Data, doc.BaseType())
 		if err != nil {
 			return nil, err
 		}
@@ -207,7 +207,7 @@ func candidates(doc *Document, images ImagePolicy) ([]candidate, error) {
 	if len(doc.Pages) == 0 {
 		return out, nil
 	}
-	pages, err := pageCandidates(doc.Pages, images)
+	pages, err := pageCandidates(ctx, doc.Pages, images)
 	if err != nil {
 		return nil, err
 	}
@@ -216,11 +216,11 @@ func candidates(doc *Document, images ImagePolicy) ([]candidate, error) {
 
 // pageCandidates offers page images converted by the image policy, then as given when
 // the conversion changed any page.
-func pageCandidates(pages []Page, images ImagePolicy) ([]candidate, error) {
+func pageCandidates(ctx context.Context, pages []Page, images ImagePolicy) ([]candidate, error) {
 	converted := make([]Page, len(pages))
 	changed := false
 	for i, p := range pages {
-		forms, err := images.variants(p.Data, p.MediaType)
+		forms, err := images.variants(ctx, p.Data, p.MediaType)
 		if err != nil {
 			return nil, fmt.Errorf("page %d: %w", i+1, err)
 		}

@@ -214,7 +214,7 @@ func selectPDF(ctx context.Context, doc *Document, extractor, judge []config.Cap
 			rendered[i] = Page{MediaType: "image/png", Data: png}
 		}
 		d.Close() // every page is rendered: release the instance before converting
-		cands, err := pageCandidates(rendered, images)
+		cands, err := pageCandidates(ctx, rendered, images)
 		if err != nil {
 			return Representation{}, err
 		}

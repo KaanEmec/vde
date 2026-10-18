@@ -161,3 +161,23 @@ func TestQuotaHeaders(t *testing.T) {
 		t.Errorf("reads charged %d", rg.quotaUsed(t))
 	}
 }
+
+// TestQuotaSpentRefusedBeforeDocumentWork: with the quota spent, a submission is refused
+// 429 quota_exhausted after the part rules but before the document checks, the schema
+// compilation and the PDF engine, so a spent quota buys no work: an invalid schema gets
+// the 429, not 400 invalid_schema.
+func TestQuotaSpentRefusedBeforeDocumentWork(t *testing.T) {
+	t.Parallel()
+	rg := newSubmitRig(t, submitRigOptions{app: func(a *job.Application) { a.QuotaLimit = 1 }})
+	decodeJob(t, rg.submit(t, validParts(), nil))
+	badSchema := withPart(validParts(), mpart{name: partSchema, ctype: "application/schema+json", data: []byte(`{"type":"nonsense"}`)})
+	w := rg.submit(t, badSchema, nil)
+	if w.Code != http.StatusTooManyRequests || decodeError(t, w).Code != codeQuotaExhausted ||
+		w.Header().Get(headerQuotaRemaining) != "0" || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("status %d body %s remaining %q, want 429 quota_exhausted with 0 and Retry-After", w.Code, w.Body,
+			w.Header().Get(headerQuotaRemaining))
+	}
+	if rg.quotaUsed(t) != 1 || rg.blobJobs(t) != 1 {
+		t.Errorf("quota used %d, blob jobs %d; want 1 and 1", rg.quotaUsed(t), rg.blobJobs(t))
+	}
+}

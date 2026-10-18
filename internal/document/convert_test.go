@@ -2,6 +2,7 @@ package document
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"hash/crc32"
@@ -154,7 +155,7 @@ func TestVariants(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := tt.policy.variants(tt.data, tt.mediaType)
+			got, err := tt.policy.variants(context.Background(), tt.data, tt.mediaType)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -189,7 +190,7 @@ func TestVariantsTooManyPixels(t *testing.T) {
 	chunk := append([]byte("IHDR"), ihdr...)
 	hdr := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x0d")
 	hdr = binary.BigEndian.AppendUint32(append(hdr, chunk...), crc32.ChecksumIEEE(chunk))
-	_, err := enabled(2048).variants(hdr, "image/png")
+	_, err := enabled(2048).variants(context.Background(), hdr, "image/png")
 	if !errors.Is(err, ErrPayloadTooLarge) {
 		t.Errorf("err = %v, want payload too large", err)
 	}
@@ -198,7 +199,7 @@ func TestVariantsTooManyPixels(t *testing.T) {
 func TestVariantsTransparentToJPEG(t *testing.T) {
 	t.Parallel()
 	img := image.NewNRGBA(image.Rect(0, 0, 80, 80)) // fully transparent
-	got, err := enabled(40).variants(encodePNG(t, img), "image/png")
+	got, err := enabled(40).variants(context.Background(), encodePNG(t, img), "image/png")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +272,7 @@ func TestVariantsAppliesEXIFOrientation(t *testing.T) {
 	// 40x20, red left and blue right, tagged "rotate 90 degrees clockwise" (6): the
 	// upright image is 20x40 with red on top.
 	data := withOrientation(t, encodeJPEG(t, splitImage(40, 20)), 6, binary.BigEndian)
-	got, err := enabled(100).variants(data, "image/jpeg")
+	got, err := enabled(100).variants(context.Background(), data, "image/jpeg")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +287,7 @@ func TestVariantsAppliesEXIFOrientation(t *testing.T) {
 		t.Error("orientation 6 did not put red on top and blue at the bottom")
 	}
 	// Disabled: the bytes are untouched, whatever the tag says.
-	got, err = ImagePolicy{}.variants(data, "image/jpeg")
+	got, err = ImagePolicy{}.variants(context.Background(), data, "image/jpeg")
 	if err != nil || !bytes.Equal(got[0].Data, data) {
 		t.Error("disabled policy changed the image")
 	}
@@ -477,7 +478,7 @@ func TestConvertWaitsForDecodeSlot(t *testing.T) {
 	data := encodePNG(t, splitImage(80, 40))
 	done := make(chan error, 1)
 	go func() {
-		_, err := enabled(40).resolve().convert(data)
+		_, err := enabled(40).resolve().convert(context.Background(), data)
 		done <- err
 	}()
 	select {
@@ -493,5 +494,31 @@ func TestConvertWaitsForDecodeSlot(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("convert did not proceed after the slots were freed")
+	}
+}
+
+// TestConvertDecodeSlotWaitEndsWithContext: with every decode slot taken, a conversion
+// whose context ends stops waiting and returns the context's error, instead of offering
+// the image as given or holding the request. Not parallel: it holds the process-wide
+// slots.
+func TestConvertDecodeSlotWaitEndsWithContext(t *testing.T) {
+	for range maxConcurrentDecodes {
+		decodeSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range maxConcurrentDecodes {
+			<-decodeSlots
+		}
+	})
+	data := encodePNG(t, splitImage(80, 40)) // over max_dimension 40: needs conversion
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	forms, err := enabled(40).variants(ctx, data, "image/png")
+	if !errors.Is(err, context.DeadlineExceeded) || forms != nil {
+		t.Errorf("variants = %d forms, %v; want context.DeadlineExceeded", len(forms), err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("variants waited %v after its context ended", d)
 	}
 }

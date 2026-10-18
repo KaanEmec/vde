@@ -312,8 +312,11 @@ with the same key from the same application within 24 hours returns the existing
 `Idempotency-Replayed: true` and runs nothing, so a retry after a lost response never pays
 for a second extraction. The same key with a different body is `422 idempotency_mismatch`.
 
-A replay of a finished `retention: none` job whose result you have not read yet is that
-first read: it returns the result and deletes it, and later replays return the
+A replay of a finished `retention: none` job whose result you have not read yet deletes
+nothing: it returns the job's terminal `status` without its content (`result` null,
+`feedback` empty, `error` null, no `content_deleted_at`). Read the result with
+`GET /v1/jobs/{id}`, which is the first read and deletes it (so a poll timeout followed by a
+resubmission with the same key still gets the result); once it is read, replays return the
 content-deleted form below.
 
 The 24 hours hold even when the job itself is no longer readable. A replayed job whose

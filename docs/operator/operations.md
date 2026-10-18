@@ -56,8 +56,9 @@ A compose example with one API, two workers, PostgreSQL and RustFS is
 all applications together. At or above it every submission (`POST /v1/jobs` and
 `POST /v1/extract`, multipart or JSON) answers `503 unavailable` with `Retry-After: 5` and
 charges no quota; the check comes before any part is kept, so a refused request costs a
-drained body and one count query per second per process, not a buffered document. A replay
-of an `Idempotency-Key` is refused the same way while the queue is full. Polls, deletes and
+drained body and one count query per second per process, not a buffered document. A request
+with an `Idempotency-Key` is read first and meets the ceiling only when its key is unused: a
+replay creates nothing, so it answers `202` while the queue is full. Polls, deletes and
 `GET /v1/quota` are not affected. Each application's `rate.max_in_progress` (`429`) still
 applies below the ceiling; the global ceiling protects the workers and the database when many
 applications submit at once. Size it from what the workers can finish:
@@ -83,7 +84,8 @@ file-backed path through `internal/document`. Memory in flight is bounded by the
 The worst case of the API side is `limits.max_submits_in_flight` (default `16`) times
 `limits.request_bytes` (2 GiB of multipart parts with the defaults, about 2.75 times that for
 JSON). One more submission answers `503 unavailable` with `Retry-After: 5` before any part is
-read and charges no quota. Lower both to what the container holds and what your callers
+read and charges no quota; so does one more from an application that already holds half of
+the slots (at least one), so one caller's slow uploads cannot refuse every other caller. Lower both to what the container holds and what your callers
 really send (TravelInbox sends one document and up to 20 page images; `limits.request_bytes`
 below the contract minimum of 128 MiB is a warning, not an error).
 

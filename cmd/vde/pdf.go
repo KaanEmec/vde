@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/pdf"
@@ -29,4 +32,23 @@ func cliPDFCacheDir() string {
 		return ""
 	}
 	return filepath.Join(dir, "vde", "pdfium-cache")
+}
+
+// warmPDF compiles the pdfium module before serve accepts requests when warm is set (a
+// PDF mode other than native), so no submit pays the cold start, then logs why the
+// compilation cache is off, if it is: New finds an unusable directory, the start a cache
+// wazero cannot open. The engine keeps a failed start, so a failed warm-up leaves PDF
+// preparation unavailable until the process restarts.
+func warmPDF(ctx context.Context, logger *slog.Logger, engine *pdf.Engine, warm bool) {
+	if warm {
+		start := time.Now()
+		if err := engine.Warm(ctx); err != nil {
+			logger.Warn("pdfium warm-up failed; PDF preparation is unavailable until restart", "error", err)
+		} else {
+			logger.Info("pdfium ready", "duration_ms", time.Since(start).Milliseconds())
+		}
+	}
+	if cerr := engine.CacheErr(); cerr != nil {
+		logger.Warn("pdfium compilation cache unavailable; PDFs are prepared uncached (slower first start)", "error", cerr)
+	}
 }

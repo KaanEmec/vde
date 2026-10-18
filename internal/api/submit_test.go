@@ -970,7 +970,9 @@ func TestSubmitIdempotency(t *testing.T) {
 			t.Errorf("quota %d, want 1: replays are not charged", rg.quotaUsed(t))
 		}
 	})
-	t.Run("replay of a finished retention: none job is its first read", func(t *testing.T) {
+	// Contract §13's client path: a poll times out, the client resubmits with the same
+	// key, then polls again. The replay must not consume the first read of §10.
+	t.Run("replay of a finished retention: none job leaves the first read to GET", func(t *testing.T) {
 		t.Parallel()
 		rg := newSubmitRig(t, submitRigOptions{})
 		ctx := t.Context()
@@ -988,28 +990,41 @@ func TestSubmitIdempotency(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w := rg.submit(t, parts, idempotencyKey("none"))
-		body := decodeJob(t, w)
-		if w.Code != http.StatusAccepted || w.Header().Get(headerIdempotencyReplayed) != "true" ||
-			body["result"] == nil || body["content_deleted_at"] != nil {
-			t.Fatalf("first terminal replay: %d %s, want 202 with the result", w.Code, w.Body)
+		deletions := func() int {
+			t.Helper()
+			events, err := rg.db.ListAudit(ctx, job.AuditFilter{Kind: string(audit.JobDeletedKind), JobID: id}, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return len(events)
 		}
-		j, err := rg.db.GetJob(ctx, testApp, id)
-		if err != nil || j.ContentDeletedAt.IsZero() || j.Result != nil {
-			t.Errorf("after the first terminal replay: content_deleted_at %v, result %s, %v; want the content deleted",
-				j.ContentDeletedAt, j.Result, err)
+		for i := range 2 { // replays of the unread terminal job, any number of them
+			w := rg.submit(t, parts, idempotencyKey("none"))
+			body := decodeJob(t, w)
+			if w.Code != http.StatusAccepted || w.Header().Get(headerIdempotencyReplayed) != "true" || body["id"] != id ||
+				body["status"] != string(job.StatusAccepted) || body["result"] != nil || body["error"] != nil ||
+				fmt.Sprint(body["feedback"]) != "[]" || body["content_deleted_at"] != nil {
+				t.Fatalf("terminal replay %d: %d %s, want 202, status kept, no content and no content_deleted_at", i, w.Code, w.Body)
+			}
 		}
-		events, err := rg.db.ListAudit(ctx, job.AuditFilter{Kind: string(audit.JobDeletedKind), JobID: id}, 10)
-		if err != nil || len(events) != 1 || !strings.Contains(string(events[0].Details), audit.DeletedFirstRead) {
-			t.Errorf("audit = %+v, %v; want one job.deleted with reason %s", events, err, audit.DeletedFirstRead)
+		if j, err := rg.db.GetJob(ctx, testApp, id); err != nil || !j.ContentDeletedAt.IsZero() || j.Result == nil || deletions() != 0 {
+			t.Fatalf("after the replays: content_deleted_at %v, result %s, %v, %d deletions; want the content kept",
+				j.ContentDeletedAt, j.Result, err, deletions())
 		}
-		w = rg.submit(t, parts, idempotencyKey("none"))
-		body = decodeJob(t, w)
-		if body["result"] != nil || body["content_deleted_at"] == nil {
-			t.Errorf("second terminal replay: %s, want the content-deleted form", w.Body)
+		w := rg.get("/v1/jobs/" + id)
+		var got struct{ Result json.RawMessage }
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusOK || string(got.Result) != `{"name":"x"}` {
+			t.Fatalf("first GET after the replays = %d %s, want 200 with the result", w.Code, w.Body)
+		}
+		if deletions() != 1 {
+			t.Errorf("job.deleted rows = %d after the first GET, want 1", deletions())
 		}
 		if w := rg.get("/v1/jobs/" + id); w.Code != http.StatusNotFound {
-			t.Errorf("GET after the replay read it = %d, want 404", w.Code)
+			t.Errorf("second GET = %d, want 404: the first read deleted the content", w.Code)
+		}
+		w = rg.submit(t, parts, idempotencyKey("none"))
+		if body := decodeJob(t, w); body["result"] != nil || body["content_deleted_at"] == nil {
+			t.Errorf("replay after the first GET: %s, want the content-deleted form", w.Body)
 		}
 	})
 	t.Run("concurrent identical submissions create one job", func(t *testing.T) {
@@ -1366,7 +1381,9 @@ func TestSubmitPDFEngineBusy(t *testing.T) {
 
 // TestSubmitQueueFull: at limits.max_queued_jobs queued jobs every submission route
 // answers 503 unavailable with Retry-After, before any part is read (a malformed body
-// gets the 503 too), stores nothing and charges no quota; polls are unaffected.
+// gets the 503 too; a request with an Idempotency-Key is read first and refused once the
+// key is found unused), stores nothing and charges no quota; polls and the replay of a
+// used key are unaffected.
 func TestSubmitQueueFull(t *testing.T) {
 	t.Parallel()
 	const ceiling = 2
@@ -1389,8 +1406,8 @@ func TestSubmitQueueFull(t *testing.T) {
 		{"malformed multipart", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
 			return rg.submit(t, withPart(validParts(), mpart{name: "unknown", data: []byte(submitDocText)}), nil)
 		}},
-		{"replayed Idempotency-Key", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
-			return rg.submit(t, validParts(), idempotencyKey("first"))
+		{"unused Idempotency-Key", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submit(t, validParts(), idempotencyKey("second"))
 		}},
 	}
 	for _, tt := range tests {
@@ -1431,6 +1448,12 @@ func TestSubmitQueueFull(t *testing.T) {
 					t.Errorf("poll of %s while full: %d %s, want 200", id, w.Code, w.Body)
 				}
 			}
+			// A replay creates nothing: it answers 202 with the job even while the queue is
+			// full (contract §4).
+			w = rg.submit(t, validParts(), idempotencyKey("first"))
+			if w.Code != http.StatusAccepted || w.Header().Get(headerIdempotencyReplayed) != "true" || decodeJob(t, w)["id"] != ids[0] {
+				t.Errorf("replay while full: %d %s, want 202 replaying %s", w.Code, w.Body, ids[0])
+			}
 		})
 	}
 }
@@ -1465,7 +1488,10 @@ func TestSubmitsInFlight(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			rg := newSubmitRig(t, submitRigOptions{cfg: func(c *config.Config) { c.Limits.MaxSubmitsInFlight = 1 }})
-			rg.s.submits <- struct{}{} // another submission is being read
+			release, ok := rg.s.submits.take("another-app") // another submission is being read
+			if !ok {
+				t.Fatal("no free slot")
+			}
 			w := tt.send(t, rg)
 			if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "5" {
 				t.Errorf("status %d, Retry-After %q; want 503, 5", w.Code, w.Header().Get("Retry-After"))
@@ -1481,7 +1507,7 @@ func TestSubmitsInFlight(t *testing.T) {
 			if got := rg.blobJobs(t); got != 0 {
 				t.Errorf("blob job directories = %d, want 0", got)
 			}
-			<-rg.s.submits
+			release()
 			for range 2 { // the slot is released after each submission
 				if w := rg.submit(t, validParts(), nil); w.Code != http.StatusAccepted {
 					t.Fatalf("with a free slot: %d %s, want 202", w.Code, w.Body)
@@ -1490,8 +1516,102 @@ func TestSubmitsInFlight(t *testing.T) {
 			if w := rg.submit(t, withoutPart(validParts(), partDocument), nil); w.Code != http.StatusBadRequest {
 				t.Fatalf("refused submission: %d, want 400", w.Code)
 			}
-			if n := len(rg.s.submits); n != 0 {
+			if n := rg.s.submits.held(); n != 0 {
 				t.Errorf("%d slots held after the submissions returned", n)
+			}
+		})
+	}
+}
+
+// TestSubmitsInFlightPerApplication: one application holds at most half of
+// limits.max_submits_in_flight (at least one), so its slow uploads, each holding a slot
+// for up to the read timeout, cannot refuse another application's submissions.
+func TestSubmitsInFlightPerApplication(t *testing.T) {
+	t.Parallel()
+	rg := newSubmitRig(t, submitRigOptions{cfg: func(c *config.Config) { c.Limits.MaxSubmitsInFlight = 4 }})
+	const otherApp = "other-app"
+	if err := rg.db.UpsertApplication(t.Context(), job.Application{ID: otherApp, Name: "Other", MaxAttempts: 3,
+		QuotaLimit: 100, QuotaWindow: "P1D", RequestsPerMinute: 300, SubmitsPerMinute: 30, MaxInProgress: 20,
+		RetentionDefault: "24h"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	otherToken := issueToken(t, rg.db, otherApp, []string{auth.ScopeJobs}, time.Now().Add(time.Hour))
+
+	// Two uploads of the rig's application that never finish sending their body.
+	var wg sync.WaitGroup
+	var pipes []*io.PipeWriter
+	codes := make([]int, 2)
+	for i := range 2 {
+		pr, pw := io.Pipe()
+		pipes = append(pipes, pw)
+		r := httptest.NewRequest(http.MethodPost, "/v1/jobs", pr)
+		r.RemoteAddr = "127.0.0.1:50000"
+		r.Header.Set("Authorization", "Bearer "+rg.token)
+		r.Header.Set("Content-Type", "multipart/form-data; boundary=slow")
+		wg.Go(func() {
+			w := httptest.NewRecorder()
+			rg.h.ServeHTTP(w, r)
+			codes[i] = w.Code
+		})
+	}
+	for deadline := time.Now().Add(5 * time.Second); rg.s.submits.held() < 2; {
+		if time.Now().After(deadline) {
+			t.Fatalf("slow uploads hold %d slots, want 2", rg.s.submits.held())
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if w := rg.submit(t, validParts(), nil); w.Code != http.StatusServiceUnavailable || decodeError(t, w).Message != msgSubmitsBusy {
+		t.Errorf("the application over its share: %d %s, want 503 busy", w.Code, w.Body)
+	}
+	body, ct := multipartBody(t, validParts())
+	other := rg.post(body, ct, func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+otherToken) })
+	if other.Code != http.StatusAccepted {
+		t.Errorf("another application while the first holds its share: %d %s, want 202", other.Code, other.Body)
+	}
+	for _, pw := range pipes {
+		_ = pw.CloseWithError(errors.New("client gone"))
+	}
+	wg.Wait()
+	if codes[0] != http.StatusBadRequest || codes[1] != http.StatusBadRequest {
+		t.Errorf("slow uploads ended with %v, want 400 malformed", codes)
+	}
+	if n := rg.s.submits.held(); n != 0 {
+		t.Errorf("%d slots held after every submission returned", n)
+	}
+}
+
+// TestSubmitSlots: the pool's total and per-application bounds, and release.
+func TestSubmitSlots(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		total      int
+		takes      []string // applications taking a slot in order
+		wantRefuse []bool
+	}{
+		{"one slot", 1, []string{"a", "b"}, []bool{false, true}},
+		{"half per application", 4, []string{"a", "a", "a", "b", "b", "c"}, []bool{false, false, true, false, false, true}},
+		{"odd total rounds the share down", 3, []string{"a", "a", "b", "b", "c"}, []bool{false, true, false, true, false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := newSubmitSlots(tt.total)
+			var releases []func()
+			for i, app := range tt.takes {
+				release, ok := p.take(app)
+				if ok == tt.wantRefuse[i] {
+					t.Fatalf("take %d (%s): ok %v, want %v", i, app, ok, !tt.wantRefuse[i])
+				}
+				if ok {
+					releases = append(releases, release)
+				}
+			}
+			for _, release := range releases {
+				release()
+			}
+			if p.held() != 0 || len(p.byApp) != 0 {
+				t.Errorf("after release: held %d, per application %v", p.held(), p.byApp)
 			}
 		})
 	}

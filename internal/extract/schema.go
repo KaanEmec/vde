@@ -44,7 +44,7 @@ type Schema struct {
 	allowArray bool         // the top level may be an array
 	rules      ground.Rules // x-vde-grounding, enum and const per location (ADR 0009)
 	annotated  bool         // some x-vde-grounding annotation: the repair runs under always
-	recursive  bool         // a reference cycle: Validate bounds the expansion by the candidate's depth
+	recursive  bool         // a reference cycle: Validate bounds the expansion by the candidate (instanceExpansion)
 }
 
 // noLoader refuses every resource the schema does not contain itself: remote $refs and
@@ -70,7 +70,7 @@ func CompileSchema(data []byte) (_ *Schema, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: not JSON: %w", ErrInvalidSchema, err)
 	}
-	if _, ok := checkJSONBounds(doc, maxSchemaDepth); !ok {
+	if !checkJSONBounds(doc, maxSchemaDepth) {
 		return nil, fmt.Errorf("%w: nested deeper than %d levels or a number literal over %d digits or exponent %d",
 			ErrInvalidSchema, maxSchemaDepth, maxNumberDigits, maxNumberExponent)
 	}
@@ -85,7 +85,7 @@ func CompileSchema(data []byte) (_ *Schema, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidSchema, err)
 	}
-	_, recursive, ok := expansion(compiled, -1, maxSchemaExpansion)
+	_, recursive, ok := expansion(compiled, maxSchemaExpansion)
 	if !ok {
 		return nil, fmt.Errorf("%w: its references expand to more than %d subschemas", ErrInvalidSchema, maxSchemaExpansion)
 	}
@@ -136,16 +136,13 @@ func (s *Schema) Validate(candidate json.RawMessage) (out []Feedback) {
 	if err != nil {
 		return []Feedback{schemaFeedback("", "The result is not valid JSON.")}
 	}
-	depth, ok := checkJSONBounds(inst, 0)
-	if !ok {
+	if !checkJSONBounds(inst, 0) {
 		return []Feedback{schemaFeedback("", fmt.Sprintf(
 			"The result has a number with more than %d digits or an exponent beyond %d; write numbers plainly.",
 			maxNumberDigits, maxNumberExponent))}
 	}
-	if s.recursive {
-		if _, _, ok := expansion(s.compiled, depth, maxSchemaExpansion); !ok {
-			return []Feedback{schemaFeedback("", "The result is nested too deeply to be validated against the schema.")}
-		}
+	if s.recursive && !instanceExpansion(s.compiled, inst, maxSchemaExpansion) {
+		return []Feedback{schemaFeedback("", "The result is nested too deeply to be validated against the schema.")}
 	}
 	err = s.compiled.Validate(inst)
 	if err == nil {

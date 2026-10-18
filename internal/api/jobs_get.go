@@ -90,9 +90,8 @@ func (s *server) deleteOnFirstRead(w http.ResponseWriter, r *http.Request, j job
 	return true
 }
 
-// clearFirstRead is the deletion of deleteOnFirstRead, shared with the idempotent
-// replay (answerReplay). It returns job.ErrNotFound when another read cleared the job
-// first.
+// clearFirstRead is the deletion of deleteOnFirstRead. It returns job.ErrNotFound when
+// another read cleared the job first.
 func (s *server) clearFirstRead(r *http.Request, j job.Job) error {
 	ctx := context.WithoutCancel(r.Context())
 	if err := s.deps.Store.MarkContentDeleted(ctx, j.ID, job.ContentAll, s.now()); err != nil {

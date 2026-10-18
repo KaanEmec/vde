@@ -71,7 +71,14 @@ func TestSchema_Validate_bounds(t *testing.T) {
 		tree = `{"$defs":{"node":{"type":"object","properties":{"c":{"$ref":"#/$defs/node"}}}},"$ref":"#/$defs/node"}`
 		// Every level applies the root twice to the same member: 2^depth evaluations.
 		fanOut = `{"allOf":[{"$ref":"#/$defs/r"},{"$ref":"#/$defs/r"}],"$defs":{"r":{"type":"object","properties":{"c":{"$ref":"#"}}}}}`
+		// Two recursive properties: the bound follows the members the candidate has, not
+		// 2^depth branches of the schema.
+		twoBranch = `{"type":"object","properties":{"left":{"$ref":"#"},"right":{"$ref":"#"}}}`
+		// Every level's member is checked by its property and by two pattern properties,
+		// each applying the root again: 3^depth evaluations.
+		patternFanOut = `{"type":"object","properties":{"c":{"$ref":"#"}},"patternProperties":{"^c$":{"$ref":"#"},"^.$":{"$ref":"#"}}}`
 	)
+	wide := `[` + strings.Repeat(nested("left", 5, `{"right":{}}`)+`,`, 2000) + `{}]`
 	tests := []struct {
 		name, schema, candidate string
 		wantFeedback            string // a substring of the single entry; "" for valid
@@ -83,6 +90,11 @@ func TestSchema_Validate_bounds(t *testing.T) {
 		{name: "deep recursive tree", schema: tree, candidate: nested("c", 500, `{}`)},
 		{name: "recursion with fan-out, shallow", schema: fanOut, candidate: nested("c", 4, `{}`)},
 		{name: "recursion with fan-out, deep", schema: fanOut, candidate: nested("c", 60, `{}`), wantFeedback: "nested too deeply"},
+		{name: "two recursive properties, chain of 11", schema: twoBranch, candidate: nested("left", 11, `{}`)},
+		{name: "two recursive properties, chain of 40", schema: twoBranch, candidate: nested("right", 40, `{}`)},
+		{name: "two recursive properties, both used", schema: twoBranch, candidate: nested("left", 20, `{"left":{},"right":{"right":{}}}`)},
+		{name: "two recursive properties, wide array", schema: `{"type":"array","items":{"$ref":"#/$defs/n"},"$defs":{"n":{"type":"object","properties":{"left":{"$ref":"#/$defs/n"},"right":{"$ref":"#/$defs/n"}}}}}`, candidate: wide},
+		{name: "recursive pattern fan-out, deep", schema: patternFanOut, candidate: nested("c", 30, `{}`), wantFeedback: "nested too deeply"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -114,7 +126,7 @@ func TestSchema_Validate_bounds(t *testing.T) {
 func TestCompileSchema_corpusWithinBounds(t *testing.T) {
 	t.Parallel()
 	s := travelSchema(t)
-	n, recursive, ok := expansion(s.compiled, -1, maxSchemaExpansion)
+	n, recursive, ok := expansion(s.compiled, maxSchemaExpansion)
 	if !ok || recursive || n*10 > maxSchemaExpansion {
 		t.Errorf("TravelInbox schema expands to %d (recursive %v), want a tenth of %d at most", n, recursive, maxSchemaExpansion)
 	}

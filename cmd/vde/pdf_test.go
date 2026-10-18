@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/kaanemec/vde/internal/extract"
+	"github.com/kaanemec/vde/internal/pdf"
 )
 
 // TestExtractPDFWithoutPages runs vde extract on booking.pdf, without --page, against
@@ -78,6 +81,56 @@ func TestExtractPDFWithoutPages(t *testing.T) {
 			}
 			if tt.wantLabel == "pages+rendered" && (len(rep.Parts) != 1 || rep.Parts[0].Image == nil) {
 				t.Errorf("parts = %d, want one rendered page image", len(rep.Parts))
+			}
+		})
+	}
+}
+
+// TestWarmPDF: a failed warm-up says PDF preparation stays unavailable (the engine keeps
+// a failed start; nothing retries), and the compilation cache's state is logged after
+// the warm-up, so a cache the start could not open is reported too.
+func TestWarmPDF(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		cacheDir string
+		warm     bool
+		closed   bool
+		want     []string
+		absent   []string
+	}{
+		{name: "warm-up fails", warm: true, closed: true,
+			want: []string{"PDF preparation is unavailable until restart"}, absent: []string{"retry", "pdfium ready"}},
+		{name: "unusable cache, native mode", cacheDir: filepath.Join(file, "cache"),
+			want: []string{"pdfium compilation cache unavailable"}, absent: []string{"warm-up"}},
+		{name: "unusable cache after a failed warm-up", cacheDir: filepath.Join(file, "cache"), warm: true, closed: true,
+			want: []string{"unavailable until restart", "pdfium compilation cache unavailable"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			e, err := pdf.New(pdf.Config{CacheDir: tt.cacheDir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.closed {
+				_ = e.Close() // Warm then fails with pdf.ErrClosed without compiling the module
+			}
+			var buf bytes.Buffer
+			warmPDF(t.Context(), slog.New(slog.NewTextHandler(&buf, nil)), e, tt.warm)
+			for _, w := range tt.want {
+				if !strings.Contains(buf.String(), w) {
+					t.Errorf("log lacks %q:\n%s", w, buf.String())
+				}
+			}
+			for _, a := range tt.absent {
+				if strings.Contains(buf.String(), a) {
+					t.Errorf("log has %q:\n%s", a, buf.String())
+				}
 			}
 		})
 	}

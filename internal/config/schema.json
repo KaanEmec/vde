@@ -400,8 +400,8 @@
             "limit": {"type": "integer", "minimum": 0, "description": "Submissions per window; 0 means 1000."},
             "window": {
               "type": "string",
-              "pattern": "^P([0-9]+W)?([0-9]+D)?(T([0-9]+H)?([0-9]+M)?([0-9]+S)?)?$",
-              "description": "ISO 8601 duration in weeks, days, hours, minutes or seconds; default P1D."
+              "pattern": "^(P([0-9]+W)?([0-9]+D)?(T([0-9]+H)?([0-9]+M)?([0-9]+S)?)?)?$",
+              "description": "ISO 8601 duration in weeks, days, hours, minutes or seconds; default P1D (also when empty)."
             }
           }
         },
@@ -422,8 +422,8 @@
           "properties": {
             "default": {
               "type": "string",
-              "pattern": "^(none|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$",
-              "description": "Retention of retention: default jobs, a positive duration or none; default 24h."
+              "pattern": "^(none|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)?$",
+              "description": "Retention of retention: default jobs, a positive duration or none; default 24h (also when empty)."
             },
             "force_none": {"type": "boolean", "description": "Treat every job as retention: none."},
             "delete_blobs_at_terminal": {"type": "boolean", "description": "Delete the document and pages at the terminal state instead of at expiry."}

@@ -131,6 +131,25 @@ func TestCheckSchemaInput(t *testing.T) {
 			t.Errorf("got %v, %v; want no violations", issues, err)
 		}
 	})
+	t.Run("empty strings take the defaults", func(t *testing.T) {
+		t.Parallel()
+		for _, extra := range []string{
+			`applications: [{id: a, quota: {window: ""}}]`,
+			`applications: [{id: a, retention: {default: ""}}]`,
+		} {
+			data := []byte(schemaBase + extra + "\n")
+			if issues, err := config.CheckSchema(data); err != nil || len(issues) != 0 {
+				t.Errorf("%s: got %v, %v; want no violations", extra, issues, err)
+			}
+			cfg, err := config.Parse(data, func(string) string { return "" })
+			if err != nil {
+				t.Fatalf("%s: Parse: %v", extra, err)
+			}
+			if err := cfg.Validate().Err(false); err != nil {
+				t.Errorf("%s: Validate: %v", extra, err)
+			}
+		}
+	})
 	t.Run("empty file", func(t *testing.T) {
 		t.Parallel()
 		issues, err := config.CheckSchema(nil)

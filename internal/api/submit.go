@@ -142,18 +142,20 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 }
 
 // createJob is the submission path POST /v1/jobs and POST /v1/extract share. It refuses
-// or accepts in this order: submissions in flight in this process
-// (limits.max_submits_in_flight) and the global queue ceiling (limits.max_queued_jobs),
-// both before any part is kept; then it reads the whole request under the limits,
-// multipart or JSON (submit_json.go), with the part rules and options; the replay of a
-// used Idempotency-Key; the submissions per minute and jobs in progress; only then the
-// work that costs more than reading: the document url fetch, the document checks and
-// image conversion, the schema compilation and the representation (the PDF engine);
-// last the quota. The body itself is read before the limits because multipart parts
-// arrive in the caller's order and the idempotency hash covers them all. Nothing is
-// stored before every check passed. No content is ever logged or quoted in an error.
-// done is true when it has answered: a refusal, or the replay of an Idempotency-Key;
-// otherwise the job is stored and the pool woken, and the caller answers.
+// or accepts in this order: submissions in flight in this process and per application
+// (limits.max_submits_in_flight, submitSlots), before any part is kept; the global queue
+// ceiling (limits.max_queued_jobs), before any part is kept unless the request carries an
+// Idempotency-Key (then after the replay lookup, see below); then it reads the whole
+// request under the limits, multipart or JSON (submit_json.go), with the part rules and
+// options; the replay of a used Idempotency-Key; the submissions per minute, jobs in
+// progress and a read-only look at the quota; only then the work that costs more than
+// reading: the document url fetch, the document checks and image conversion, the schema
+// compilation and the representation (the PDF engine); last the quota charge. The body
+// itself is read before the limits because multipart parts arrive in the caller's order
+// and the idempotency hash covers them all. Nothing is stored before every check passed.
+// No content is ever logged or quoted in an error. done is true when it has answered: a
+// refusal, or the replay of an Idempotency-Key; otherwise the job is stored and the pool
+// woken, and the caller answers.
 func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, done bool) {
 	ctx := r.Context()
 	app, _ := ApplicationFrom(ctx)
@@ -175,38 +177,30 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		writeError(w, r, e)
 	}
 
-	// The process's submissions in flight and the global queue ceiling come first, before
-	// any part is buffered: a saturated service drains the body without keeping it and
-	// answers at once.
-	select {
-	case s.submits <- struct{}{}:
-		defer func() { <-s.submits }()
-	default:
+	// The submissions in flight come first, before any part is buffered, for every
+	// request, replays included: the slot is what bounds the memory of bodies being read.
+	// A saturated service, or an application holding its share, drains the body without
+	// keeping it and answers at once.
+	release, ok := s.submits.take(app.ID)
+	if !ok {
 		refuse(newError(codeUnavailable, msgSubmitsBusy).withRetryAfter(submitsBusyRetryAfter))
 		return nil, true
 	}
-	if limit := cfg.Limits.MaxQueuedJobs; limit > 0 {
-		full, err := s.queued.atLeast(ctx, s.deps.Store, limit)
-		if err != nil {
-			s.log.LogAttrs(ctx, slog.LevelError, "queued jobs not counted",
-				slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-			refuse(newError(codeUnavailable, msgStorageFailed))
-			return nil, true
-		}
-		if full {
-			refuse(newError(codeUnavailable, msgQueueFull).withRetryAfter(queueFullRetryAfter))
-			return nil, true
-		}
-	}
-
+	defer release()
 	key := r.Header.Get(headerIdempotencyKey)
 	if utf8.RuneCountInString(key) > maxIdempotencyKeyChars {
 		refuse(newError(codeBadRequest, msgIdempotencyKeyTooLong, maxIdempotencyKeyChars))
 		return nil, true
 	}
+	// The queue ceiling refuses before the body is read, except for a request with an
+	// Idempotency-Key: a replay creates nothing and must answer 202 (contract §4) even
+	// with the queue full, so a keyed request is read in full under its slot first and
+	// meets the ceiling only once the lookup found the key unused.
+	if key == "" && !s.queueRoom(w, r, refuse) {
+		return nil, true
+	}
 	var sub *submission
 	var e apiError
-	var ok bool
 	if mediaTypeIn(r.Header.Get("Content-Type"), "", "application/json") {
 		sub, e, ok = s.readJSONSubmission(r, cfg, requestLimit)
 	} else {
@@ -241,6 +235,9 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 				return nil, true
 			}
 			s.answerReplay(w, r, *existing, sub.hash())
+			return nil, true
+		}
+		if !s.queueRoom(w, r, refuse) {
 			return nil, true
 		}
 	}
@@ -321,6 +318,71 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		s.deps.Wake()
 	}
 	return j, false
+}
+
+// queueRoom applies limits.max_queued_jobs: it reports false after refusing with 503
+// when the ceiling is reached or the queue cannot be counted.
+func (s *server) queueRoom(w http.ResponseWriter, r *http.Request, refuse func(apiError)) bool {
+	limit := s.deps.Config.Limits.MaxQueuedJobs
+	if limit <= 0 {
+		return true
+	}
+	ctx := r.Context()
+	full, err := s.queued.atLeast(ctx, s.deps.Store, limit)
+	if err != nil {
+		s.log.LogAttrs(ctx, slog.LevelError, "queued jobs not counted",
+			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
+		refuse(newError(codeUnavailable, msgStorageFailed))
+		return false
+	}
+	if full {
+		refuse(newError(codeUnavailable, msgQueueFull).withRetryAfter(queueFullRetryAfter))
+		return false
+	}
+	return true
+}
+
+// submitSlots bounds the submissions this process reads and prepares at once
+// (limits.max_submits_in_flight), and one application's share of them to half the slots,
+// at least one, so one application's slow uploads cannot hold every slot for the read
+// timeout and starve the others. The applications are bounded by configuration, so the
+// per-application counts are too.
+type submitSlots struct {
+	mu            sync.Mutex
+	total, perApp int
+	used          int
+	byApp         map[string]int
+}
+
+func newSubmitSlots(n int) *submitSlots {
+	return &submitSlots{total: n, perApp: max(1, n/2), byApp: map[string]int{}}
+}
+
+// take holds a slot for app and returns its release, or reports false when every slot,
+// or the application's share, is held.
+func (p *submitSlots) take(app string) (release func(), ok bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.used >= p.total || p.byApp[app] >= p.perApp {
+		return nil, false
+	}
+	p.used++
+	p.byApp[app]++
+	return func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.used--
+		if p.byApp[app]--; p.byApp[app] <= 0 {
+			delete(p.byApp, app)
+		}
+	}, true
+}
+
+// held is the number of slots held now.
+func (p *submitSlots) held() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.used
 }
 
 // queuedCount is the number of queued jobs of all applications, read from the store at
@@ -683,36 +745,28 @@ func (s *server) findIdempotent(w http.ResponseWriter, r *http.Request, app job.
 	return &existing, true
 }
 
-// answerReplay answers the replay of an existing job: 202 with the job as it is now (in
-// its content-deleted form, replayResponse, once its content is gone) and
+// answerReplay answers the replay of an existing job: 202 with the job as it is now and
 // Idempotency-Replayed: true when the body hash matches, 422 idempotency_mismatch when it
-// does not. A terminal retention: none job whose content is still there is read for the
-// first time here, so its content is deleted as by GET /v1/jobs/{id} before the body
-// read from the row is sent. A replay charges no quota and runs nothing.
+// does not (replayResponse has the forms). A replay deletes nothing: a terminal
+// retention: none job not read yet answers without its content, so the first GET
+// /v1/jobs/{id} still delivers the result and deletes it (contract §10), which is the
+// client's path after a poll timeout and a resubmission with the same key (§13). A replay
+// charges no quota and runs nothing.
 func (s *server) answerReplay(w http.ResponseWriter, r *http.Request, existing job.Job, bodyHash string) {
 	if existing.BodyHash != bodyHash {
 		writeError(w, r, newError(codeIdempotencyMismatch, msgIdempotencyMismatch))
 		return
 	}
-	now := s.now()
-	if existing.Retention == job.RetentionNone && existing.Status.Terminal() &&
-		existing.ContentDeletedAt.IsZero() && now.Before(existing.ExpiresAt) {
-		switch err := s.clearFirstRead(r, existing); {
-		case errors.Is(err, job.ErrNotFound): // another read was first: the content is gone
-			existing.ContentDeletedAt = now
-		case err != nil:
-			s.jobError(w, r, existing, "job content not deleted", err)
-			return
-		}
-	}
 	w.Header().Set(headerIdempotencyReplayed, "true")
 	w.Header().Set("Location", "/v1/jobs/"+existing.ID)
-	writeJSON(w, http.StatusAccepted, replayResponse(existing, now))
+	writeJSON(w, http.StatusAccepted, replayResponse(existing, s.now()))
 }
 
 // limitSubmit applies the submission limits that cost no work on the document, in
-// order: submissions per minute, jobs in progress. It answers 429 (or 503 when the store
-// fails) and reports false when one refuses.
+// order: submissions per minute, jobs in progress, and a read-only look at the quota, so
+// a spent quota is refused before the document url fetch, the schema and the PDF engine
+// (chargeSubmit charges it after them). It answers 429 (or 503 when the store fails) and
+// reports false when one refuses.
 func (s *server) limitSubmit(w http.ResponseWriter, r *http.Request, app job.Application) bool {
 	ctx := r.Context()
 	now := s.now()
@@ -736,6 +790,15 @@ func (s *server) limitSubmit(w http.ResponseWriter, r *http.Request, app job.App
 				withRetryAfter(inProgressRetryAfter))
 			return false
 		}
+	}
+	q, err := s.currentQuota(ctx, app)
+	if err != nil {
+		return storeFailed("quota not readable", err)
+	}
+	if q.Remaining <= 0 {
+		s.setQuotaHeaders(w.Header(), app, q)
+		writeError(w, r, newError(codeQuotaExhausted, msgQuotaExhausted, q.Limit).withRetryAfter(untilReset(now, q.Reset)))
+		return false
 	}
 	return true
 }

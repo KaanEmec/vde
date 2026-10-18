@@ -2,6 +2,7 @@ package document
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -113,8 +114,9 @@ func (p ImagePolicy) needsWork(i imageInfo) bool {
 // image as given when conversion is not what the endpoints read. A PNG or JPEG that
 // needs no work is returned as it is; a WebP additionally offers its conversion. An
 // image that cannot be decoded is returned as it is (the models decide), except when it
-// exceeds maxPixels, which is refused.
-func (p ImagePolicy) variants(data []byte, mediaType string) ([]Page, error) {
+// exceeds maxPixels, which is refused. It returns ctx's error when ctx ends while the
+// conversion waits for a decode slot.
+func (p ImagePolicy) variants(ctx context.Context, data []byte, mediaType string) ([]Page, error) {
 	orig := Page{MediaType: mediaType, Data: data}
 	if !p.Enabled || mediaType == "image/heic" {
 		return []Page{orig}, nil
@@ -132,7 +134,10 @@ func (p ImagePolicy) variants(data []byte, mediaType string) ([]Page, error) {
 	if !work && mediaType != "image/webp" {
 		return []Page{orig}, nil
 	}
-	out, err := p.convert(data)
+	out, err := p.convert(ctx, data)
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+		return nil, err
+	}
 	if err != nil {
 		return []Page{orig}, nil //nolint:nilerr // a failed conversion offers the image as given, not an error
 	}
@@ -149,11 +154,15 @@ func (p ImagePolicy) variants(data []byte, mediaType string) ([]Page, error) {
 }
 
 // convert decodes the image, scales it down to MaxDimension, applies the EXIF
-// orientation and encodes it as ConvertTo, holding one of the decode slots. p must be
-// resolved.
-func (p ImagePolicy) convert(data []byte) ([]byte, error) {
-	decodeSlots <- struct{}{}
-	defer func() { <-decodeSlots }()
+// orientation and encodes it as ConvertTo, holding one of the decode slots. It returns
+// ctx's error when ctx ends before a slot is free. p must be resolved.
+func (p ImagePolicy) convert(ctx context.Context, data []byte) ([]byte, error) {
+	select {
+	case decodeSlots <- struct{}{}:
+		defer func() { <-decodeSlots }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	src, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, err

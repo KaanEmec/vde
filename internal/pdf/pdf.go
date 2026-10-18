@@ -79,15 +79,15 @@ type Config struct {
 // Engine opens PDFs on a bounded pool of pdfium instances. It is safe for concurrent use.
 // The WebAssembly module is compiled on the first Open, not by New.
 type Engine struct {
-	cfg      Config
-	cacheErr error // why the compilation cache is off, nil when on or not configured
+	cfg Config
 
-	mu      sync.Mutex
-	started bool
-	closed  bool
-	pool    pdfium.Pool
-	cache   wazero.CompilationCache
-	initErr error
+	mu       sync.Mutex
+	cacheErr error // why the compilation cache is off, nil when on or not configured
+	started  bool
+	closed   bool
+	pool     pdfium.Pool
+	cache    wazero.CompilationCache
+	initErr  error
 }
 
 // New validates cfg and returns an engine that starts on first use. A cache directory
@@ -148,8 +148,14 @@ func (e *Engine) Warm(ctx context.Context) error {
 }
 
 // CacheErr reports why a configured compilation cache is not used (the engine then
-// compiles the module, about 1 s, at every process start), or nil.
-func (e *Engine) CacheErr() error { return e.cacheErr }
+// compiles the module, about 1 s, at every process start), or nil. The start can find
+// the cache unusable too, so read it after Warm or the first Open; it waits for a start
+// in progress.
+func (e *Engine) CacheErr() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.cacheErr
+}
 
 // Workers is the configured number of instances.
 func (e *Engine) Workers() int { return e.cfg.Workers }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -50,7 +51,8 @@ type health struct {
 	checkedAt time.Time
 	writable  bool
 
-	dbMu      sync.Mutex // held through a database check
+	dbMu      sync.Mutex // guards the fields below, never held through a query
+	dbBusy    bool       // a database check is running; others reuse the last result
 	dbTokens  float64    // database checks available now, at most healthDBBurst
 	dbAt      time.Time  // when dbTokens was last refilled; zero before the first check
 	dbChecked bool       // dbAge and dbUp hold a result
@@ -97,11 +99,13 @@ func (h *health) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // dbCheck runs the database check of the process's role (queueAge for an API-only
-// process, dbOK otherwise) when the rate allows, else returns the last result. Checks
-// run one at a time.
+// process, dbOK otherwise) when the rate allows and no other check is running, else
+// returns the last result, so a slow database never queues requests behind a check. The
+// check runs without the request's cancellation, under its own healthDBTimeout: a client
+// that hangs up cannot fail it. A result that failed for a context error is returned but
+// not kept.
 func (h *health) dbCheck(ctx context.Context) (int64, bool) {
 	h.dbMu.Lock()
-	defer h.dbMu.Unlock()
 	now := h.s.now()
 	switch {
 	case h.dbAt.IsZero():
@@ -112,54 +116,60 @@ func (h *health) dbCheck(ctx context.Context) (int64, bool) {
 	if !now.Before(h.dbAt) {
 		h.dbAt = now // a clock that went back refills nothing until it passes dbAt again
 	}
-	if h.dbTokens < 1 && h.dbChecked {
+	if h.dbChecked && (h.dbTokens < 1 || h.dbBusy) {
+		defer h.dbMu.Unlock()
 		return h.dbAge, h.dbUp
 	}
 	h.dbTokens--
-	if h.s.deps.Role == RoleAPI {
-		h.dbAge, h.dbUp = h.queueAge(ctx)
-	} else {
-		h.dbAge, h.dbUp = 0, h.dbOK(ctx)
-	}
-	h.dbChecked = true
-	return h.dbAge, h.dbUp
-}
+	h.dbBusy = true
+	h.dbMu.Unlock()
 
-// queueAge is the database check of an API-only process: the age in whole seconds of the
-// oldest queued job (one MIN over the queue index, 1 s timeout), and false when the
-// database does not answer.
-func (h *health) queueAge(ctx context.Context) (int64, bool) {
-	if h.s.deps.Store == nil {
-		return 0, false
-	}
-	ctx, cancel := context.WithTimeout(ctx, healthDBTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), healthDBTimeout)
 	defer cancel()
-	oldest, err := h.s.deps.Store.OldestQueuedAt(ctx)
+	var age int64
+	var err error
+	if h.s.deps.Role == RoleAPI {
+		age, err = h.queueAge(ctx)
+	} else {
+		err = h.dbOK(ctx)
+	}
 	if err != nil {
 		h.s.log.LogAttrs(ctx, slog.LevelWarn, "healthz: database check failed",
 			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-		return 0, false
 	}
-	if oldest.IsZero() {
-		return 0, true
+
+	h.dbMu.Lock()
+	defer h.dbMu.Unlock()
+	h.dbBusy = false
+	// The check runs detached from the request (WithoutCancel), so a context error here is
+	// the check's own 1 s deadline, a real signal: a hung database is kept as down.
+	h.dbAge, h.dbUp, h.dbChecked = age, err == nil, true
+	return age, err == nil
+}
+
+// queueAge is the database check of an API-only process: the age in whole seconds of the
+// oldest queued job (one MIN over the queue index), 0 when none waits.
+func (h *health) queueAge(ctx context.Context) (int64, error) {
+	if h.s.deps.Store == nil {
+		return 0, errNoStore
 	}
-	return max(int64(h.s.now().Sub(oldest)/time.Second), 0), true
+	oldest, err := h.s.deps.Store.OldestQueuedAt(ctx)
+	if err != nil || oldest.IsZero() {
+		return 0, err
+	}
+	return max(int64(h.s.now().Sub(oldest)/time.Second), 0), nil
 }
 
 // dbOK runs a one-row query on the jobs table, the queue.
-func (h *health) dbOK(ctx context.Context) bool {
+func (h *health) dbOK(ctx context.Context) error {
 	if h.s.deps.Store == nil {
-		return false
+		return errNoStore
 	}
-	ctx, cancel := context.WithTimeout(ctx, healthDBTimeout)
-	defer cancel()
-	if _, err := h.s.deps.Store.CountRunning(ctx, ""); err != nil {
-		h.s.log.LogAttrs(ctx, slog.LevelWarn, "healthz: database check failed",
-			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-		return false
-	}
-	return true
+	_, err := h.s.deps.Store.CountRunning(ctx, "")
+	return err
 }
+
+var errNoStore = errors.New("no job store")
 
 // dataDirOK reports whether a file can be created in server.data_dir, rechecking at most
 // every 30 s. Without a data directory (tests) there is nothing to check.

@@ -426,8 +426,11 @@ components:
         24 hours returns the existing job with `Idempotency-Replayed: true` and runs nothing,
         also when the job is no longer readable: a job whose content was already read
         (`retention: none`) or has expired is replayed with `content_deleted_at` set and
-        `result` null (see Job); treat it as already delivered and do not re-submit. The
-        same key with a different body is 422 `idempotency_mismatch`.
+        `result` null (see Job); treat it as already delivered and do not re-submit. A
+        finished `retention: none` job not read yet is replayed without its content and
+        without `content_deleted_at`, and nothing is deleted: read it with
+        `GET /v1/jobs/{id}`, the first read. The same key with a different body is 422
+        `idempotency_mismatch`.
       schema: { type: string, minLength: 1, maxLength: 128 }
     RequestId:
       name: X-Request-Id
@@ -619,8 +622,8 @@ components:
           description: |
             The last candidate the extractor produced. Null while in progress or when no attempt
             produced parseable JSON. Never null and schema-valid when `status` is `accepted` or
-            `extracted`, except in the content-deleted form of an idempotent replay
-            (`content_deleted_at` set).
+            `extracted`, except in an idempotent replay of a job whose content is gone
+            (`content_deleted_at` set) or of a finished `retention: none` job not read yet.
           type: [object, "null"]
         feedback:
           description: |

@@ -30,8 +30,8 @@ const (
 
 // checkJSONBounds reports whether a decoded JSON value (from jsonschema.UnmarshalJSON,
 // numbers as json.Number) has no number outside the literal bounds and no nesting deeper
-// than maxDepth (0: any depth), and returns its depth: 0 for a scalar.
-func checkJSONBounds(v any, maxDepth int) (depth int, ok bool) {
+// than maxDepth (0: any depth).
+func checkJSONBounds(v any, maxDepth int) bool {
 	type frame struct {
 		v     any
 		depth int
@@ -43,27 +43,25 @@ func checkJSONBounds(v any, maxDepth int) (depth int, ok bool) {
 		switch node := f.v.(type) {
 		case json.Number:
 			if !numberInBounds(string(node)) {
-				return 0, false
+				return false
 			}
 		case map[string]any:
 			if maxDepth > 0 && f.depth+1 > maxDepth {
-				return 0, false
+				return false
 			}
-			depth = max(depth, f.depth+1)
 			for _, c := range node {
 				stack = append(stack, frame{c, f.depth + 1})
 			}
 		case []any:
 			if maxDepth > 0 && f.depth+1 > maxDepth {
-				return 0, false
+				return false
 			}
-			depth = max(depth, f.depth+1)
 			for _, c := range node {
 				stack = append(stack, frame{c, f.depth + 1})
 			}
 		}
 	}
-	return depth, true
+	return true
 }
 
 // numberInBounds reports whether a JSON number literal has at most maxNumberDigits
@@ -82,26 +80,68 @@ func numberInBounds(lit string) bool {
 }
 
 // expansion counts schema evaluations in the compiled schema s with every reference
-// expanded, stopping as soon as the count exceeds limit. With depth < 0 a reference
-// back to a schema already being expanded is not followed, so the count bounds one
-// instance location's work for a schema without recursion; recursive reports whether
-// such a reference was met. With depth >= 0 recursion is followed, but only through as
-// many keywords that descend into the instance (properties, items, ...) as depth
-// allows: the count then bounds the work on an instance that deep.
-func expansion(s *jsonschema.Schema, depth, limit int) (n int, recursive, ok bool) {
+// expanded, stopping as soon as the count exceeds limit. A reference back to a schema
+// already being expanded is not followed, so the count bounds one instance location's
+// work for a schema without recursion; recursive reports whether such a reference was
+// met (instanceExpansion then bounds each validation).
+func expansion(s *jsonschema.Schema, limit int) (n int, recursive, ok bool) {
+	w := newExpander(s, limit)
+	w.walk(s, nil)
+	return w.n, w.recursive, !w.over
+}
+
+// instanceExpansion reports whether validating inst (decoded by jsonschema.UnmarshalJSON)
+// against s evaluates at most limit schemas at every location of inst. It follows the
+// recursion of s only into the members and items inst has, as the validator does, so
+// the count grows with what the candidate holds and not with the schema's branching:
+// a schema that applies itself twice to one member (2^depth evaluations) is refused, a
+// tree with two recursive properties of which the candidate uses one is not.
+func instanceExpansion(s *jsonschema.Schema, inst any, limit int) bool {
+	w := newExpander(s, limit)
+	w.walk(s, newLocation(inst))
+	return !w.over
+}
+
+func newExpander(s *jsonschema.Schema, limit int) *expander {
 	w := &expander{limit: limit, onStack: map[expandKey]bool{}, dynamic: map[string][]*jsonschema.Schema{}}
 	w.collectAnchors(s, map[*jsonschema.Schema]bool{})
-	w.walk(s, depth)
-	return w.n, w.recursive, w.n <= w.limit
+	return w
+}
+
+// location is one location of the instance being validated and the evaluations counted
+// at it.
+type location struct {
+	n       int
+	members map[string]*location // an object's members
+	names   map[string]*location // an object's member names, which propertyNames checks
+	items   []*location          // an array's items
+}
+
+func newLocation(v any) *location {
+	l := &location{}
+	switch v := v.(type) {
+	case map[string]any:
+		l.members, l.names = make(map[string]*location, len(v)), make(map[string]*location, len(v))
+		for name, c := range v {
+			l.members[name], l.names[name] = newLocation(c), &location{}
+		}
+	case []any:
+		l.items = make([]*location, len(v))
+		for i, c := range v {
+			l.items[i] = newLocation(c)
+		}
+	}
+	return l
 }
 
 type expandKey struct {
-	s     *jsonschema.Schema
-	depth int
+	s  *jsonschema.Schema
+	at *location
 }
 
 type expander struct {
 	n, limit  int
+	over      bool
 	recursive bool
 	onStack   map[expandKey]bool
 	// Targets a $dynamicRef or $recursiveRef may resolve to at validation time: every
@@ -110,44 +150,104 @@ type expander struct {
 	recursiveAnchor []*jsonschema.Schema
 }
 
-func (w *expander) walk(s *jsonschema.Schema, depth int) {
-	if s == nil || w.n > w.limit {
+// walk counts s and what it applies. With at nil (no instance) the subschemas for
+// members and items are walked once each, a cycle cut; with an instance location they
+// are walked for the members and items at has, and the count is at's.
+func (w *expander) walk(s *jsonschema.Schema, at *location) {
+	if s == nil || w.over {
 		return
 	}
-	key := expandKey{s, depth}
-	if depth < 0 {
-		key.depth = -1
-	}
+	key := expandKey{s, at}
 	if w.onStack[key] {
-		w.recursive = true // a cycle at one instance location the library reports as RefCycle when depth >= 0
+		w.recursive = true // a cycle at one instance location: the library reports RefCycle
 		return
 	}
-	w.n++
+	count := &w.n
+	if at != nil {
+		count = &at.n
+	}
+	*count++
+	if *count > w.limit {
+		w.over = true
+		return
+	}
 	w.onStack[key] = true
 	defer delete(w.onStack, key)
 	here, below := applicators(s)
 	for _, c := range here {
-		w.walk(c, depth)
+		w.walk(c, at)
 	}
 	if s.DynamicRef != nil && s.DynamicRef.Anchor != "" {
 		for _, c := range w.dynamic[s.DynamicRef.Anchor] {
-			w.walk(c, depth)
+			w.walk(c, at)
 		}
 	}
 	if s.RecursiveRef != nil {
 		for _, c := range w.recursiveAnchor {
-			w.walk(c, depth)
+			w.walk(c, at)
 		}
 	}
-	if depth == 0 {
+	if at == nil {
+		for _, c := range below {
+			w.walk(c, nil)
+		}
 		return
 	}
-	next := depth - 1
-	if depth < 0 {
-		next = depth
+	w.descend(s, at)
+}
+
+// descend walks the subschemas s applies to the members and items at has, at least as
+// many as the validator applies (unevaluatedProperties and unevaluatedItems count for
+// every member or item s itself does not cover). contentSchema is never applied: the
+// compiler does not enable content assertions.
+func (w *expander) descend(s *jsonschema.Schema, at *location) {
+	for name, child := range at.members {
+		matched := false
+		if c, ok := s.Properties[name]; ok {
+			w.walk(c, child)
+			matched = true
+		}
+		for re, c := range s.PatternProperties {
+			if re.MatchString(name) {
+				w.walk(c, child)
+				matched = true
+			}
+		}
+		if !matched {
+			if c, ok := s.AdditionalProperties.(*jsonschema.Schema); ok {
+				w.walk(c, child)
+			}
+			w.walk(s.UnevaluatedProperties, child)
+		}
+		w.walk(s.PropertyNames, at.names[name])
 	}
-	for _, c := range below {
-		w.walk(c, next)
+	for i, child := range at.items {
+		covered := true
+		switch {
+		case i < len(s.PrefixItems):
+			w.walk(s.PrefixItems[i], child)
+		case s.Items2020 != nil:
+			w.walk(s.Items2020, child)
+		default:
+			covered = false
+		}
+		switch items := s.Items.(type) { // drafts before 2020-12
+		case *jsonschema.Schema:
+			w.walk(items, child)
+			covered = true
+		case []*jsonschema.Schema:
+			if i < len(items) {
+				w.walk(items[i], child)
+				covered = true
+			} else if c, ok := s.AdditionalItems.(*jsonschema.Schema); ok {
+				w.walk(c, child)
+				covered = true
+			}
+		}
+		w.walk(s.Contains, child)
+		if !covered {
+			w.walk(s.UnevaluatedItems, child)
+		}
 	}
 }
 

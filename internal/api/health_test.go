@@ -198,3 +198,103 @@ func TestHealthzDatabaseRate(t *testing.T) {
 		t.Errorf("the bucket refills to its burst: queries = %d, want %d", got, 2*healthDBBurst+1)
 	}
 }
+
+// ctxStore answers the health query as a driver does: with the context's error once the
+// context is done, else by the function set (nil: healthy).
+type ctxStore struct {
+	job.Store
+	queries atomic.Int64
+	answer  func(ctx context.Context) error
+}
+
+func (c *ctxStore) CountRunning(ctx context.Context, _ string) (int, error) {
+	c.queries.Add(1)
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if c.answer != nil {
+		return 0, c.answer(ctx)
+	}
+	return 0, nil
+}
+
+// TestHealthzContextErrors: a client that hangs up cannot fail the database check (it
+// runs without the request's cancellation), and a check that fails with a context error
+// is answered but never becomes the result that rate-limited requests reuse.
+func TestHealthzContextErrors(t *testing.T) {
+	t.Parallel()
+	t.Run("cancelled request", func(t *testing.T) {
+		t.Parallel()
+		store := &ctxStore{Store: newTestStore(t)}
+		h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true)})
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		w := serve(h, http.MethodGet, "/healthz", func(r *http.Request) { *r = *r.WithContext(ctx) })
+		if w.Code != http.StatusOK || store.queries.Load() != 1 {
+			t.Fatalf("aborted request: %d %s after %d queries, want 200 from one query", w.Code, w.Body, store.queries.Load())
+		}
+		for range 2 * healthDBBurst { // over the rate: the kept result is the healthy one
+			if code, _, raw := getHealth(t, h); code != http.StatusOK {
+				t.Fatalf("after the aborted request: %d %s, want 200", code, raw)
+			}
+		}
+	})
+	t.Run("the check's own timeout is kept as down", func(t *testing.T) {
+		t.Parallel()
+		now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC) // fixed: no refill
+		store := &ctxStore{Store: newTestStore(t)}
+		h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true),
+			Now: func() time.Time { return now }})
+		if code, _, raw := getHealth(t, h); code != http.StatusOK {
+			t.Fatalf("first check: %d %s, want 200", code, raw)
+		}
+		store.answer = func(context.Context) error { return context.DeadlineExceeded } // a hung database
+		for i := 1; i < healthDBBurst; i++ {                                           // the rest of the burst fails on the check's deadline
+			if code, body, _ := getHealth(t, h); code != http.StatusServiceUnavailable || !slices.Equal(body.Reasons, []string{reasonDB}) {
+				t.Fatalf("check %d: %d %v, want 503 [db]", i+1, code, body.Reasons)
+			}
+		}
+		if code, body, _ := getHealth(t, h); code != http.StatusServiceUnavailable || store.queries.Load() != healthDBBurst {
+			t.Errorf("over the rate: %d %v after %d queries, want the kept 503 [db] from %d", code, body.Reasons, store.queries.Load(), healthDBBurst)
+		}
+	})
+}
+
+// TestHealthzSlowDatabaseDoesNotQueue: while a database check is running, other requests
+// answer at once with the last result instead of waiting for it.
+func TestHealthzSlowDatabaseDoesNotQueue(t *testing.T) {
+	t.Parallel()
+	entered, unblock := make(chan struct{}), make(chan struct{})
+	var block atomic.Bool
+	store := &ctxStore{Store: newTestStore(t), answer: func(context.Context) error {
+		if block.Load() {
+			close(entered)
+			<-unblock
+		}
+		return nil
+	}}
+	h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true)})
+	if code, _, raw := getHealth(t, h); code != http.StatusOK {
+		t.Fatalf("first check: %d %s", code, raw)
+	}
+	block.Store(true)
+	done := make(chan int, 1)
+	go func() { done <- serve(h, http.MethodGet, "/healthz", nil).Code }()
+	<-entered
+	start := time.Now()
+	for range 5 {
+		if code, _, raw := getHealth(t, h); code != http.StatusOK {
+			t.Errorf("during a slow check: %d %s, want the last result 200", code, raw)
+		}
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Errorf("requests during a slow check took %v: they waited for it", d)
+	}
+	if n := store.queries.Load(); n != 2 {
+		t.Errorf("queries = %d, want 2: no check starts while one runs", n)
+	}
+	close(unblock)
+	if code := <-done; code != http.StatusOK {
+		t.Errorf("the slow check answered %d, want 200", code)
+	}
+}
