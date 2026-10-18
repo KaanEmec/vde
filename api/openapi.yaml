@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Verified Document Extraction API
-  version: 0.4.0
+  version: 1.0.0
   description: |
     The HTTP surface of vde, the verified document extraction service. It is a superset
     of TravelInbox's `FromTravelApp/extraction-service-api.yaml` (ADR 0005): every path,
@@ -21,6 +21,11 @@ info:
       behind a trusted proxy one without `X-Forwarded-Proto: https`, answers
       `400 bad_request`. `GET /healthz` is exempt (health checks reach it directly).
     - Clients ignore fields they do not know. Changes within `/v1` are additive only.
+    - `x-stability` marks what the compatibility policy (`docs/compatibility.md`) covers:
+      `stable` is frozen for `/v1`; `experimental` may change or go in a minor release,
+      announced in the changelog. Every operation carries one; a field without its own
+      marker has its operation's. `api/openapi.v1.0.0.yaml` is the frozen document, and a
+      test keeps this one a superset of it.
     - Every authenticated response carries `X-Quota-Remaining` and `X-Quota-Reset`.
   license:
     name: Apache-2.0
@@ -50,6 +55,7 @@ paths:
     post:
       tags: [jobs]
       operationId: submitJob
+      x-stability: stable
       summary: Submit a document for extraction
       description: |
         Creates a job that runs the extractor-then-judge loop on one document. Parts are
@@ -98,6 +104,7 @@ paths:
           "{$request.body#/webhook}":
             post:
               summary: Completion webhook (operator-configured URL)
+              x-stability: experimental
               description: |
                 Sent once per job reaching a terminal status, to the application's
                 operator-approved `webhook.url`, not to a URL from the request (the callback
@@ -150,12 +157,14 @@ paths:
         "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "422": { $ref: "#/components/responses/Unprocessable" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
         "5XX": { $ref: "#/components/responses/ServerError" }
 
   /extract:
     post:
       tags: [jobs]
       operationId: extractSync
+      x-stability: stable
       summary: Submit a document and wait for the result
       description: |
         Added by vde (contract §16, v0.3). The request is that of `POST /v1/jobs`,
@@ -216,6 +225,7 @@ paths:
         "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "422": { $ref: "#/components/responses/Unprocessable" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
         "5XX": { $ref: "#/components/responses/ServerError" }
 
   /jobs/{id}:
@@ -227,6 +237,7 @@ paths:
     get:
       tags: [jobs]
       operationId: getJob
+      x-stability: stable
       summary: Poll a job
       description: |
         Returns the job in its current state. Polling does not count against the quota.
@@ -253,6 +264,7 @@ paths:
     delete:
       tags: [jobs]
       operationId: deleteJob
+      x-stability: stable
       summary: Delete a job early
       description: |
         Deletes the document, pages, result and feedback at once; later reads are `404`.
@@ -277,6 +289,7 @@ paths:
     get:
       tags: [quota]
       operationId: getQuota
+      x-stability: stable
       summary: Read the application's quota
       description: The same numbers as the quota headers, as a body. Does not change them.
       parameters:
@@ -299,6 +312,7 @@ paths:
     get:
       tags: [meta]
       operationId: getOpenAPI
+      x-stability: stable
       summary: This document
       description: The service's own API document, for any authenticated application.
       parameters:
@@ -319,6 +333,7 @@ paths:
     get:
       tags: [health]
       operationId: healthz
+      x-stability: stable
       summary: Liveness
       description: |
         200 when the service can accept jobs, else 503 with the reasons: `db` when the
@@ -364,6 +379,7 @@ paths:
     get:
       tags: [meta]
       operationId: metrics
+      x-stability: stable
       summary: Prometheus metrics
       description: |
         Prometheus text format, at the root. Not authenticated with application tokens:
@@ -395,7 +411,10 @@ components:
     bearer:
       type: http
       scheme: bearer
-      description: An application access token issued by the service's operator.
+      description: |
+        An application access token issued by the service's operator, with one scope:
+        `jobs` (submit, poll, delete, quota) or `jobs:read` (poll and quota; submitting is
+        `403 forbidden`).
 
   parameters:
     IdempotencyKey:
@@ -464,7 +483,9 @@ components:
             JSON Schema 2020-12 the result must conform to, up to 256 KiB. Optional: without
             it the job is schema-less, the extractor returns any JSON object, no schema
             feedback is produced and acceptance is the judge's verdict alone. TravelInbox
-            always sends it.
+            always sends it. A property may carry `x-vde-grounding` (`critical`, `check`,
+            `derived`, `skip`) for the grounding check (ADR 0009); validation ignores it, and
+            any other value is `422 invalid_schema`.
           type: string
         retention:
           description: "`none`: delete content at the terminal state and on first read. Absent means `default`."
@@ -504,6 +525,7 @@ components:
             url:
               type: string
               format: uri
+              x-stability: experimental
               description: |
                 Only when the operator enabled `documents.fetch`: an `https` URL on one of its
                 `allowed_hosts`. The service fetches it under a size and time limit, follows
@@ -564,7 +586,8 @@ components:
           description: |
             Who produced the entry. `grounding` (added by vde, ADR 0009): a value the
             deterministic grounding check did not find in the document; only under judge
-            policy `never` or `auto`.
+            policy `never` or `auto`. Its message is always `value not found in the document`
+            and never quotes the value.
           type: string
           enum: [judge, schema, grounding]
 
@@ -614,6 +637,7 @@ components:
           description: Identifies the service release and role configuration that produced the result.
           type: string
         judge_confidence:
+          x-stability: stable
           description: The judge's optional confidence in its verdict on `result`, 0 to 1; null when the judge gave none. Advisory only.
           type: [number, "null"]
           minimum: 0
@@ -760,6 +784,14 @@ components:
         Retry-After: { $ref: "#/components/headers/Retry-After" }
         X-Quota-Remaining: { $ref: "#/components/headers/X-Quota-Remaining" }
         X-Quota-Reset: { $ref: "#/components/headers/X-Quota-Reset" }
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: "`unavailable`: the service is saturated (`limits.max_queued_jobs` jobs queued, or every PDF engine busy) or its storage failed. A saturated service stores and charges nothing and sends `Retry-After`; submit again after it. Polls are not affected."
+      headers:
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
       content:
         application/json:

@@ -20,6 +20,14 @@ error codes in step, and check the superset relation.
   [`swift/VDEClient.swift`](examples/swift/VDEClient.swift) (URLSession; server-side only,
   never with the service token in a shipped app).
 
+## Stability
+
+`/v1` is frozen at 1.0.0: the [compatibility policy](../compatibility.md) says what is
+promised, what may still be added and how deprecation and `/v2` work. Each operation in the
+API document carries `x-stability: stable` or `experimental`; experimental today are the
+completion webhook and fetching the document by `url`. A test keeps `api/openapi.yaml` a
+superset of the frozen [`api/openapi.v1.0.0.yaml`](../../api/openapi.v1.0.0.yaml).
+
 ## Routes
 
 | Route | Auth | Purpose |
@@ -34,8 +42,9 @@ error codes in step, and check the superset relation.
 
 ## Conventions
 
-- **Base path** `/v1`; changes within it are additive only. JSON in UTF-8, timestamps RFC
-  3339 UTC. Clients ignore fields they do not know.
+- **Base path** `/v1`; changes within it are additive only
+  ([compatibility policy](../compatibility.md)). JSON in UTF-8, timestamps RFC 3339 UTC.
+  Clients ignore fields they do not know.
 - **HTTPS** is required outside loopback. Either `vde serve` terminates TLS
   (`server.tls`), or `server.trusted_proxy: true` and every request must carry
   `X-Forwarded-Proto: https` (loopback included, since the proxy usually connects from

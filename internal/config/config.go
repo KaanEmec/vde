@@ -217,6 +217,10 @@ type Limits struct {
 	PageBytes            int64 `yaml:"page_bytes"`
 	Pages                int   `yaml:"pages"`
 	RequestBytes         int64 `yaml:"request_bytes"` // whole multipart request body (v0.2)
+	// MaxQueuedJobs is the global ceiling on queued jobs, all applications together: at
+	// or above it a submission answers 503 unavailable with Retry-After (v1.0). 0 means
+	// no ceiling.
+	MaxQueuedJobs int `yaml:"max_queued_jobs"`
 }
 
 // Documents sets the representation policy.

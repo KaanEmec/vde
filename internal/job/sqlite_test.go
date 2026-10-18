@@ -916,6 +916,9 @@ func TestCountInProgressAndListJobs(t *testing.T) {
 		if n, err := s.CountInProgress(ctx, "a"); err != nil || n != 2 {
 			t.Errorf("CountInProgress(a) = %d, %v; want 2 (one queued, one running)", n, err)
 		}
+		if n, err := s.CountQueued(ctx); err != nil || n != 2 {
+			t.Errorf("CountQueued() = %d, %v; want 2 (ids[2] of a, ids[3] of b)", n, err)
+		}
 		all, err := s.ListJobs(ctx, JobFilter{}, 0)
 		if err != nil || len(all) != 4 || all[0].ID != ids[3] || all[3].ID != ids[0] {
 			t.Fatalf("ListJobs = %d jobs, %v; want 4 newest first", len(all), err)

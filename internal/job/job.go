@@ -376,6 +376,9 @@ type Store interface {
 	CountRunning(ctx context.Context, applicationID string) (int, error)
 	// CountInProgress returns the number of the application's queued and running jobs.
 	CountInProgress(ctx context.Context, applicationID string) (int, error)
+	// CountQueued returns the number of queued jobs of all applications (the global
+	// ceiling limits.max_queued_jobs).
+	CountQueued(ctx context.Context) (int, error)
 	// OldestQueuedAt returns the created_at of the oldest queued job of any application,
 	// the zero time when none is queued (the queue age of /healthz on an API-only process).
 	OldestQueuedAt(ctx context.Context) (time.Time, error)

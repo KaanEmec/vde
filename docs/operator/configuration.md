@@ -76,6 +76,7 @@ probing is planned for v0.3; until then test an endpoint with `vde extract` and 
 | `limits.page_bytes` | int | `10485760` (10 MiB) | Largest page image; below the contract minimum is a warning. |
 | `limits.pages` | int | `20` | Most page images per job; below the contract minimum is a warning. |
 | `limits.request_bytes` | int | `134217728` (128 MiB) | Largest whole `POST /v1/jobs` body; over it the service reads up to the limit and answers `413`; below the contract minimum is a warning. |
+| `limits.max_queued_jobs` | int | `0` (no ceiling) | Global ceiling on `queued` jobs, all applications together (v1.0). At or above it `POST /v1/jobs` and `POST /v1/extract` answer `503 unavailable` with `Retry-After: 5`, before any part is kept (the body is drained, not buffered), and charge no quota; polls are unaffected. The count is reused for one second per process, so under a flood the ceiling can be passed by what other processes accept in that second. Not negative. Size it as `worker.size` × worker processes × (`limits.job_timeout` ÷ a typical job's duration): more queued jobs would time out before a worker leases them; see [operations](operations.md#memory-and-backpressure). |
 
 ## `documents`
 

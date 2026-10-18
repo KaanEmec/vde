@@ -177,37 +177,56 @@ func TestOpenAPISupersetOfTravelInbox(t *testing.T) {
 	if len(theirs.Paths) == 0 || len(theirs.Components.Schemas) == 0 {
 		t.Fatal("TravelInbox document parsed empty")
 	}
-	for path, item := range theirs.Paths {
-		ourItem, ok := ours.Paths[path]
+	assertSuperset(t, theirs, ours, relaxedRequired)
+}
+
+// requestSchemas are the schemas clients send: a newer document may relax their required
+// fields (listed in relaxed) but never add one.
+var requestSchemas = []string{"SubmitJob", "SubmitJobJSON"}
+
+// assertSuperset checks that every path, method, response code, schema and required field
+// of base is in cur, that a required field stays required unless relaxed names it, and
+// that no request schema gains a required field.
+func assertSuperset(t *testing.T, base, cur openAPIDoc, relaxed map[string][]string) {
+	t.Helper()
+	for path, item := range base.Paths {
+		curItem, ok := cur.Paths[path]
 		if !ok {
 			t.Errorf("path %s missing", path)
 			continue
 		}
 		for _, m := range operations(item) {
-			if _, ok := ourItem[m]; !ok {
+			if _, ok := curItem[m]; !ok {
 				t.Errorf("%s %s missing", strings.ToUpper(m), path)
 				continue
 			}
-			ourResponses := responses(ourItem, m)
+			curResponses := responses(curItem, m)
 			for code := range responses(item, m) {
-				if _, ok := ourResponses[code]; !ok {
+				if _, ok := curResponses[code]; !ok {
 					t.Errorf("%s %s: response %s missing", strings.ToUpper(m), path, code)
 				}
 			}
 		}
 	}
-	for name, schema := range theirs.Components.Schemas {
-		our, ok := ours.Components.Schemas[name]
+	for name, schema := range base.Components.Schemas {
+		c, ok := cur.Components.Schemas[name]
 		if !ok {
 			t.Errorf("schema %s missing", name)
 			continue
 		}
 		for _, field := range schema.Required {
-			if _, ok := our.Properties[field]; !ok {
+			if _, ok := c.Properties[field]; !ok {
 				t.Errorf("schema %s: required field %s missing", name, field)
 			}
-			if !slices.Contains(our.Required, field) && !slices.Contains(relaxedRequired[name], field) {
+			if !slices.Contains(c.Required, field) && !slices.Contains(relaxed[name], field) {
 				t.Errorf("schema %s: field %s is no longer required", name, field)
+			}
+		}
+		if slices.Contains(requestSchemas, name) {
+			for _, field := range c.Required {
+				if !slices.Contains(schema.Required, field) {
+					t.Errorf("request schema %s: field %s is newly required", name, field)
+				}
 			}
 		}
 	}

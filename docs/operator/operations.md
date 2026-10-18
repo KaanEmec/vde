@@ -50,6 +50,54 @@ All processes use the same configuration file. What they share and what they do 
 A compose example with one API, two workers, PostgreSQL and RustFS is
 [`examples/compose/scaled/`](../../examples/compose/scaled/README.md).
 
+## Memory and backpressure
+
+**Queue ceiling.** `limits.max_queued_jobs` (default `0`, no ceiling) caps the `queued` jobs of
+all applications together. At or above it every submission (`POST /v1/jobs` and
+`POST /v1/extract`, multipart or JSON) answers `503 unavailable` with `Retry-After: 5` and
+charges no quota; the check comes before any part is kept, so a refused request costs a
+drained body and one count query per second per process, not a buffered document. A replay
+of an `Idempotency-Key` is refused the same way while the queue is full. Polls, deletes and
+`GET /v1/quota` are not affected. Each application's `rate.max_in_progress` (`429`) still
+applies below the ceiling; the global ceiling protects the workers and the database when many
+applications submit at once. Size it from what the workers can finish:
+`worker.size` × worker processes × (`limits.job_timeout` ÷ a typical job's duration) (a job's
+deadline counts from its creation, so a job queued longer than that fails with `timeout`
+anyway). Refusals show as `vde_http_requests_total{route="POST /v1/jobs",status="503"}`
+(and `POST /v1/extract`).
+
+**Uploads are buffered, by design.** A submission is read whole before it is answered, and its
+parts are held in memory while the media type, size and pages are checked, the image policy
+converts images, and a PDF is opened: these steps need the bytes, and the stored blob is the
+converted document, so streaming the document part to blob storage would need a second,
+file-backed path through `internal/document`. Memory in flight is bounded by the limits instead:
+
+| What | Bound per request or job |
+| --- | --- |
+| Multipart submission | at most `limits.request_bytes` (128 MiB) of parts |
+| JSON submission | about 2.75 × `limits.request_bytes`: the body, its base64 strings and the decoded bytes |
+| Image conversion at submit | one decoded image at a time, at most 120 megapixels (about 480 MB) |
+| PDF preparation | about 500 MB per `documents.pdf.workers` instance, shared by submissions and workers ([PDF](pdf.md#memory-and-cpu)) |
+| Running job | its document and pages (at most `limits.document_bytes` + `limits.pages` × `limits.page_bytes`), plus about 1.5 to 3 times that while a provider request is encoded |
+
+The worst case of the API side is the number of concurrent submissions times
+`limits.request_bytes` (16 at once with the defaults is 2 GiB of multipart parts). The service
+does not cap concurrent submissions itself: cap connections at the reverse proxy, and lower
+`limits.request_bytes` to what your callers really send (TravelInbox sends one document and
+up to 20 page images; below the contract minimum of 128 MiB is a warning, not an error).
+
+**`GOMEMLIMIT`.** Set it to about 80 % of the container's memory limit
+(`GOMEMLIMIT=1600MiB` for a 2 GiB container), so the Go collector works harder before the
+kernel kills the process; the rest covers stacks, the binary and memory outside the Go
+heap. It is a soft limit: it makes the collector run more often near the limit but never
+refuses an allocation, so the budget above still has to fit. What grows with concurrency:
+submissions in flight (above), `worker.size` running jobs, and pdfium instances, whose
+WebAssembly memory is Go heap and counts against `GOMEMLIMIT` (up to `documents.pdf.workers`
+× about 500 MB, capped at 1 GiB each). Size the container from the table above: the
+service itself, plus about 500 MB per pdfium instance, plus `worker.size` running jobs and
+the submissions you let in at once, each at its documents' size; then set `GOMEMLIMIT` to
+80 % of the result.
+
 ## Health: `/healthz`
 
 `GET /healthz` is unauthenticated and not rate limited. It answers `200 {"status":"ok"}`, or

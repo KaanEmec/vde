@@ -1320,3 +1320,145 @@ func TestSubmitPDFEngineBusy(t *testing.T) {
 		t.Errorf("jobs stored: %d, %v", len(jobs), err)
 	}
 }
+
+// TestSubmitQueueFull: at limits.max_queued_jobs queued jobs every submission route
+// answers 503 unavailable with Retry-After, before any part is read (a malformed body
+// gets the 503 too), stores nothing and charges no quota; polls are unaffected.
+func TestSubmitQueueFull(t *testing.T) {
+	t.Parallel()
+	const ceiling = 2
+	tests := []struct {
+		name string
+		send func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder
+	}{
+		{"multipart POST /v1/jobs", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submit(t, validParts(), nil)
+		}},
+		{"JSON POST /v1/jobs", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submitJSON(t, "/v1/jobs", jsonFrom(validParts()), nil)
+		}},
+		{"multipart POST /v1/extract", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.extract(t, validParts(), nil)
+		}},
+		{"JSON POST /v1/extract", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submitJSON(t, "/v1/extract", jsonFrom(validParts()), nil)
+		}},
+		{"malformed multipart", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submit(t, withPart(validParts(), mpart{name: "unknown", data: []byte(submitDocText)}), nil)
+		}},
+		{"replayed Idempotency-Key", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submit(t, validParts(), idempotencyKey("first"))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rg := newSubmitRig(t, submitRigOptions{cfg: func(c *config.Config) { c.Limits.MaxQueuedJobs = ceiling }})
+			var ids []string
+			for i := range ceiling {
+				var mod func(*http.Request)
+				if i == 0 {
+					mod = idempotencyKey("first")
+				}
+				ids = append(ids, decodeJob(t, rg.submit(t, validParts(), mod))["id"].(string))
+			}
+			w := tt.send(t, rg)
+			if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "5" {
+				t.Errorf("status %d, Retry-After %q; want 503, 5", w.Code, w.Header().Get("Retry-After"))
+			}
+			var body errorBody
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Error.Code != codeUnavailable ||
+				body.Error.Message != msgQueueFull || body.Error.RequestID == "" {
+				t.Errorf("body %s (%v); want the contract §9 error with code unavailable", w.Body, err)
+			}
+			if strings.Contains(w.Body.String(), submitSentinel) {
+				t.Errorf("content in the error body: %s", w.Body)
+			}
+			if n, err := rg.db.CountQueued(t.Context()); err != nil || n != ceiling {
+				t.Errorf("queued jobs = %d, %v; want %d", n, err, ceiling)
+			}
+			if got := rg.quotaUsed(t); got != ceiling {
+				t.Errorf("quota used = %d, want %d (a refused submission is not charged)", got, ceiling)
+			}
+			if got := rg.blobJobs(t); got != ceiling {
+				t.Errorf("blob job directories = %d, want %d", got, ceiling)
+			}
+			for _, id := range ids {
+				if w := rg.get("/v1/jobs/" + id); w.Code != http.StatusOK {
+					t.Errorf("poll of %s while full: %d %s, want 200", id, w.Code, w.Body)
+				}
+			}
+		})
+	}
+}
+
+// TestSubmitQueueCeilingCountsTheStore: the ceiling counts jobs queued by any process
+// (rows in the store), and submissions are accepted again once the queue drains and the
+// cached count expires; without a ceiling the queue is not counted.
+func TestSubmitQueueCeilingCountsTheStore(t *testing.T) {
+	t.Parallel()
+	queueOne := func(t *testing.T, rg *submitRig) {
+		t.Helper()
+		j := &job.Job{ID: job.NewID(), ApplicationID: testApp, ServiceVersion: testServiceVersion, Representation: "text",
+			MediaType: "text/plain", Retention: job.RetentionDefault, CreatedAt: time.Now()}
+		if err := rg.db.CreateJob(t.Context(), j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("another process filled the queue", func(t *testing.T) {
+		t.Parallel()
+		rg := newSubmitRig(t, submitRigOptions{cfg: func(c *config.Config) { c.Limits.MaxQueuedJobs = 1 }})
+		queueOne(t, rg)
+		if w := rg.submit(t, validParts(), nil); w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status %d, want 503: %s", w.Code, w.Body)
+		}
+		now := time.Now()
+		if _, err := rg.db.LeaseNextQueued(t.Context(), "w", now, now.Add(time.Minute), nil); err != nil {
+			t.Fatal(err)
+		}
+		rg.s.queued.mu.Lock()
+		rg.s.queued.at = time.Time{} // the TTL passed
+		rg.s.queued.mu.Unlock()
+		decodeJob(t, rg.submit(t, validParts(), nil))
+	})
+	t.Run("no ceiling", func(t *testing.T) {
+		t.Parallel()
+		var counted atomic.Int32
+		rg := newSubmitRig(t, submitRigOptions{wrapStore: func(s job.Store) job.Store { return &countingQueued{s, &counted} }})
+		queueOne(t, rg)
+		decodeJob(t, rg.submit(t, validParts(), nil))
+		if n := counted.Load(); n != 0 {
+			t.Errorf("CountQueued called %d times without limits.max_queued_jobs", n)
+		}
+	})
+	t.Run("count fails", func(t *testing.T) {
+		t.Parallel()
+		rg := newSubmitRig(t, submitRigOptions{
+			cfg:       func(c *config.Config) { c.Limits.MaxQueuedJobs = 1 },
+			wrapStore: func(s job.Store) job.Store { return failingQueued{s} },
+		})
+		w := rg.submit(t, validParts(), nil)
+		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), msgStorageFailed) {
+			t.Errorf("status %d: %s; want 503 with the storage message", w.Code, w.Body)
+		}
+		if got := rg.blobJobs(t); got != 0 {
+			t.Errorf("blob job directories = %d, want 0", got)
+		}
+	})
+}
+
+type countingQueued struct {
+	job.Store
+	n *atomic.Int32
+}
+
+func (s *countingQueued) CountQueued(ctx context.Context) (int, error) {
+	s.n.Add(1)
+	return s.Store.CountQueued(ctx)
+}
+
+type failingQueued struct{ job.Store }
+
+func (failingQueued) CountQueued(context.Context) (int, error) {
+	return 0, errors.New("database is locked")
+}

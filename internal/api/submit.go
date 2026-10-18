@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -36,6 +38,12 @@ const (
 	// pdfBusyRetryAfter is the Retry-After of a submission refused because every PDF
 	// engine instance stayed busy (503 unavailable).
 	pdfBusyRetryAfter = 5 * time.Second
+	// queueFullRetryAfter is the Retry-After of a submission refused because
+	// limits.max_queued_jobs jobs are queued (503 unavailable).
+	queueFullRetryAfter = 5 * time.Second
+	// queuedCountTTL is how long a count of the queued jobs is reused, so a flood of
+	// submissions costs one count query per second and process.
+	queuedCountTTL = time.Second
 )
 
 const (
@@ -89,6 +97,7 @@ const (
 	msgStorageFailed          = "The job could not be stored; submit it again."
 	msgSubmitConfigIncomplete = "The service's document configuration is not usable."
 	msgPDFBusy                = "The service is busy preparing other PDFs; submit again later."
+	msgQueueFull              = "The service's job queue is full; submit again later."
 )
 
 // part is one read part: its declared Content-Type, filename (informational only), bytes
@@ -125,7 +134,8 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 
 // createJob is the submission path POST /v1/jobs and POST /v1/extract share. It reads
 // the whole request under the limits, multipart or JSON (submit_json.go), then refuses
-// or accepts in this order: parts and limits, media type, schema, representation,
+// or accepts in this order: the global queue ceiling (limits.max_queued_jobs, checked
+// before any part is kept), parts and limits, media type, schema, representation,
 // idempotency, rate limits, quota. Nothing is stored before every check passed. No
 // content is ever logged or quoted in an error. done is true when it has answered: a
 // refusal, or the replay of an Idempotency-Key; otherwise the job is stored and the
@@ -149,6 +159,22 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	refuse := func(e apiError) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		writeError(w, r, e)
+	}
+
+	// The global queue ceiling comes first, before any part is buffered: a saturated
+	// service drains the body without keeping it and answers at once.
+	if limit := cfg.Limits.MaxQueuedJobs; limit > 0 {
+		full, err := s.queued.atLeast(ctx, s.deps.Store, limit)
+		if err != nil {
+			s.log.LogAttrs(ctx, slog.LevelError, "queued jobs not counted",
+				slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
+			refuse(newError(codeUnavailable, msgStorageFailed))
+			return nil, true
+		}
+		if full {
+			refuse(newError(codeUnavailable, msgQueueFull).withRetryAfter(queueFullRetryAfter))
+			return nil, true
+		}
 	}
 
 	key := r.Header.Get(headerIdempotencyKey)
@@ -245,6 +271,9 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
 		return nil, true
 	}
+	if cfg.Limits.MaxQueuedJobs > 0 {
+		s.queued.add()
+	}
 	w.Header().Set(headerServiceVersion, j.ServiceVersion) // the version of the job's policy
 	s.deps.Audit.JobCreated(ctx, *j)                       // nil-safe
 	s.refreshInProgress(ctx, app.ID)
@@ -252,6 +281,38 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		s.deps.Wake()
 	}
 	return j, false
+}
+
+// queuedCount is the number of queued jobs of all applications, read from the store at
+// most every queuedCountTTL and counted up by this process's own submissions in between.
+// Its zero value is ready. Under a flood the ceiling is soft by what other processes
+// accept within one TTL.
+type queuedCount struct {
+	mu sync.Mutex
+	n  int
+	at time.Time // when n was read; zero means never
+}
+
+// atLeast reports whether limit or more jobs are queued, counting again when the cached
+// count is older than queuedCountTTL.
+func (q *queuedCount) atLeast(ctx context.Context, store job.Store, limit int) (bool, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.at.IsZero() || time.Since(q.at) >= queuedCountTTL {
+		n, err := store.CountQueued(ctx)
+		if err != nil {
+			return false, err
+		}
+		q.n, q.at = n, time.Now()
+	}
+	return q.n >= limit, nil
+}
+
+// add counts one job this process queued since the last read.
+func (q *queuedCount) add() {
+	q.mu.Lock()
+	q.n++
+	q.mu.Unlock()
 }
 
 // readSubmission streams the multipart body, enforcing the part rules and the per-part
@@ -622,7 +683,8 @@ func (s *server) admit(w http.ResponseWriter, r *http.Request, app job.Applicati
 	return true
 }
 
-// storeJob writes the document and page blobs, then the row. On any failure it removes
+// storeJob writes the document and page blobs, then the row. The blobs are read from the
+// bytes in place, without a copy. On any failure it removes
 // the blobs it wrote.
 func (s *server) storeJob(ctx context.Context, j *job.Job, doc *document.Document) (err error) {
 	defer func() {
@@ -633,11 +695,11 @@ func (s *server) storeJob(ctx context.Context, j *job.Job, doc *document.Documen
 			}
 		}
 	}()
-	if err := s.deps.Blobs.Put(ctx, j.ID, blob.Document, strings.NewReader(string(doc.Data))); err != nil {
+	if err := s.deps.Blobs.Put(ctx, j.ID, blob.Document, bytes.NewReader(doc.Data)); err != nil {
 		return err
 	}
 	for i, p := range doc.Pages {
-		if err := s.deps.Blobs.Put(ctx, j.ID, blob.Page(i+1), strings.NewReader(string(p.Data))); err != nil {
+		if err := s.deps.Blobs.Put(ctx, j.ID, blob.Page(i+1), bytes.NewReader(p.Data)); err != nil {
 			return err
 		}
 	}

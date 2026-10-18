@@ -133,6 +133,20 @@ func writableDir(dir string) error {
 	return nil
 }
 
+// Warm starts the pdfium pool now instead of at the first Open, so the module compile
+// (about 1 s cold, milliseconds with a warm compilation cache) happens at process start
+// and not inside a request. It is safe to call more than once.
+func (e *Engine) Warm(ctx context.Context) error {
+	done := make(chan error, 1)
+	go func() { _, err := e.start(); done <- err }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // CacheErr reports why a configured compilation cache is not used (the engine then
 // compiles the module, about 1 s, at every process start), or nil.
 func (e *Engine) CacheErr() error { return e.cacheErr }

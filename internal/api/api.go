@@ -82,6 +82,7 @@ type server struct {
 	limits *rateLimiter // in memory, one per handler (ADR 0003)
 	admin  bool         // the admin API's handler (admin.go)
 	fetch  *fetcher     // document urls of JSON submissions; nil unless documents.fetch.enabled
+	queued queuedCount  // limits.max_queued_jobs, cached count (submit.go)
 }
 
 // route is one registered pattern, in the Go 1.22 ServeMux syntax.

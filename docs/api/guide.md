@@ -438,10 +438,21 @@ small instructions; use `<file` for anything longer.) For the sample
 }
 ```
 
+## Stability
+
+What this guide describes is frozen for `/v1` from 1.0.0, except what the API document
+marks `x-stability: experimental`: the [completion webhook](#completion-webhooks) and the
+document by `url`. The [compatibility policy](../compatibility.md) has the details. In
+short, within `/v1` fields, statuses, error codes and headers are only ever added, so a
+client that ignores unknown fields and treats unknown statuses, codes and sources as this
+guide says keeps working. The grounding rules are not part of the promise: a change to
+them changes `service_version`.
+
 ## Other things worth knowing
 
 - `X-Service-Version` is on every `/v1/jobs` and `/v1/extract` response, errors included.
 - Responses are `Cache-Control: no-store`.
-- Clients ignore fields they do not know: changes within `/v1` are additive only.
+- Clients ignore fields they do not know: changes within `/v1` are additive only
+  ([compatibility policy](../compatibility.md)).
 - `GET /healthz` is unauthenticated and answers `200 {"status":"ok"}` when the service can
   accept jobs, or `503` with `reasons`.

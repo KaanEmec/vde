@@ -889,6 +889,15 @@ func (s *sqlStore) CountInProgress(ctx context.Context, applicationID string) (i
 	return n, nil
 }
 
+// CountQueued implements Store. COUNT over the jobs_queue index (status, created_at).
+func (s *sqlStore) CountQueued(ctx context.Context) (int, error) {
+	var n int
+	if err := s.queryRow(ctx, `SELECT COUNT(*) FROM jobs WHERE status = 'queued'`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("job: count queued: %w", err)
+	}
+	return n, nil
+}
+
 // OldestQueuedAt implements Store. MIN over the jobs_queue index (status, created_at).
 func (s *sqlStore) OldestQueuedAt(ctx context.Context) (time.Time, error) {
 	var oldest sql.NullInt64

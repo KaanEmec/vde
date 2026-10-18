@@ -246,6 +246,16 @@ func TestValidate(t *testing.T) {
 			wantMessage: "must not be negative",
 		},
 		{
+			name:        "max queued jobs negative",
+			edit:        func(c *Config) { c.Limits.MaxQueuedJobs = -1 },
+			wantKey:     "limits.max_queued_jobs",
+			wantMessage: "must not be negative",
+		},
+		{
+			name: "max queued jobs set",
+			edit: func(c *Config) { c.Limits.MaxQueuedJobs = 1000 },
+		},
+		{
 			name:        "document limit below contract",
 			edit:        func(c *Config) { c.Limits.DocumentBytes = 1 << 20 },
 			wantKey:     "limits.document_bytes",
@@ -956,5 +966,33 @@ func TestValidate_example(t *testing.T) {
 	t.Parallel()
 	if issues := loadExample(t).Validate(); len(issues) != 0 {
 		t.Errorf("example configuration: Validate() = %v, want no issues", issues)
+	}
+}
+
+// TestLimitsMaxQueuedJobs: limits.max_queued_jobs is read from YAML and defaults to 0,
+// no ceiling.
+func TestLimitsMaxQueuedJobs(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		yaml string
+		want int
+	}{
+		{name: "default", yaml: validYAML, want: 0},
+		{name: "set", yaml: validYAML + "limits: {max_queued_jobs: 500}\n", want: 500},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Parse([]byte(tt.yaml), env(map[string]string{"ANTHROPIC_API_KEY": testSecret}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.Limits.MaxQueuedJobs; got != tt.want {
+				t.Errorf("limits.max_queued_jobs = %d, want %d", got, tt.want)
+			}
+			if issues := cfg.Validate(); len(issues) != 0 {
+				t.Errorf("Validate() = %v, want no issues", issues)
+			}
+		})
 	}
 }

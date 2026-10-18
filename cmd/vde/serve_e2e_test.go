@@ -71,7 +71,7 @@ func TestServeEndToEnd(t *testing.T) {
 	}
 
 	var final map[string]json.RawMessage
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(e2eWait(10 * time.Second)); ; time.Sleep(20 * time.Millisecond) {
 		resp = call(t, http.MethodGet, base+"/v1/jobs/"+created.ID, token, nil, "")
 		body = resp.body
 		if resp.status != http.StatusOK {
@@ -313,7 +313,7 @@ func TestServeJudgePolicies(t *testing.T) {
 
 func waitHealthz(t *testing.T, base string) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(e2eWait(5 * time.Second)); ; time.Sleep(10 * time.Millisecond) {
 		resp, err := http.Get(base + "/healthz")
 		if err == nil {
 			resp.Body.Close()
@@ -357,7 +357,7 @@ func submitAndWait(t *testing.T, base, token, file, mediaType string) map[string
 	if err := json.Unmarshal([]byte(resp.body), &created); err != nil || created.ID == "" || resp.status >= 300 {
 		t.Fatalf("POST /v1/jobs %s = %d %s", file, resp.status, resp.body)
 	}
-	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(e2eWait(20 * time.Second)); ; time.Sleep(20 * time.Millisecond) {
 		r := call(t, http.MethodGet, base+"/v1/jobs/"+created.ID, token, nil, "")
 		var final map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(r.body), &final); err != nil || r.status != http.StatusOK {
@@ -370,4 +370,13 @@ func submitAndWait(t *testing.T, base, token, file, mediaType string) map[string
 			t.Fatalf("job still %s after 20 s", final["status"])
 		}
 	}
+}
+
+// e2eWait scales a wait for the race detector and shared CI runners: pdfium under -race
+// with coverage is many times slower than a plain build (ADR 0010 measurements).
+func e2eWait(d time.Duration) time.Duration {
+	if raceEnabled {
+		return d * 8
+	}
+	return d
 }

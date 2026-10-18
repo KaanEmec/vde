@@ -447,6 +447,9 @@ func (v *validator) limits(c *Config) {
 	if l.JudgeReparseTries < 0 {
 		v.errorf("limits.judge_reparse_tries", "must not be negative")
 	}
+	if l.MaxQueuedJobs < 0 {
+		v.errorf("limits.max_queued_jobs", "must not be negative (0 means no ceiling)")
+	}
 	for _, s := range []struct {
 		key        string
 		value, min int64
