@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 700" width="800" height="700" role="img" aria-labelledby="title desc">
+  <title id="title">Adding vde to your application</title>
+  <desc id="desc">Your app sends documents to your backend worker, which holds one vde token, submits jobs to a self-hosted vde and reads results by polling, webhook or the synchronous endpoint; vde calls only the model providers in its configuration. Five numbered steps explain the integration.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#8A8882" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, "Segoe UI", sans-serif; }
+      .bg { fill: #F7F7F5; stroke: #E2E1DC; }
+      .n { fill: #FFFFFF; stroke: #C4C2BC; }
+      .c { fill: #FAECE7; stroke: #C8826A; }
+      .f { fill: #E1F5EE; stroke: #5BA88E; }
+      .zone { fill: none; stroke: #A9A7A0; stroke-width: 1.2; stroke-dasharray: 6 4; }
+      .h1 { font-size: 18px; font-weight: 600; fill: #1F1E1C; }
+      .h { font-size: 13px; font-weight: 600; fill: #1F1E1C; dominant-baseline: central; }
+      .t { font-size: 14px; font-weight: 600; fill: #1F1E1C; text-anchor: middle; dominant-baseline: central; }
+      .s { font-size: 12px; fill: #5F5E5A; text-anchor: middle; dominant-baseline: central; }
+      .p { font-size: 12px; fill: #5F5E5A; dominant-baseline: central; }
+      .ct { fill: #712B13; } .cs { fill: #8F3C1E; }
+      .ft { fill: #085041; } .fs { fill: #0F6E56; }
+      .lbl { font-size: 11px; fill: #5F5E5A; dominant-baseline: central; }
+      .end { text-anchor: end; }
+      .a { fill: none; stroke: #8A8882; stroke-width: 1.5; }
+      .tok { fill: none; stroke: #8A8882; stroke-width: 1.5; stroke-dasharray: 4 3; }
+      .badge { fill: #3D3C38; }
+      .num { font-size: 11px; font-weight: 700; fill: #FFFFFF; text-anchor: middle; dominant-baseline: central; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0.5" y="0.5" width="799" height="699" rx="14"/>
+  <text class="h1" x="24" y="40">Adding vde to your application</text>
+  <rect class="c" x="24" y="56" width="14" height="14" rx="3"/>
+  <text class="lbl" x="46" y="63">your application</text>
+  <rect class="f" x="160" y="56" width="14" height="14" rx="3"/>
+  <text class="lbl" x="182" y="63">vde, self-hosted</text>
+  <rect class="n" x="290" y="56" width="14" height="14" rx="3"/>
+  <text class="lbl" x="312" y="63">outside your infrastructure</text>
+
+  <!-- Operator: configuration, tokens, evaluation -->
+  <rect class="n" x="404" y="80" width="208" height="44" rx="8"/>
+  <text class="t" x="508" y="96">Operator</text>
+  <text class="s" x="508" y="113">vde.yaml, vde token, vde eval</text>
+  <path class="a" d="M508 124V168" marker-end="url(#arrow)"/>
+  <circle class="badge" cx="526" cy="137" r="10"/>
+  <text class="num" x="526" y="137">1</text>
+  <path class="tok" d="M404 102H278V168" marker-end="url(#arrow)"/>
+  <text class="lbl" x="290" y="92">token, shown once</text>
+  <circle class="badge" cx="634" cy="102" r="10"/>
+  <text class="num" x="634" y="102">5</text>
+  <text class="lbl" x="652" y="102">measure: vde eval</text>
+
+  <!-- Your infrastructure -->
+  <rect class="zone" x="180" y="150" width="444" height="168" rx="12"/>
+  <text class="lbl end" x="612" y="306">your infrastructure</text>
+
+  <!-- Lane -->
+  <rect class="c" x="24" y="170" width="136" height="120" rx="8"/>
+  <text class="t ct" x="92" y="192">Your app</text>
+  <text class="s cs" x="92" y="214">web or mobile UI</text>
+  <text class="s cs" x="92" y="230">sends documents</text>
+  <text class="s cs" x="92" y="246">to your backend</text>
+  <text class="s cs" x="92" y="262">no vde token</text>
+  <path class="a" d="M160 230H190" marker-end="url(#arrow)"/>
+
+  <rect class="c" x="192" y="170" width="172" height="120" rx="8"/>
+  <text class="t ct" x="278" y="192">Your backend worker</text>
+  <text class="s cs" x="278" y="214">holds one vde token</text>
+  <text class="s cs" x="278" y="230">submits documents,</text>
+  <text class="s cs" x="278" y="246">polls or takes webhooks,</text>
+  <text class="s cs" x="278" y="262">stores the result</text>
+  <circle class="badge" cx="206" cy="304" r="10"/>
+  <text class="num" x="206" y="304">4</text>
+  <text class="lbl" x="222" y="304">act on the status</text>
+
+  <path class="a" d="M364 206H402" marker-end="url(#arrow)"/>
+  <circle class="badge" cx="383" cy="190" r="10"/>
+  <text class="num" x="383" y="190">2</text>
+  <path class="a" d="M404 256H366" marker-end="url(#arrow)"/>
+  <circle class="badge" cx="383" cy="272" r="10"/>
+  <text class="num" x="383" y="272">3</text>
+
+  <rect class="f" x="404" y="170" width="208" height="120" rx="8"/>
+  <text class="t ft" x="508" y="192">vde, self-hosted</text>
+  <text class="s fs" x="508" y="214">docker compose or one binary</text>
+  <text class="s fs" x="508" y="230">vde.yaml: endpoints, groups,</text>
+  <text class="s fs" x="508" y="246">roles, applications</text>
+  <text class="s fs" x="508" y="262">provider keys stay here</text>
+  <path class="a" d="M612 230H642" marker-end="url(#arrow)"/>
+
+  <rect class="n" x="644" y="170" width="132" height="120" rx="8"/>
+  <text class="t" x="710" y="192">Model providers</text>
+  <text class="s" x="710" y="214">Anthropic, Gemini,</text>
+  <text class="s" x="710" y="230">OpenAI-compatible,</text>
+  <text class="s" x="710" y="246">Bedrock, Vertex</text>
+  <text class="s" x="710" y="262">or a local model</text>
+
+  <!-- What stays on your side -->
+  <rect class="n" x="24" y="338" width="752" height="92" rx="8"/>
+  <text class="h" x="40" y="358">What stays on your side</text>
+  <text class="p" x="40" y="380">Provider keys stay in vde as environment variables; only your backend holds the vde token, never a browser or app.</text>
+  <text class="p" x="40" y="398">Only endpoints listed in vde.yaml receive documents; a request can name neither a model nor an endpoint.</text>
+  <text class="p" x="40" y="416">With retention: none the document is deleted when the job ends, and the result on the first terminal read.</text>
+
+  <!-- Steps -->
+  <circle class="badge" cx="36" cy="460" r="10"/>
+  <text class="num" x="36" y="460">1</text>
+  <text class="h" x="56" y="460">Create an application and a token</text>
+  <text class="p" x="56" y="478">Add it under applications: in vde.yaml, then run vde token create --app &lt;id&gt; --scope jobs --expires 90d</text>
+
+  <circle class="badge" cx="36" cy="510" r="10"/>
+  <text class="num" x="36" y="510">2</text>
+  <text class="h" x="56" y="510">Send the document</text>
+  <text class="p" x="56" y="528">POST /v1/jobs, multipart or JSON: document, instructions, optional schema, and an Idempotency-Key header</text>
+
+  <circle class="badge" cx="36" cy="560" r="10"/>
+  <text class="num" x="36" y="560">3</text>
+  <text class="h" x="56" y="560">Get the result</text>
+  <text class="p" x="56" y="578">Poll GET /v1/jobs/{id}, verify a signed job.finished webhook, or call POST /v1/extract for small documents</text>
+
+  <circle class="badge" cx="36" cy="610" r="10"/>
+  <text class="num" x="36" y="610">4</text>
+  <text class="h" x="56" y="610">Act on the status</text>
+  <text class="p" x="56" y="628">accepted (verification judge or grounded): use the result. rejected or extracted: review it with the feedback.</text>
+
+  <circle class="badge" cx="36" cy="660" r="10"/>
+  <text class="num" x="36" y="660">5</text>
+  <text class="h" x="56" y="660">Measure on your own documents</text>
+  <text class="p" x="56" y="678">vde eval --corpus &lt;dir&gt; --config vde.yaml --judge always|auto|never, before you change models or policy</text>
+</svg>
