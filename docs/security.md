@@ -122,7 +122,7 @@ and documents what must be set at account level: [provider adapters](providers/R
 | Content debug switch | `debug.log_content` (default `false`) | validation implemented; content sink planned | `vde config check` and `vde serve` refuse it unless `server.listen` is loopback. With it on, `vde serve` opens a separate `0600` file (`<data_dir>/content.log`) and warns, but no code writes content to it yet. Content never goes to the routine log. Unsafe: leave off. |
 | Audit events | `audit.log`, `audit.retention` (default 365 days) | implemented | Stored in the `audit_events` table: `config.loaded`, `token.created`, `token.revoked`, `app.enabled`, `app.disabled`, `auth.failed` (reason code, never the token), `job.created`, `job.finished`, `job.deleted`, `job.expired`, `webhook.delivered`, `webhook.failed`. `audit.log: true` also writes each service-recorded event as a log line. Read them with `vde audit list` or `GET /admin/v1/audit`. Events never contain content. |
 | Admin API | `admin.listen` (default `127.0.0.1:8091`; empty disables) | implemented | Separate listener, admin tokens only (`vde token create --admin`), never accepted on `/v1`. 60 requests per minute per admin token. Changes are audited under `admin:<token id>`; job listings carry metadata only. A non-loopback `admin.listen` is refused unless `server.tls` or `server.insecure_http` is set. `server.trusted_proxy` does not apply to it: do not put it behind the public proxy. |
-| `/healthz` | none | implemented | Unauthenticated; returns `ok` or `503` with reason codes (`role_extractor_down`, `role_judge_down`), nothing about documents or configuration. |
+| `/healthz` | none | implemented | Unauthenticated; returns `ok` or `503` with reason codes (`role_extractor_down`, `role_judge_down`), nothing about documents or configuration. Its database query runs at most 10 times at once and 5 times per second for the process; requests over that rate get the last result, never a `429` (see "Hardening review (v1.0)"). |
 | `/metrics` | `metrics.token_env`, `metrics.listen`, `metrics.go_runtime` | implemented | With `token_env` it needs that bearer token (compared in constant time; `vde serve` refuses an unset variable). With `listen` it moves to its own listener and answers `404` on `server.listen`. With neither, only loopback peers without a proxy forwarding header are served. A non-loopback `metrics.listen` without a token is a warning. Do not expose it publicly. |
 | Secure delete | none (always on) | implemented | The database sets SQLite `secure_delete`, so deleted content is overwritten in the file, and checkpoints the write-ahead log (`wal_checkpoint(TRUNCATE)`, best effort) after each content deletion, so the content is not left in `vde.db-wal` either. Not guaranteed: blocks the OS freed (the truncated WAL, unlinked blob files) are not wiped; use host disk encryption (see "What a leaked database file reveals"). |
 | Document URL fetch (SSRF) | `documents.fetch.*` (default off) | implemented (v0.3) | JSON submissions may name a document `url` only when enabled: `https` only, exact host allow-list, redirects only to the same host (at most 3), every connection's resolved address checked at dial time (loopback, private, link-local, unspecified, multicast, shared, NAT64 refused, so DNS rebinding gains nothing), no environment proxy, size cap at `limits.document_bytes`, whole-fetch timeout. Residual risk: an allowed host that serves attacker-chosen content or open redirects within itself. |
@@ -197,7 +197,68 @@ Complete every item; the service does not check them for you.
 13. **Process.** Run as an unprivileged user (the image does), keep the binary and base
     image up to date, and subscribe to [security advisories](https://github.com/kaanemec/vde/security/advisories).
 
+## Hardening review (v1.0)
+
+Internal review of 2026-10-18 against the code at that date (job
+[v1.0 02-01](roadmap/v1.0-stable/02-security-review/01-hardening-pass.md)), area by area,
+with the fix or the reason no change is needed. Severity: High (an unauthenticated or
+token holder can exhaust or crash the service), Medium (resource exhaustion or a crash
+needing a token and a crafted input), Low (defense in depth), None (checked, no change).
+Every measurement is from a local run on an Apple M-series laptop.
+
+| Area | Severity | Finding | Fix or verdict |
+| --- | --- | --- | --- |
+| JSON Schema: nesting | High | `CompileSchema` has no context and its cost grows faster than linearly with depth: a schema nested 9000 levels (within the 256 KiB part limit) took 152 s of CPU in the submit handler. | Fixed: schemas nested deeper than 64 levels are `422 invalid_schema` before compiling (`internal/extract/schema_limits.go` `maxSchemaDepth`, `schema.go` `CompileSchema`). The largest corpus schema is 9 deep. The worst schema within the bounds compiles in about 1.3 s. |
+| JSON Schema: shared references | High | Validation has no memoization: n definitions that each apply the next one twice (`allOf` of two `$ref`s) cost 2^n evaluations. 22 levels (1.4 KB) took 2 s per validation; 40 would pin a worker forever. | Fixed: the compiled schema is walked with every reference expanded; more than 10,000 evaluations is `422 invalid_schema` (`maxSchemaExpansion`). A recursive schema (a reference cycle) is counted again per candidate, unrolled to the candidate's depth, and a candidate over the bound gets schema feedback instead of validation. The TravelInbox schema expands to 252. |
+| JSON Schema: number literals | Medium | The validator compares numbers as exact rationals: `{"multipleOf": 1e-9999999}` panicked the library at compile time (a `500`), a candidate `1e9999999` panicked validation (the job failed `internal`), and `1e999999` cost 10 to 60 ms per comparison. | Fixed: number literals with more than 1000 digits or an exponent beyond ±1000 make a schema invalid and a candidate get schema feedback; `CompileSchema` and `Validate` also recover a library panic as an invalid schema or feedback. |
+| JSON Schema: regular expressions | None | `pattern` and `patternProperties` use Go's `regexp` (RE2): matching is linear in the input, and repeat counts over 1000 are refused when the schema compiles. | No change. |
+| Image decode | Medium | Image conversion decodes at submit and in the worker. The pixel cap (120 MP) is checked from the header before decoding (`internal/document/convert.go`, `inspectImage`), but one decode at the cap holds about 1.2 GB (source, RGBA copy, rotated copy) and the number of decodes in flight followed the number of requests. | Fixed: at most 2 decodes run at once per process (`maxConcurrentDecodes`); a conversion waits for a slot. Only JPEG, PNG and WebP decoders are registered. |
+| Multipart parsing | None | Body capped at `limits.request_bytes` before parsing (`http.MaxBytesReader`), each part read through its own limit, page count capped, unknown, repeated and non-`form-data` parts refused, required media types checked. A nested `multipart/*` body is only bytes of its part, and no document media type accepts it. Part headers are never reflected: errors name only the fixed part names, the filename is informational, and the media type is replaced by its canonical form. | No change. `FuzzReadSubmission` covers the reader. |
+| SSRF (document URL fetch) | Low | `https` only, exact host allow-list, same-host redirects (at most 3), no environment proxy, size cap on the decoded body, whole-fetch timeout, and every dialled address checked after resolution (so DNS rebinding gains nothing). Missing from the non-public ranges: `0.0.0.0/8` (some stacks route it to the host), `240.0.0.0/4`, and the IPv6 forms that embed an IPv4 address (`::/96`, 6to4 `2002::/16`, Teredo `2001::/32`). | Fixed: the ranges are refused (`internal/api/fetch.go` `nonPublic`). Webhook URLs come from the configuration only. |
+| Token comparison | None | The 8-character token id (not secret) selects the row; the secret's SHA-256 is compared with `subtle.ConstantTimeCompare` (`internal/auth/token.go` `Verify`). An unknown id skips one hash, a difference of microseconds, and every refusal is the same `401`: timing can at most confirm that an id exists, which grants nothing. The metrics token comparison is constant time except for its length. | No change. |
+| SQL | None | Every statement in `internal/job` is a constant with placeholders; the only concatenations are constant column lists, the lease statement's constant fragments and an integer lock id. `rebind` rewrites placeholders only. | No change. |
+| Blob names | Low | Job ids match `^[A-Za-z0-9_-]{3,64}$` and names an allow-list in both stores, so no path or key can leave the job's directory. The allow-list (`page-NN`) refused page 100 and above, which `limits.pages` allows: such a submission failed with `503` after its quota was charged. | Fixed: page names have two or three digits (`internal/blob/blob.go`). |
+| HTTP limits | None | `ReadHeaderTimeout` 10 s, `ReadTimeout` 60 s, `WriteTimeout` 90 s (the sync endpoint moves its own deadline), `IdleTimeout` 120 s, `MaxHeaderBytes` 64 KiB, TLS 1.2 or newer, on the API, admin and metrics listeners (`cmd/vde/serve.go` `newHTTPServer`). The number of connections is not limited. | No change; limit connections at the proxy. |
+| Concurrent uploads | Low | A token holder can have many large submissions in flight at once; each is read into memory (up to `limits.request_bytes`, default 128 MiB) before the job limits apply. Bounded by `rate.requests_per_minute` and the 60 s read timeout. | Accepted: lower `limits.request_bytes` to what the consumer sends, and limit connections at the proxy. |
+| Webhook signing | None | HMAC-SHA256 over `"<t>.<body>"` with a secret from the environment, `hmac.Equal` and a timestamp window in `Verify`, redirects not followed, 10 s per attempt, response drained up to 64 KiB, metadata-only payload. | No change. A secret shorter than 16 bytes is a configuration warning. |
+| `/healthz` | Low | Unauthenticated, and every request ran a database query. | Fixed: a global token bucket on the database check (5 per second, burst 10, no per-IP state); over the rate the last result is reused (`internal/api/health.go` `dbCheck`). A `429` or `503` was rejected because it would let anyone make orchestrator probes fail and restart healthy replicas. Volumetric floods still belong to the network: keep `/healthz` reachable only from the orchestrator and the load balancer where you can. |
+| Go toolchain | High (release builds) | `govulncheck ./...` with go1.27.1 reports 9 reachable standard-library vulnerabilities (HTTP/2 server crash GO-2026-6617 and memory exhaustion GO-2026-6603, multipart header limit bypass GO-2026-6608, among others), fixed in go1.27.2 and go1.26.9. The release workflow builds with the `go.mod` version, 1.26.0. | Open: build releases with go1.26.9 / go1.27.2 or newer; rebuild the image (its `golang:1.27` base resolves at build time). |
+
+### Dependency audit
+
+`govulncheck ./...` (2026-10-18): no vulnerability in a third-party module; the standard
+library findings are those of the toolchain row above. Licences of the direct
+dependencies, all permissive: Apache-2.0 for `aws-sdk-go-v2` (with `config`,
+`bedrockruntime`, `s3`), `smithy-go`, `oklog/ulid`, `prometheus/client_golang`,
+`santhosh-tekuri/jsonschema` and `tetratelabs/wazero`; MIT for `jackc/pgx` and
+`klippa-app/go-pdfium`; BSD-3-Clause for `golang.org/x/image`, `x/net`, `x/oauth2`,
+`x/text` and `modernc.org/sqlite`; MIT and Apache-2.0 for `gopkg.in/yaml.v3`.
+
+Image (`Dockerfile`): `gcr.io/distroless/static:nonroot` with no shell or package manager,
+user 65532, one static binary built with `CGO_ENABLED=0 -trimpath`, the licences in
+`/usr/share/doc/vde/`. Both base images are referenced by tag (`golang:1.27`,
+`distroless/static:nonroot`), not by digest, so a rebuild picks up their fixes; rebuild
+on every Go security release.
+
+### Fuzzing
+
+| Fuzzer | Package | Target |
+| --- | --- | --- |
+| `FuzzReadSubmission` | `internal/api` | The multipart reader of `POST /v1/jobs`: refusals are `400` or `413`, accepted parts are within their limits |
+| `FuzzParseJSON` | `internal/extract` | The answer parser |
+| `FuzzParseVerdict` | `internal/extract` | The verdict parser: pointers, message cap, confidence range |
+| `FuzzNew` | `internal/document` | Document validation, email parsing, both HTML policies |
+| `FuzzHTMLText` | `internal/document` | HTML to text: `raw_html` never grows, `visible_text` stays within its cap and valid UTF-8 |
+| `FuzzNormalize` | `internal/ground` | Grounding normalization |
+| `FuzzOpen` | `internal/pdf` | The pdfium entry |
+
+Run one with `go test -run='^$' -fuzz='^FuzzReadSubmission$' -fuzztime=30s ./internal/api`
+(Go runs one fuzz target per invocation). The CI `fuzz` job runs each for 20 s; a failing
+input is uploaded as an artifact and belongs in the package's `testdata/fuzz/` as a
+regression seed. Each ran clean locally for 30 s (the three new ones) or 20 s.
+
 ## Not yet reviewed
 
-This page has been written by the project's developers. The review by a second person
-and the external security review (v1.0) have not happened.
+This page has been written by the project's developers. The internal hardening review is
+above; the review by a second person and the external security review (v1.0) have not
+happened.
