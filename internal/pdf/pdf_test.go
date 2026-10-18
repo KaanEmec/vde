@@ -412,7 +412,7 @@ func FuzzOpen(f *testing.F) {
 	f.Add(pdftest.Build(pdftest.Pages(2, 50)...))
 	f.Add(pdftest.Encrypted(pdftest.TextPage("x")))
 	f.Add([]byte("%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF"))
-	e := newEngine(f, Config{MaxPages: 5, MaxBytes: 1 << 20, Timeout: 10 * time.Second})
+	e := newEngine(f, Config{MaxPages: 5, MaxBytes: 1 << 20, Timeout: 2 * time.Second}) // under the fuzz coordinator's 10 s hang limit
 	f.Fuzz(func(t *testing.T, data []byte) {
 		d, err := e.Open(context.Background(), data)
 		if err != nil {
