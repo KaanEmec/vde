@@ -789,7 +789,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     ServiceUnavailable:
-      description: "`unavailable`: the service is saturated (`limits.max_queued_jobs` jobs queued, or every PDF engine busy) or its storage failed. A saturated service stores and charges nothing and sends `Retry-After`; submit again after it. Polls are not affected."
+      description: "`unavailable`: the service is saturated (`limits.max_queued_jobs` jobs queued, `limits.max_submits_in_flight` submissions being read, or every PDF engine busy) or its storage failed. A saturated service stores and charges nothing and sends `Retry-After`; submit again after it. Polls are not affected."
       headers:
         Retry-After: { $ref: "#/components/headers/Retry-After" }
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }

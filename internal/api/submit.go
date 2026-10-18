@@ -44,6 +44,11 @@ const (
 	// queuedCountTTL is how long a count of the queued jobs is reused, so a flood of
 	// submissions costs one count query per second and process.
 	queuedCountTTL = time.Second
+	// defaultSubmitsInFlight is limits.max_submits_in_flight when unset, and
+	// submitsBusyRetryAfter the Retry-After of a submission refused over it (503
+	// unavailable): a slot frees when another submission has been read and stored.
+	defaultSubmitsInFlight = 16
+	submitsBusyRetryAfter  = 5 * time.Second
 )
 
 const (
@@ -98,6 +103,7 @@ const (
 	msgSubmitConfigIncomplete = "The service's document configuration is not usable."
 	msgPDFBusy                = "The service is busy preparing other PDFs; submit again later."
 	msgQueueFull              = "The service's job queue is full; submit again later."
+	msgSubmitsBusy            = "The service is busy reading other submissions; submit again later."
 )
 
 // part is one read part: its declared Content-Type, filename (informational only), bytes
@@ -111,7 +117,10 @@ type part struct {
 
 // submission is the parts of one POST /v1/jobs request; nil means the part was absent.
 type submission struct {
+	// document holds only the media type and filename while documentURL is set: a JSON
+	// submission's url is fetched (fetchPending) after the submission limits.
 	document              *part
+	documentURL           string
 	pages                 []part
 	extractorInstructions *part
 	judgeInstructions     *part
@@ -132,14 +141,19 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, jobToResponse(j))
 }
 
-// createJob is the submission path POST /v1/jobs and POST /v1/extract share. It reads
-// the whole request under the limits, multipart or JSON (submit_json.go), then refuses
-// or accepts in this order: the global queue ceiling (limits.max_queued_jobs, checked
-// before any part is kept), parts and limits, media type, schema, representation,
-// idempotency, rate limits, quota. Nothing is stored before every check passed. No
-// content is ever logged or quoted in an error. done is true when it has answered: a
-// refusal, or the replay of an Idempotency-Key; otherwise the job is stored and the
-// pool woken, and the caller answers.
+// createJob is the submission path POST /v1/jobs and POST /v1/extract share. It refuses
+// or accepts in this order: submissions in flight in this process
+// (limits.max_submits_in_flight) and the global queue ceiling (limits.max_queued_jobs),
+// both before any part is kept; then it reads the whole request under the limits,
+// multipart or JSON (submit_json.go), with the part rules and options; the replay of a
+// used Idempotency-Key; the submissions per minute and jobs in progress; only then the
+// work that costs more than reading: the document url fetch, the document checks and
+// image conversion, the schema compilation and the representation (the PDF engine);
+// last the quota. The body itself is read before the limits because multipart parts
+// arrive in the caller's order and the idempotency hash covers them all. Nothing is
+// stored before every check passed. No content is ever logged or quoted in an error.
+// done is true when it has answered: a refusal, or the replay of an Idempotency-Key;
+// otherwise the job is stored and the pool woken, and the caller answers.
 func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, done bool) {
 	ctx := r.Context()
 	app, _ := ApplicationFrom(ctx)
@@ -161,8 +175,16 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		writeError(w, r, e)
 	}
 
-	// The global queue ceiling comes first, before any part is buffered: a saturated
-	// service drains the body without keeping it and answers at once.
+	// The process's submissions in flight and the global queue ceiling come first, before
+	// any part is buffered: a saturated service drains the body without keeping it and
+	// answers at once.
+	select {
+	case s.submits <- struct{}{}:
+		defer func() { <-s.submits }()
+	default:
+		refuse(newError(codeUnavailable, msgSubmitsBusy).withRetryAfter(submitsBusyRetryAfter))
+		return nil, true
+	}
 	if limit := cfg.Limits.MaxQueuedJobs; limit > 0 {
 		full, err := s.queued.atLeast(ctx, s.deps.Store, limit)
 		if err != nil {
@@ -205,6 +227,31 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		return nil, true
 	}
 
+	if key != "" {
+		unlock := s.limits.lockKey(app.ID, key)
+		defer unlock()
+		existing, found := s.findIdempotent(w, r, app, key)
+		if existing == nil {
+			return nil, true // the lookup failed and was answered
+		}
+		if found {
+			// The replay needs the body hash only: the job was checked when it was created.
+			if e, ok := s.fetchPending(r, sub, cfg.Limits); !ok {
+				refuse(e)
+				return nil, true
+			}
+			s.answerReplay(w, r, *existing, sub.hash())
+			return nil, true
+		}
+	}
+	if !s.limitSubmit(w, r, app) {
+		return nil, true
+	}
+	if e, ok := s.fetchPending(r, sub, cfg.Limits); !ok {
+		refuse(e)
+		return nil, true
+	}
+
 	pages := make([]document.Page, len(sub.pages))
 	for i, p := range sub.pages {
 		pages[i] = document.Page{MediaType: p.mediaType, Data: p.data}
@@ -231,14 +278,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	}
 
 	bodyHash := sub.hash()
-	if key != "" {
-		unlock := s.limits.lockKey(app.ID, key)
-		defer unlock()
-		if s.replay(w, r, app, key, bodyHash) {
-			return nil, true
-		}
-	}
-	if !s.admit(w, r, app) {
+	if !s.chargeSubmit(w, r, app) {
 		return nil, true
 	}
 
@@ -614,34 +654,66 @@ func (s *server) refuseDocument(w http.ResponseWriter, r *http.Request, err erro
 	writeError(w, r, e)
 }
 
-// replay answers a submission whose Idempotency-Key the application used before: 202
-// with the existing job as it is now (in its content-deleted form, replayResponse, once
-// its content is gone) and Idempotency-Replayed: true when the body hash matches, 422 idempotency_mismatch when it does not. It reports false, having written
-// nothing, when the key is unused. A replay charges no quota and runs nothing.
+// replay answers a submission whose Idempotency-Key the application used before
+// (answerReplay) and reports true; it reports false, having written nothing, when the
+// key is unused.
 func (s *server) replay(w http.ResponseWriter, r *http.Request, app job.Application, key, bodyHash string) bool {
+	existing, found := s.findIdempotent(w, r, app, key)
+	if found {
+		s.answerReplay(w, r, *existing, bodyHash)
+	}
+	return existing == nil || found
+}
+
+// findIdempotent looks up the application's job with the Idempotency-Key. It returns the
+// job and true when there is one, a non-nil empty job and false when the key is unused,
+// and nil after answering 503 when the store fails.
+func (s *server) findIdempotent(w http.ResponseWriter, r *http.Request, app job.Application, key string) (*job.Job, bool) {
 	ctx := r.Context()
 	existing, err := s.deps.Store.FindByIdempotencyKey(ctx, app.ID, key)
 	switch {
 	case errors.Is(err, job.ErrNotFound):
-		return false
+		return &job.Job{}, false
 	case err != nil:
 		s.log.LogAttrs(ctx, slog.LevelError, "idempotency lookup failed",
 			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
 		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
-	case existing.BodyHash != bodyHash:
-		writeError(w, r, newError(codeIdempotencyMismatch, msgIdempotencyMismatch))
-	default:
-		w.Header().Set(headerIdempotencyReplayed, "true")
-		w.Header().Set("Location", "/v1/jobs/"+existing.ID)
-		writeJSON(w, http.StatusAccepted, replayResponse(existing, s.now()))
+		return nil, false
 	}
-	return true
+	return &existing, true
 }
 
-// admit applies the submission limits, in order: submissions per minute, jobs in
-// progress, quota. It charges the quota and updates X-Quota-Remaining, or answers 429
-// (or 503 when the store fails) and reports false.
-func (s *server) admit(w http.ResponseWriter, r *http.Request, app job.Application) bool {
+// answerReplay answers the replay of an existing job: 202 with the job as it is now (in
+// its content-deleted form, replayResponse, once its content is gone) and
+// Idempotency-Replayed: true when the body hash matches, 422 idempotency_mismatch when it
+// does not. A terminal retention: none job whose content is still there is read for the
+// first time here, so its content is deleted as by GET /v1/jobs/{id} before the body
+// read from the row is sent. A replay charges no quota and runs nothing.
+func (s *server) answerReplay(w http.ResponseWriter, r *http.Request, existing job.Job, bodyHash string) {
+	if existing.BodyHash != bodyHash {
+		writeError(w, r, newError(codeIdempotencyMismatch, msgIdempotencyMismatch))
+		return
+	}
+	now := s.now()
+	if existing.Retention == job.RetentionNone && existing.Status.Terminal() &&
+		existing.ContentDeletedAt.IsZero() && now.Before(existing.ExpiresAt) {
+		switch err := s.clearFirstRead(r, existing); {
+		case errors.Is(err, job.ErrNotFound): // another read was first: the content is gone
+			existing.ContentDeletedAt = now
+		case err != nil:
+			s.jobError(w, r, existing, "job content not deleted", err)
+			return
+		}
+	}
+	w.Header().Set(headerIdempotencyReplayed, "true")
+	w.Header().Set("Location", "/v1/jobs/"+existing.ID)
+	writeJSON(w, http.StatusAccepted, replayResponse(existing, now))
+}
+
+// limitSubmit applies the submission limits that cost no work on the document, in
+// order: submissions per minute, jobs in progress. It answers 429 (or 503 when the store
+// fails) and reports false when one refuses.
+func (s *server) limitSubmit(w http.ResponseWriter, r *http.Request, app job.Application) bool {
 	ctx := r.Context()
 	now := s.now()
 	if wait, ok := s.takeRate(ctx, app.ID, bucketSubmits, app.SubmitsPerMinute, now); !ok {
@@ -664,6 +736,20 @@ func (s *server) admit(w http.ResponseWriter, r *http.Request, app job.Applicati
 				withRetryAfter(inProgressRetryAfter))
 			return false
 		}
+	}
+	return true
+}
+
+// chargeSubmit charges the quota and updates X-Quota-Remaining, or answers 429 (or 503
+// when the store fails) and reports false.
+func (s *server) chargeSubmit(w http.ResponseWriter, r *http.Request, app job.Application) bool {
+	ctx := r.Context()
+	now := s.now()
+	storeFailed := func(what string, err error) bool {
+		s.log.LogAttrs(ctx, slog.LevelError, what,
+			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
+		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
+		return false
 	}
 	q, err := s.currentQuota(ctx, app)
 	if err != nil {

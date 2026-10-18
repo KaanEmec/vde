@@ -119,7 +119,11 @@ func runServe(args []string, _, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := serveAs(ctx, *role, cfg, ln, adminLn, newLogger(stderr, cfg.Logging), newProvider); err != nil {
+	// The redacting logger is also the process default, so nothing that logs through
+	// package-level slog (the job store's WAL checkpoint) or the log package bypasses it.
+	logger := newLogger(stderr, cfg.Logging)
+	slog.SetDefault(logger)
+	if err := serveAs(ctx, *role, cfg, ln, adminLn, logger, newProvider); err != nil {
 		fmt.Fprintf(stderr, "vde serve: %v\n", err)
 		return exitFailure
 	}

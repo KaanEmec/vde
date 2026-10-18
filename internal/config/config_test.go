@@ -95,13 +95,14 @@ func TestParse_example(t *testing.T) {
 		t.Errorf("roles = %+v", cfg.Roles)
 	}
 	wantLimits := Limits{
-		MaxAttempts:       3,
-		JobTimeout:        5 * time.Minute,
-		JudgeReparseTries: 1,
-		DocumentBytes:     25 << 20,
-		PageBytes:         10 << 20,
-		Pages:             20,
-		RequestBytes:      128 << 20,
+		MaxAttempts:        3,
+		JobTimeout:         5 * time.Minute,
+		JudgeReparseTries:  1,
+		DocumentBytes:      25 << 20,
+		PageBytes:          10 << 20,
+		Pages:              20,
+		RequestBytes:       128 << 20,
+		MaxSubmitsInFlight: 16,
 	}
 	if cfg.Limits != wantLimits {
 		t.Errorf("limits = %+v, want %+v", cfg.Limits, wantLimits)

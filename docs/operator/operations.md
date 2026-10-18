@@ -80,11 +80,12 @@ file-backed path through `internal/document`. Memory in flight is bounded by the
 | PDF preparation | about 500 MB per `documents.pdf.workers` instance, shared by submissions and workers ([PDF](pdf.md#memory-and-cpu)) |
 | Running job | its document and pages (at most `limits.document_bytes` + `limits.pages` × `limits.page_bytes`), plus about 1.5 to 3 times that while a provider request is encoded |
 
-The worst case of the API side is the number of concurrent submissions times
-`limits.request_bytes` (16 at once with the defaults is 2 GiB of multipart parts). The service
-does not cap concurrent submissions itself: cap connections at the reverse proxy, and lower
-`limits.request_bytes` to what your callers really send (TravelInbox sends one document and
-up to 20 page images; below the contract minimum of 128 MiB is a warning, not an error).
+The worst case of the API side is `limits.max_submits_in_flight` (default `16`) times
+`limits.request_bytes` (2 GiB of multipart parts with the defaults, about 2.75 times that for
+JSON). One more submission answers `503 unavailable` with `Retry-After: 5` before any part is
+read and charges no quota. Lower both to what the container holds and what your callers
+really send (TravelInbox sends one document and up to 20 page images; `limits.request_bytes`
+below the contract minimum of 128 MiB is a warning, not an error).
 
 **`GOMEMLIMIT`.** Set it to about 80 % of the container's memory limit
 (`GOMEMLIMIT=1600MiB` for a 2 GiB container), so the Go collector works harder before the
@@ -147,6 +148,7 @@ never content.
 | `vde_jobs_in_progress` | gauge | `app` | Jobs queued or running. |
 | `vde_http_requests_total` | counter | `route`, `status` | Requests by route pattern and status. |
 | `vde_swept_jobs_total` | counter | | Jobs deleted by the sweeper. |
+| `vde_audit_auth_failed_dropped_total` | counter | | Refused authentications (`401`) with no `auth.failed` audit row: each listener writes at most 10 such rows per second (burst 30), so requests without a valid token cannot fill the database. A rising value means someone is probing the service. |
 | `vde_judge_decisions_total` | counter | `policy`, `decision` | Finished jobs by judge policy (`always`, `never`, `auto`) and how their last schema-valid candidate was decided: `judged`, `grounded` (`auto`, accepted on the grounding check without a judge), `sampled` (`auto`, judged although grounded) or `skipped` (`never`). Jobs with no schema-valid candidate are not counted. |
 | `vde_grounding_disagreements_total` | counter | | Sampled judge calls under `auto` that rejected a candidate the grounding check alone would have accepted (ADR 0009): the measured false-accept risk of `grounded`. |
 

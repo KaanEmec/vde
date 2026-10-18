@@ -306,6 +306,7 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		SampleKey:             doc.Data,
 		Deadline:              time.Now().Add(timeout),
 		OnAttempt:             func(p extract.Progress) { obs.logf("attempt %d: %s", p.Attempts, describeProgress(p)) },
+		Logger:                logger,
 	}, roles)
 
 	calls, in, outTokens := obs.usage()

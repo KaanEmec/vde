@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
@@ -969,6 +970,48 @@ func TestSubmitIdempotency(t *testing.T) {
 			t.Errorf("quota %d, want 1: replays are not charged", rg.quotaUsed(t))
 		}
 	})
+	t.Run("replay of a finished retention: none job is its first read", func(t *testing.T) {
+		t.Parallel()
+		rg := newSubmitRig(t, submitRigOptions{})
+		ctx := t.Context()
+		parts := withPart(validParts(), mpart{name: partRetention, ctype: "text/plain", data: []byte("none")})
+		id := decodeJob(t, rg.submit(t, parts, idempotencyKey("none")))["id"].(string)
+		// Still queued: a replay shows the job and deletes nothing.
+		if w := rg.submit(t, parts, idempotencyKey("none")); decodeJob(t, w)["status"] != string(job.StatusQueued) {
+			t.Fatalf("replay of the queued job: %s", w.Body)
+		}
+		if _, err := rg.db.LeaseNextQueued(ctx, "w", time.Now(), time.Now().Add(time.Minute), nil); err != nil {
+			t.Fatal(err)
+		}
+		err := rg.db.Finish(ctx, id, "w", job.Outcome{Status: job.StatusAccepted, Attempts: 1,
+			Result: json.RawMessage(`{"name":"x"}`), Feedback: json.RawMessage(`[]`)}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := rg.submit(t, parts, idempotencyKey("none"))
+		body := decodeJob(t, w)
+		if w.Code != http.StatusAccepted || w.Header().Get(headerIdempotencyReplayed) != "true" ||
+			body["result"] == nil || body["content_deleted_at"] != nil {
+			t.Fatalf("first terminal replay: %d %s, want 202 with the result", w.Code, w.Body)
+		}
+		j, err := rg.db.GetJob(ctx, testApp, id)
+		if err != nil || j.ContentDeletedAt.IsZero() || j.Result != nil {
+			t.Errorf("after the first terminal replay: content_deleted_at %v, result %s, %v; want the content deleted",
+				j.ContentDeletedAt, j.Result, err)
+		}
+		events, err := rg.db.ListAudit(ctx, job.AuditFilter{Kind: string(audit.JobDeletedKind), JobID: id}, 10)
+		if err != nil || len(events) != 1 || !strings.Contains(string(events[0].Details), audit.DeletedFirstRead) {
+			t.Errorf("audit = %+v, %v; want one job.deleted with reason %s", events, err, audit.DeletedFirstRead)
+		}
+		w = rg.submit(t, parts, idempotencyKey("none"))
+		body = decodeJob(t, w)
+		if body["result"] != nil || body["content_deleted_at"] == nil {
+			t.Errorf("second terminal replay: %s, want the content-deleted form", w.Body)
+		}
+		if w := rg.get("/v1/jobs/" + id); w.Code != http.StatusNotFound {
+			t.Errorf("GET after the replay read it = %d, want 404", w.Code)
+		}
+	})
 	t.Run("concurrent identical submissions create one job", func(t *testing.T) {
 		t.Parallel()
 		rg := newSubmitRig(t, submitRigOptions{})
@@ -1387,6 +1430,68 @@ func TestSubmitQueueFull(t *testing.T) {
 				if w := rg.get("/v1/jobs/" + id); w.Code != http.StatusOK {
 					t.Errorf("poll of %s while full: %d %s, want 200", id, w.Code, w.Body)
 				}
+			}
+		})
+	}
+}
+
+// TestSubmitsInFlight: at limits.max_submits_in_flight submissions being read in the
+// process, every submission route answers 503 unavailable with Retry-After before any
+// part is read, stores nothing and charges no quota; a slot is free again after each
+// submission, accepted or refused.
+func TestSubmitsInFlight(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		send func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder
+	}{
+		{"multipart POST /v1/jobs", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submit(t, validParts(), nil)
+		}},
+		{"JSON POST /v1/jobs", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submitJSON(t, "/v1/jobs", jsonFrom(validParts()), nil)
+		}},
+		{"multipart POST /v1/extract", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.extract(t, validParts(), nil)
+		}},
+		{"JSON POST /v1/extract", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submitJSON(t, "/v1/extract", jsonFrom(validParts()), nil)
+		}},
+		{"malformed multipart", func(t *testing.T, rg *submitRig) *httptest.ResponseRecorder {
+			return rg.submit(t, withPart(validParts(), mpart{name: "unknown", data: []byte(submitDocText)}), nil)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rg := newSubmitRig(t, submitRigOptions{cfg: func(c *config.Config) { c.Limits.MaxSubmitsInFlight = 1 }})
+			rg.s.submits <- struct{}{} // another submission is being read
+			w := tt.send(t, rg)
+			if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "5" {
+				t.Errorf("status %d, Retry-After %q; want 503, 5", w.Code, w.Header().Get("Retry-After"))
+			}
+			var body errorBody
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Error.Code != codeUnavailable ||
+				body.Error.Message != msgSubmitsBusy || body.Error.RequestID == "" {
+				t.Errorf("body %s (%v); want the contract §9 error with code unavailable", w.Body, err)
+			}
+			if got := rg.quotaUsed(t); got != 0 {
+				t.Errorf("quota used = %d, want 0", got)
+			}
+			if got := rg.blobJobs(t); got != 0 {
+				t.Errorf("blob job directories = %d, want 0", got)
+			}
+			<-rg.s.submits
+			for range 2 { // the slot is released after each submission
+				if w := rg.submit(t, validParts(), nil); w.Code != http.StatusAccepted {
+					t.Fatalf("with a free slot: %d %s, want 202", w.Code, w.Body)
+				}
+			}
+			if w := rg.submit(t, withoutPart(validParts(), partDocument), nil); w.Code != http.StatusBadRequest {
+				t.Fatalf("refused submission: %d, want 400", w.Code)
+			}
+			if n := len(rg.s.submits); n != 0 {
+				t.Errorf("%d slots held after the submissions returned", n)
 			}
 		})
 	}

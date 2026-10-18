@@ -33,6 +33,7 @@ type Metrics struct {
 	swept        prometheus.Counter
 	decisions    *prometheus.CounterVec
 	disagreed    prometheus.Counter
+	authDropped  prometheus.Counter
 }
 
 // Option configures New.
@@ -94,8 +95,12 @@ func New(opts ...Option) *Metrics {
 		Name: "vde_grounding_disagreements_total",
 		Help: "Sampled judge calls (judge policy auto) that rejected a candidate the grounding check alone would have accepted.",
 	})
+	m.authDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "vde_audit_auth_failed_dropped_total",
+		Help: "Refused authentications not written to the audit trail because more than 10 per second (burst 30) arrived at one listener; each was still answered 401.",
+	})
 	m.reg.MustRegister(m.jobs, m.attempts, m.jobDuration, m.providerCall, m.providerLat, m.tokens,
-		m.failovers, m.quota, m.inProgress, m.httpReqs, m.swept, m.decisions, m.disagreed)
+		m.failovers, m.quota, m.inProgress, m.httpReqs, m.swept, m.decisions, m.disagreed, m.authDropped)
 	for _, o := range opts {
 		o(m)
 	}
@@ -213,6 +218,12 @@ func (m *Metrics) AddSwept(n int) {
 	if n > 0 {
 		m.swept.Add(float64(n))
 	}
+}
+
+// AuthFailedAuditDropped counts one refused authentication whose auth.failed audit row
+// the per-listener cap left unwritten.
+func (m *Metrics) AuthFailedAuditDropped() {
+	m.authDropped.Inc()
 }
 
 func label(v string) string {

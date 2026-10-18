@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -262,8 +263,9 @@ type localEngine struct {
 	judgePolicy    config.JudgePolicy // roles.judge.policy or --judge
 	serviceVersion string
 	policy         document.HTMLPolicy
-	script         fake.Script // nil for the configured providers
-	pdf            *pdf.Engine // one per process, started by the first PDF that needs it
+	script         fake.Script  // nil for the configured providers
+	pdf            *pdf.Engine  // one per process, started by the first PDF that needs it
+	logger         *slog.Logger // the redacting logger on stderr, for the loop's warnings
 }
 
 func newLocalEngine(o evalOptions, stderr io.Writer) (*localEngine, error) {
@@ -292,6 +294,7 @@ func newLocalEngine(o evalOptions, stderr io.Writer) (*localEngine, error) {
 		return nil, err
 	}
 	e.cfg = cfg
+	e.logger = newLogger(stderr, cfg.Logging)
 	e.judgePolicy = cfg.RolePolicy()
 	if o.judge != "" {
 		if e.judgePolicy, err = config.ParseJudgePolicy(o.judge); err != nil {
@@ -354,6 +357,7 @@ func (e *localEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error
 		SampleRate:            config.DefaultSampleRate,
 		SampleKey:             doc.Data,
 		Deadline:              time.Now().Add(e.cfg.Limits.JobTimeout),
+		Logger:                e.logger,
 	}, roles)
 	calls, in, out := obs.usage()
 	o := eval.Outcome{

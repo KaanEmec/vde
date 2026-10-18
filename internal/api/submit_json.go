@@ -67,10 +67,7 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 		return nil, newError(codeBadRequest, msgMalformedJSON), false
 	}
 	limits := cfg.Limits
-	docLimit, pageLimit, maxPages := limits.DocumentBytes, limits.PageBytes, limits.Pages
-	if docLimit <= 0 {
-		docLimit = document.DefaultDocumentBytes
-	}
+	docLimit, pageLimit, maxPages := documentLimit(limits), limits.PageBytes, limits.Pages
 	if pageLimit <= 0 {
 		pageLimit = document.DefaultPageBytes
 	}
@@ -91,12 +88,11 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 			return nil, e, false
 		}
 		sub.document = newPart(d.MediaType, d.Filename, data)
-	default:
-		data, e, ok := s.fetchDocument(r, d.URL, docLimit)
-		if !ok {
-			return nil, e, false
-		}
-		sub.document = newPart(d.MediaType, d.Filename, data)
+	case s.fetch == nil:
+		return nil, newError(codeBadRequest, msgFetchDisabled), false
+	default: // fetched after the submission limits (fetchPending)
+		sub.document = &part{mediaType: d.MediaType, filename: d.Filename}
+		sub.documentURL = d.URL
 	}
 	if len(in.Pages) > maxPages {
 		return nil, newError(codePayloadTooLarge, msgTooManyPages, maxPages), false
@@ -167,6 +163,30 @@ func decodeBase64(name, s string, limit int64) ([]byte, apiError, bool) {
 
 func newPart(mediaType, filename string, data []byte) *part {
 	return &part{mediaType: mediaType, filename: filename, data: data, sum: sha256.Sum256(data)}
+}
+
+// documentLimit is limits.document_bytes, or the default when unset.
+func documentLimit(l config.Limits) int64 {
+	if l.DocumentBytes <= 0 {
+		return document.DefaultDocumentBytes
+	}
+	return l.DocumentBytes
+}
+
+// fetchPending fetches the document url of a JSON submission, if it has one, into
+// sub.document. createJob calls it after the submission limits, so a refused or
+// rate-limited caller makes the service fetch nothing.
+func (s *server) fetchPending(r *http.Request, sub *submission, limits config.Limits) (apiError, bool) {
+	if sub.documentURL == "" {
+		return newError(codeInternal, msgInternal), true
+	}
+	data, e, ok := s.fetchDocument(r, sub.documentURL, documentLimit(limits))
+	if !ok {
+		return e, false
+	}
+	sub.document = newPart(sub.document.mediaType, sub.document.filename, data)
+	sub.documentURL = ""
+	return e, true
 }
 
 // fetchDocument fetches a document url under documents.fetch (fetch.go).

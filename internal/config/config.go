@@ -221,6 +221,10 @@ type Limits struct {
 	// or above it a submission answers 503 unavailable with Retry-After (v1.0). 0 means
 	// no ceiling.
 	MaxQueuedJobs int `yaml:"max_queued_jobs"`
+	// MaxSubmitsInFlight bounds the submissions (POST /v1/jobs and POST /v1/extract) one
+	// process reads and prepares at a time, each holding up to request_bytes in memory:
+	// over it a submission answers 503 unavailable with Retry-After (v1.0). At least 1.
+	MaxSubmitsInFlight int `yaml:"max_submits_in_flight"`
 }
 
 // Documents sets the representation policy.
@@ -336,6 +340,7 @@ const (
 	defaultPDFMinTextChars   = 200
 	defaultPDFWorkers        = 1
 	defaultRequestBytes      = 128 << 20
+	defaultSubmitsInFlight   = 16
 	defaultQuotaLimit        = 1000
 	defaultQuotaWindow       = "P1D"
 	defaultRequestsPerMinute = 300
@@ -360,13 +365,14 @@ func defaults() *Config {
 	return &Config{
 		Server: Server{Listen: defaultListen, DataDir: defaultDataDir},
 		Limits: Limits{
-			MaxAttempts:       defaultMaxAttempts,
-			JobTimeout:        defaultJobTimeout,
-			JudgeReparseTries: defaultJudgeReparseTries,
-			DocumentBytes:     defaultDocumentBytes,
-			PageBytes:         defaultPageBytes,
-			Pages:             defaultPages,
-			RequestBytes:      defaultRequestBytes,
+			MaxAttempts:        defaultMaxAttempts,
+			JobTimeout:         defaultJobTimeout,
+			JudgeReparseTries:  defaultJudgeReparseTries,
+			DocumentBytes:      defaultDocumentBytes,
+			PageBytes:          defaultPageBytes,
+			Pages:              defaultPages,
+			RequestBytes:       defaultRequestBytes,
+			MaxSubmitsInFlight: defaultSubmitsInFlight,
 		},
 		Documents: Documents{
 			HTML:   "raw_html",

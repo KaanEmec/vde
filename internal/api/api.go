@@ -83,6 +83,9 @@ type server struct {
 	admin  bool         // the admin API's handler (admin.go)
 	fetch  *fetcher     // document urls of JSON submissions; nil unless documents.fetch.enabled
 	queued queuedCount  // limits.max_queued_jobs, cached count (submit.go)
+	// submits holds one token per submission being read and prepared, at most
+	// limits.max_submits_in_flight (submit.go).
+	submits chan struct{}
 }
 
 // route is one registered pattern, in the Go 1.22 ServeMux syntax.
@@ -115,6 +118,11 @@ func newServerWith(deps Deps, admin bool) *server {
 	if c := deps.Config; c != nil && c.Documents.Fetch.Enabled {
 		s.fetch = newFetcher(c.Documents.Fetch, nil, nil)
 	}
+	inFlight := defaultSubmitsInFlight
+	if c := deps.Config; c != nil && c.Limits.MaxSubmitsInFlight > 0 {
+		inFlight = c.Limits.MaxSubmitsInFlight
+	}
+	s.submits = make(chan struct{}, inFlight)
 	routes := s.routes
 	if admin {
 		routes = s.adminRoutes

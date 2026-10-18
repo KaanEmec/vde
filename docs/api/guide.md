@@ -312,6 +312,10 @@ with the same key from the same application within 24 hours returns the existing
 `Idempotency-Replayed: true` and runs nothing, so a retry after a lost response never pays
 for a second extraction. The same key with a different body is `422 idempotency_mismatch`.
 
+A replay of a finished `retention: none` job whose result you have not read yet is that
+first read: it returns the result and deletes it, and later replays return the
+content-deleted form below.
+
 The 24 hours hold even when the job itself is no longer readable. A replayed job whose
 content was already read (`retention: none`, first terminal read) or has expired has
 `content_deleted_at` set and `result` null: `status` is the job's terminal status as it
@@ -388,7 +392,7 @@ Every error has one shape and `Content-Type: application/json`:
 | 429 | `quota_exhausted` | Quota spent, `X-Quota-Remaining: 0`. | Yes, after `X-Quota-Reset`. |
 | 500 | `internal` | Service failure. | Yes, with backoff. |
 | 502 | `provider_unavailable` | Model provider failure. | Yes, with backoff. |
-| 503 | `unavailable` | Service not ready. | Yes, with backoff. |
+| 503 | `unavailable` | Service not ready, or saturated: the operator's queue ceiling (`limits.max_queued_jobs`) or in-flight submission limit is reached and `Retry-After` is set. Nothing was stored or charged. | Yes, after `Retry-After`, with backoff. |
 | 504 | `timeout` | Time limit. | Yes, with backoff. |
 
 The rule of thumb: `400`, `413`, `415` and `422` mean the request itself is wrong, so do not

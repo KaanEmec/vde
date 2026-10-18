@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +29,8 @@ func TestDeliveryValidate(t *testing.T) {
 		{"https webhook", `{id: a, webhook: {url: "https://hooks.example.com/vde", secret_env: S}}`, "", false},
 		{"loopback http", `{id: a, webhook: {url: "http://127.0.0.1:9000/hook", secret_env: S}}`, "", false},
 		{"remote http", `{id: a, webhook: {url: "http://hooks.example.com/vde", secret_env: S}}`, "applications[0].webhook.url", false},
-		{"credentials", `{id: a, webhook: {url: "https://u:p@hooks.example.com/", secret_env: S}}`, "applications[0].webhook.url", false},
+		{"credentials", `{id: a, webhook: {url: "https://u:url-password@hooks.example.com/", secret_env: S}}`, "applications[0].webhook.url", false},
+		{"credentials in an unparseable URL", `{id: a, webhook: {url: "https://u:url-password@hooks example.com/%zz", secret_env: S}}`, "applications[0].webhook.url", false},
 		{"no secret_env", `{id: a, webhook: {url: "https://hooks.example.com/"}}`, "applications[0].webhook.secret_env", false},
 		{"secret unset", `{id: a, webhook: {url: "https://hooks.example.com/", secret_env: UNSET}}`, "applications[0].webhook.secret_env", false},
 		{"short secret", `{id: a, webhook: {url: "https://hooks.example.com/", secret_env: SHORT}}`, "applications[0].webhook.secret_env", true},
@@ -57,6 +59,9 @@ func TestDeliveryValidate(t *testing.T) {
 			}
 			if strings.Contains(c.String(), secret) {
 				t.Error("Config.String prints the webhook secret")
+			}
+			if strings.Contains(fmt.Sprint(got), "url-password") {
+				t.Errorf("an issue echoes the URL's credentials: %v", got)
 			}
 			if tt.key == "" && c.Applications[0].Webhook.Secret() != secret {
 				t.Error("secret not resolved")

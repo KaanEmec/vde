@@ -60,7 +60,11 @@ func (s *server) authenticate(need string, next http.Handler) http.Handler {
 		var refused *auth.RefusedError
 		switch {
 		case errors.As(err, &refused):
-			s.recordAudit(ctx, refused.ApplicationID, "", audit.AuthFailed{Reason: string(refused.Reason)})
+			if s.limits.allowAuthFailedAudit(now) {
+				s.recordAudit(ctx, refused.ApplicationID, "", audit.AuthFailed{Reason: string(refused.Reason)})
+			} else if s.deps.Metrics != nil {
+				s.deps.Metrics.AuthFailedAuditDropped()
+			}
 			closeIfBodyPending(w, r)
 			w.Header().Set("WWW-Authenticate", `Bearer realm="vde"`)
 			writeError(w, r, newError(codeUnauthorized, msgUnauthorized))

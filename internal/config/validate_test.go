@@ -17,7 +17,7 @@ endpoints:
       claude: {accepts: [application/pdf, image/png, image/jpeg, text/plain]}
   local:
     provider: openai_compatible
-    base_url: "http://ollama:11434/v1"
+    base_url: "http://localhost:11434/v1"
     models:
       vision: {accepts: [image/png, image/jpeg, text/plain]}
 groups:
@@ -256,6 +256,26 @@ func TestValidate(t *testing.T) {
 			edit: func(c *Config) { c.Limits.MaxQueuedJobs = 1000 },
 		},
 		{
+			name:        "max submits in flight zero",
+			edit:        func(c *Config) { c.Limits.MaxSubmitsInFlight = 0 },
+			wantKey:     "limits.max_submits_in_flight",
+			wantMessage: "at least 1",
+		},
+		{
+			name: "max submits in flight one",
+			edit: func(c *Config) { c.Limits.MaxSubmitsInFlight = 1 },
+		},
+		{
+			name:        "pages over the blob name limit",
+			edit:        func(c *Config) { c.Limits.Pages = 1000 },
+			wantKey:     "limits.pages",
+			wantMessage: "over 999",
+		},
+		{
+			name: "pages at the blob name limit",
+			edit: func(c *Config) { c.Limits.Pages = 999 },
+		},
+		{
 			name:        "document limit below contract",
 			edit:        func(c *Config) { c.Limits.DocumentBytes = 1 << 20 },
 			wantKey:     "limits.document_bytes",
@@ -333,6 +353,28 @@ func TestValidate(t *testing.T) {
 			edit:        func(c *Config) { c.Endpoints["local"].BaseURL = "ollama:11434/v1" },
 			wantKey:     "endpoints.local.base_url",
 			wantMessage: "not an absolute http or https URL",
+		},
+		{
+			name:        "plain HTTP base_url on a non-loopback host",
+			edit:        func(c *Config) { c.Endpoints["local"].BaseURL = "http://ollama:11434/v1" },
+			wantKey:     "endpoints.local.base_url",
+			wantMessage: "plain HTTP on a non-loopback host",
+			wantWarning: true,
+		},
+		{
+			name:        "plain HTTP base_url names it without credentials",
+			edit:        func(c *Config) { c.Endpoints["local"].BaseURL = "http://u:url-password@ollama:11434/v1" },
+			wantKey:     "endpoints.local.base_url",
+			wantMessage: `"http://u:xxxxx@ollama:11434/v1" is plain HTTP`,
+			wantWarning: true,
+		},
+		{
+			name: "https base_url on another host",
+			edit: func(c *Config) { c.Endpoints["local"].BaseURL = "https://llm.internal.example/v1" },
+		},
+		{
+			name: "plain HTTP base_url on loopback",
+			edit: func(c *Config) { c.Endpoints["local"].BaseURL = "http://127.0.0.1:11434/v1" },
 		},
 		{
 			name:        "negative timeout",

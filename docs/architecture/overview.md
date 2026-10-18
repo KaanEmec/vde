@@ -2,7 +2,9 @@
 
 Status: v0.1 to v0.4 implemented (v0.4, judge policy, grounding and PDF preprocessing,
 ADRs 0009 and 0010, closed 2026-10-18 with the owner's policy comparison pending); v1.0
-planned. This document
+done 2026-10-18 (`/v1` and the configuration schema frozen, `docs/compatibility.md`;
+security review closed, `docs/security.md`; backpressure limits; performance baseline and
+release engineering deferred by the owner). This document
 describes the shape of the service; the roadmap under `docs/roadmap/` says which jobs are
 done. Each job file carries its own `Status`.
 
@@ -250,7 +252,9 @@ and S3 a second blob implementation. See ADR 0007.
   `service_version` per policy it may run under, and each job carries the one it ran with.
   It is computed at start and logged.
 - Semantic versioning for the binary and image; v0.x may change configuration keys with a
-  migration note, v1.0 freezes the API and the configuration schema.
+  migration note, v1.0 freezes the API and the configuration schema
+  (`docs/compatibility.md`: `api/openapi.v1.0.0.yaml` and `internal/config/schema.json`
+  are the frozen documents, guarded by tests).
 
 ## Decisions
 

@@ -17,6 +17,7 @@ import (
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/metrics"
 )
 
 const (
@@ -189,6 +190,63 @@ func TestAuthenticateRefusals(t *testing.T) {
 	}
 	if w := serve(h, http.MethodPost, "/v1/jobs", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+good) }); w.Code != http.StatusAccepted || calls.Load() != 1 {
 		t.Errorf("valid token: status %d, calls %d; want 202 and 1", w.Code, calls.Load())
+	}
+}
+
+// TestAuthFailedAuditCapped: refused requests, which need no token, write at most
+// authFailedAuditBurst auth.failed rows at once and authFailedAuditPerSecond after that;
+// the rest are counted in vde_audit_auth_failed_dropped_total and still answer 401.
+func TestAuthFailedAuditCapped(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t, testApp)
+	var mu sync.Mutex
+	now := testNow
+	m := metrics.New()
+	s := newServer(Deps{
+		Config: &config.Config{}, Store: store, ServiceVersion: testServiceVersion, Metrics: m,
+		Logger: slog.New(slog.DiscardHandler),
+		Now:    func() time.Time { mu.Lock(); defer mu.Unlock(); return now },
+	})
+	h := handlerOf(s)
+	refused := func(n int) {
+		t.Helper()
+		for range n {
+			if w := serve(h, http.MethodGet, "/v1/quota", nil); w.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", w.Code)
+			}
+		}
+	}
+	rows := func() int {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		return len(store.events)
+	}
+	dropped := func() string {
+		for line := range strings.Lines(serve(h, http.MethodGet, "/metrics", nil).Body.String()) {
+			if strings.HasPrefix(line, "vde_audit_auth_failed_dropped_total ") {
+				return strings.TrimSpace(line)
+			}
+		}
+		return ""
+	}
+
+	refused(authFailedAuditBurst + 10)
+	if got := rows(); got != authFailedAuditBurst {
+		t.Errorf("audit rows after a burst of %d = %d, want %d", authFailedAuditBurst+10, got, authFailedAuditBurst)
+	}
+	if got := dropped(); got != "vde_audit_auth_failed_dropped_total 10" {
+		t.Errorf("dropped counter = %q, want 10", got)
+	}
+
+	mu.Lock()
+	now = now.Add(time.Second)
+	mu.Unlock()
+	refused(authFailedAuditPerSecond + 5)
+	if got := rows(); got != authFailedAuditBurst+authFailedAuditPerSecond {
+		t.Errorf("audit rows one second later = %d, want %d", got, authFailedAuditBurst+authFailedAuditPerSecond)
+	}
+	if got := dropped(); got != "vde_audit_auth_failed_dropped_total 15" {
+		t.Errorf("dropped counter = %q, want 15", got)
 	}
 }
 

@@ -6,10 +6,12 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/job"
 )
 
 func TestPublicAddr(t *testing.T) {
@@ -105,5 +107,54 @@ func TestJSONSubmissionRefusesURLs(t *testing.T) {
 	}
 	if rg.quotaUsed(t) != 0 {
 		t.Errorf("quota used = %d, want 0", rg.quotaUsed(t))
+	}
+}
+
+// TestSubmitLimitsBeforeCostlyWork: at the application's in-progress ceiling a
+// submission is refused before its document url is fetched or its schema compiled; a
+// replay of a used Idempotency-Key still answers the existing job (security review F4).
+func TestSubmitLimitsBeforeCostlyWork(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte(submitDocText))
+	}))
+	t.Cleanup(srv.Close)
+	fc := config.Fetch{Enabled: true, AllowedHosts: []string{strings.TrimPrefix(srv.URL, "https://")}, MaxBytes: 1024, Timeout: 5 * time.Second}
+	rg := newSubmitRig(t, submitRigOptions{
+		cfg: func(c *config.Config) { c.Documents.Fetch = fc },
+		app: func(a *job.Application) { a.MaxInProgress = 1 },
+	})
+	rg.s.fetch = newFetcher(fc, srv.Client().Transport.(*http.Transport).TLSClientConfig, func(a netip.Addr) bool { return a.IsLoopback() })
+	key := idempotencyKey("at-ceiling")
+	first := decodeJob(t, rg.submitJSON(t, "/v1/jobs", urlBody(srv.URL+"/doc.txt"), key)) // the one job in progress
+	if hits.Load() != 1 {
+		t.Fatalf("fetches = %d, want 1", hits.Load())
+	}
+
+	tests := []struct {
+		name string
+		send func() *httptest.ResponseRecorder
+	}{
+		{"document url", func() *httptest.ResponseRecorder {
+			return rg.submitJSON(t, "/v1/jobs", urlBody(srv.URL+"/doc.txt"), nil)
+		}},
+		{"invalid schema", func() *httptest.ResponseRecorder {
+			return rg.submit(t, withPart(validParts(), mpart{name: partSchema, ctype: "application/schema+json", data: []byte(`{"type": 12}`)}), nil)
+		}},
+	}
+	for _, tt := range tests {
+		w := tt.send()
+		if w.Code != http.StatusTooManyRequests || decodeError(t, w).Code != codeRateLimited {
+			t.Errorf("%s at the ceiling: %d %s, want 429 rate_limited before any other check", tt.name, w.Code, w.Body)
+		}
+	}
+	if hits.Load() != 1 {
+		t.Errorf("fetches = %d after refused submissions, want 1", hits.Load())
+	}
+	w := rg.submitJSON(t, "/v1/jobs", urlBody(srv.URL+"/doc.txt"), key)
+	if body := decodeJob(t, w); body["id"] != first["id"] || w.Header().Get(headerIdempotencyReplayed) != "true" {
+		t.Errorf("replay at the ceiling: %d %s, want the existing job", w.Code, w.Body)
 	}
 }

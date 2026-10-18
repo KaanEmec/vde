@@ -125,6 +125,10 @@ type Input struct {
 	// OnAttempt, when set, is called after each attempt that sends the loop on to
 	// another attempt or to the attempt limit, so the caller can persist progress.
 	OnAttempt func(Progress)
+	// Logger receives the loop's warnings and errors (error chains and a panic's stack,
+	// never content). Callers pass the redacting logger of internal/logging; nil means
+	// slog.Default().
+	Logger *slog.Logger
 }
 
 // Progress is the state after an attempt.
@@ -192,7 +196,10 @@ func Run(ctx context.Context, in Input, roles Roles) (out Outcome) {
 		ctx, cancel = context.WithDeadline(ctx, in.Deadline)
 		defer cancel()
 	}
-	l := &loop{in: &in, roles: roles, maxChars: roles.FeedbackMessageChars, policy: in.JudgePolicy}
+	l := &loop{in: &in, roles: roles, maxChars: roles.FeedbackMessageChars, policy: in.JudgePolicy, log: in.Logger}
+	if l.log == nil {
+		l.log = slog.Default()
+	}
 	if l.policy == "" {
 		l.policy = config.JudgeAlways
 	}
@@ -205,12 +212,12 @@ func Run(ctx context.Context, in Input, roles Roles) (out Outcome) {
 			if re, ok := r.(runtime.Error); ok {
 				attrs = append(attrs, "panic", re.Error())
 			}
-			slog.Error("extract: panic recovered", attrs...)
+			l.log.Error("extract: panic recovered", attrs...)
 			out = l.failed(CodeInternal)
 		}
 	}()
 	if roles.Extractor == nil || roles.Judge == nil {
-		slog.Error("extract: roles without endpoint groups")
+		l.log.Error("extract: roles without endpoint groups")
 		return l.failed(CodeInternal)
 	}
 	return l.run(ctx)
@@ -221,6 +228,7 @@ type loop struct {
 	in       *Input
 	roles    Roles
 	maxChars int
+	log      *slog.Logger // Input.Logger or slog.Default()
 
 	attempts   int
 	usable     bool            // some attempt produced parseable JSON
@@ -414,7 +422,7 @@ func (l *loop) verdict(ctx context.Context, g *router.Group, system string, cand
 	case errors.Is(err, errTimeout):
 		return verdict{}, err
 	case err != nil:
-		slog.Warn("extract: feedback group failed; keeping the classifier's feedback", "error", err)
+		l.log.Warn("extract: feedback group failed; keeping the classifier's feedback", "error", err)
 	case !fb.accept:
 		v.feedback = fb.feedback
 	}
@@ -439,7 +447,7 @@ func (l *loop) judge(ctx context.Context, g *router.Group, system string, candid
 			continue
 		}
 		if v.ignoredConfidence {
-			slog.Warn("extract: judge confidence ignored", "reason", "not a number from 0 to 1")
+			l.log.Warn("extract: judge confidence ignored", "reason", "not a number from 0 to 1")
 		}
 		return v, served, nil
 	}
@@ -471,12 +479,12 @@ func (l *loop) fail(err error, role string) Outcome {
 	case errors.Is(err, errTimeout):
 		return l.failed(CodeTimeout)
 	case errors.Is(err, errUnavailable):
-		slog.Warn("extract: endpoint group unavailable", "role", role, "error", err)
+		l.log.Warn("extract: endpoint group unavailable", "role", role, "error", err)
 		return l.failed(CodeProviderUnavailable)
 	case errors.Is(err, errJudgeFailed):
 		return l.failed(CodeJudgeFailed)
 	}
-	slog.Error("extract: unexpected role call error", "role", role, "error", err)
+	l.log.Error("extract: unexpected role call error", "role", role, "error", err)
 	return l.failed(CodeInternal)
 }
 

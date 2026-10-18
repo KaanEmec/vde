@@ -91,9 +91,10 @@
         "feedback_message_chars": {"type": "integer", "minimum": 0, "description": "Characters kept per feedback message; 0 means 4000."},
         "document_bytes": {"type": "integer", "exclusiveMinimum": 0, "description": "Largest document in bytes; default 25 MiB."},
         "page_bytes": {"type": "integer", "exclusiveMinimum": 0, "description": "Largest page image in bytes; default 10 MiB."},
-        "pages": {"type": "integer", "exclusiveMinimum": 0, "description": "Most page images per job; default 20."},
+        "pages": {"type": "integer", "exclusiveMinimum": 0, "maximum": 999, "description": "Most page images per job; default 20, at most 999."},
         "request_bytes": {"type": "integer", "exclusiveMinimum": 0, "description": "Largest whole request body in bytes; default 128 MiB."},
-        "max_queued_jobs": {"type": "integer", "minimum": 0, "description": "Global ceiling on queued jobs, above which submissions answer 503; 0 means none."}
+        "max_queued_jobs": {"type": "integer", "minimum": 0, "description": "Global ceiling on queued jobs, above which submissions answer 503; 0 means none."},
+        "max_submits_in_flight": {"type": "integer", "minimum": 1, "description": "Submissions one process reads and prepares at a time, above which submissions answer 503; default 16."}
       }
     },
     "documents": {

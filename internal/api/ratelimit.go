@@ -18,9 +18,19 @@ const inProgressRetryAfter = 5 * time.Second
 type bucketKind int
 
 const (
-	bucketRequests bucketKind = iota + 1 // every /v1 request (limit)
-	bucketSubmits                        // POST /v1/jobs, after validation and idempotency
-	bucketAdmin                          // every admin API request, keyed by admin token id
+	bucketRequests   bucketKind = iota + 1 // every /v1 request (limit)
+	bucketSubmits                          // POST /v1/jobs, after validation and idempotency
+	bucketAdmin                            // every admin API request, keyed by admin token id
+	bucketAuthFailed                       // auth.failed audit rows of the handler, one bucket (app "")
+)
+
+// The auth.failed audit rows a handler writes: anyone can provoke a 401 without a token,
+// so the rows are capped at authFailedAuditPerSecond with a burst of authFailedAuditBurst;
+// a refusal over it is counted in vde_audit_auth_failed_dropped_total instead, and still
+// answers 401.
+const (
+	authFailedAuditPerSecond = 10
+	authFailedAuditBurst     = 30
 )
 
 type bucketKey struct {
@@ -57,11 +67,21 @@ func (l *rateLimiter) take(app string, kind bucketKind, perMinute int, now time.
 	if perMinute <= 0 {
 		return 0, true
 	}
-	capacity := float64(perMinute)
-	perSecond := capacity / 60
+	return l.takeBucket(bucketKey{app, kind}, float64(perMinute), float64(perMinute)/60, now)
+}
+
+// allowAuthFailedAudit reports whether an auth.failed audit row may be written now
+// (authFailedAuditPerSecond, burst authFailedAuditBurst, for the whole handler).
+func (l *rateLimiter) allowAuthFailedAudit(now time.Time) bool {
+	_, ok := l.takeBucket(bucketKey{"", bucketAuthFailed}, authFailedAuditBurst, authFailedAuditPerSecond, now)
+	return ok
+}
+
+// takeBucket removes one token from the bucket of key, which holds up to capacity tokens
+// and refills at perSecond; see take.
+func (l *rateLimiter) takeBucket(key bucketKey, capacity, perSecond float64, now time.Time) (time.Duration, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	key := bucketKey{app, kind}
 	b, ok := l.buckets[key]
 	if !ok {
 		b = &bucket{tokens: capacity, last: now}

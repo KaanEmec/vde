@@ -26,7 +26,7 @@ endpoints:
       claude-fable-5-1: {accepts: [application/pdf, image/png, image/jpeg, image/webp, text/plain]}
   local:
     provider: openai_compatible
-    base_url: "http://ollama:11434/v1"
+    base_url: "http://localhost:11434/v1"
     api_key_env: ""                       # optional for local endpoints
     models:
       some-vision-model: {accepts: [image/png, image/jpeg, text/plain]}

@@ -79,14 +79,24 @@ func (s *server) loadJob(w http.ResponseWriter, r *http.Request) (job.Job, bool)
 // of two concurrent first reads exactly one gets the body and the other 404: a poll
 // sees the whole job or nothing. It reports false after answering.
 func (s *server) deleteOnFirstRead(w http.ResponseWriter, r *http.Request, j job.Job) bool {
-	ctx := context.WithoutCancel(r.Context())
-	switch err := s.deps.Store.MarkContentDeleted(ctx, j.ID, job.ContentAll, s.now()); {
+	switch err := s.clearFirstRead(r, j); {
 	case errors.Is(err, job.ErrNotFound): // another read deleted it first
 		writeError(w, r, newError(codeNotFound, msgJobNotFound))
 		return false
 	case err != nil:
 		s.jobError(w, r, j, "job content not deleted", err)
 		return false
+	}
+	return true
+}
+
+// clearFirstRead is the deletion of deleteOnFirstRead, shared with the idempotent
+// replay (answerReplay). It returns job.ErrNotFound when another read cleared the job
+// first.
+func (s *server) clearFirstRead(r *http.Request, j job.Job) error {
+	ctx := context.WithoutCancel(r.Context())
+	if err := s.deps.Store.MarkContentDeleted(ctx, j.ID, job.ContentAll, s.now()); err != nil {
+		return err
 	}
 	if s.deps.Blobs != nil { // normally gone at the terminal state already
 		if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
@@ -95,7 +105,7 @@ func (s *server) deleteOnFirstRead(w http.ResponseWriter, r *http.Request, j job
 		}
 	}
 	s.auditDeleted(ctx, j, audit.DeletedFirstRead)
-	return true
+	return nil
 }
 
 // auditDeleted records job.deleted.

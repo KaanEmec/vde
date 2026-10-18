@@ -93,7 +93,7 @@ func reject(msg string) string {
 }
 
 // TestNoSentinelInLogs runs the extraction loop through its logging paths, with the
-// service logger as slog's default (the loop logs through it), and asserts that no
+// service logger as Input.Logger and a separate capture as slog's default, and asserts that no
 // content marker reaches a log line at debug level, the most verbose. The document is
 // groundable text, so every run also goes through the grounding check (ADR 0009): its
 // text (Representation.GroundText, the sentDocument line) never reaches a log, and its
@@ -239,9 +239,12 @@ func TestNoSentinelInLogs(t *testing.T) {
 	var logged bool
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var out lockedBuffer
+			// The loop logs through Input.Logger, as the worker and the CLI pass it; the
+			// process default captures separately, so a call site that bypasses the
+			// redacting logger fails the test instead of hiding behind it.
+			var out, stray lockedBuffer
 			prev := slog.Default()
-			slog.SetDefault(logging.New(&out, slog.LevelDebug, "json"))
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&stray, &slog.HandlerOptions{Level: slog.LevelDebug})))
 			t.Cleanup(func() { slog.SetDefault(prev) })
 
 			fallback := tt.fallback
@@ -268,6 +271,7 @@ func TestNoSentinelInLogs(t *testing.T) {
 				JudgeInstructions:     "Check the name. " + sentJudgeIns,
 				MaxAttempts:           3,
 				JudgePolicy:           tt.policy,
+				Logger:                logging.New(&out, slog.LevelDebug, "json"),
 			}
 			if tt.withSchema {
 				in.Schema = compiled
@@ -282,6 +286,9 @@ func TestNoSentinelInLogs(t *testing.T) {
 						t.Errorf("grounding feedback %+v carries %q", f, s)
 					}
 				}
+			}
+			if s := stray.String(); s != "" {
+				t.Errorf("the loop logged through slog.Default, bypassing Input.Logger:\n%s", s)
 			}
 			text := out.String()
 			if text != "" {

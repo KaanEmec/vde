@@ -104,6 +104,9 @@ func (v *validator) service(c *Config) {
 		case !isLoopback(host) && m.TokenEnv == "":
 			v.warnf("metrics.listen", "%q is not a loopback address and metrics.token_env is not set: "+
 				"anyone who reaches it can read the metrics", m.Listen)
+		case !isLoopback(host):
+			v.warnf("metrics.listen", "%q is not a loopback address and is served in plain HTTP (server.tls does not "+
+				"apply to it): the metrics.token_env bearer token crosses the network unencrypted", m.Listen)
 		}
 	}
 	if a := c.Admin.Listen; a != "" {

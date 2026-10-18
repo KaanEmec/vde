@@ -76,6 +76,7 @@ const (
 	contractPageSize     = 10 << 20
 	contractPages        = 20
 	contractRequestSize  = 128 << 20
+	maxPages             = 999 // blob names are page-01 to page-999 (internal/blob)
 )
 
 var (
@@ -147,6 +148,8 @@ func (v *validator) endpoints(c *Config) {
 			v.errorf(key+".base_url", "is required for provider %q without a preset", e.Provider)
 		case e.BaseURL != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == ""):
 			v.errorf(key+".base_url", "%q is not an absolute http or https URL", e.BaseURL)
+		case u.Scheme == "http" && !isLoopback(u.Hostname()):
+			v.warnf(key+".base_url", "%q is plain HTTP on a non-loopback host: documents and the API key cross the network unencrypted", u.Redacted())
 		}
 		v.apiKey(key, e)
 		v.cloud(key, e)
@@ -449,6 +452,12 @@ func (v *validator) limits(c *Config) {
 	}
 	if l.MaxQueuedJobs < 0 {
 		v.errorf("limits.max_queued_jobs", "must not be negative (0 means no ceiling)")
+	}
+	if l.MaxSubmitsInFlight < 1 {
+		v.errorf("limits.max_submits_in_flight", "must be at least 1")
+	}
+	if l.Pages > maxPages {
+		v.errorf("limits.pages", "%d is over %d (stored page names have at most three digits)", l.Pages, maxPages)
 	}
 	for _, s := range []struct {
 		key        string

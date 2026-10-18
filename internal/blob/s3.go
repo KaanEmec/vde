@@ -106,23 +106,28 @@ func (s *S3) key(jobID, name string) (string, error) {
 	return s3Prefix + jobID + "/" + name, nil
 }
 
-// Put implements Store. The blob is read into memory first (documents and pages are
-// bounded by limits.document_bytes and limits.page_bytes): S3 needs the length up front,
-// and a reader that fails midway then stores nothing.
+// Put implements Store. S3 needs the length up front, so a reader is read into memory
+// first (documents and pages are bounded by limits.document_bytes and limits.page_bytes),
+// and a reader that fails midway then stores nothing; a *bytes.Reader, which is how the
+// API passes the bytes it already holds, is sent as it is, without a copy.
 func (s *S3) Put(ctx context.Context, jobID, name string, r io.Reader) error {
 	key, err := s.key(jobID, name)
 	if err != nil {
 		return err
 	}
-	data, err := io.ReadAll(readerWithContext{ctx, r})
-	if err != nil {
-		return fmt.Errorf("blob: put: %w", err)
+	body, ok := r.(*bytes.Reader)
+	if !ok {
+		data, err := io.ReadAll(readerWithContext{ctx, r})
+		if err != nil {
+			return fmt.Errorf("blob: put: %w", err)
+		}
+		body = bytes.NewReader(data)
 	}
 	in := &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
 		Key:           aws.String(key),
-		Body:          bytes.NewReader(data),
-		ContentLength: aws.Int64(int64(len(data))),
+		Body:          body,
+		ContentLength: aws.Int64(int64(body.Len())),
 		ContentType:   aws.String("application/octet-stream"),
 	}
 	if s.sse != "" {

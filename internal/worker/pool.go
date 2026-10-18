@@ -302,7 +302,7 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, a
 		log.Error("worker: cannot prepare the job", "reason", reason)
 		return fromRow(j, job.StatusFailed, extract.CodeInternal), extract.Outcome{}, true
 	}
-	in.Deadline = deadline
+	in.Deadline, in.Logger = deadline, log
 	// A resumed job continues from its persisted state: the loop counts on from
 	// j.Attempts up to the limit and sends the last candidate and feedback in its
 	// first request, as a retry does.

@@ -84,6 +84,9 @@ endpoints:
         accepts: [image/png, image/jpeg]
 ```
 
+Plain `http://` on a host other than loopback is a configuration warning (documents cross the
+network unencrypted); on a private container network, as here, it can be accepted.
+
 ## Known differences
 
 - OpenAI and OpenRouter accept the `file` part for PDFs on models that support it. Most

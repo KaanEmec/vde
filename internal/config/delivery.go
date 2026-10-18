@@ -88,8 +88,10 @@ func (v *validator) delivery(c *Config) {
 		}
 		u, err := url.Parse(w.URL)
 		switch {
-		case err != nil || u.Host == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http"):
-			v.errorf(key+".url", "%q is not an absolute http or https URL without credentials", w.URL)
+		case err != nil: // the text is not quoted: it may carry credentials
+			v.errorf(key+".url", "is not a valid URL")
+		case u.Host == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http"):
+			v.errorf(key+".url", "%q is not an absolute http or https URL without credentials", u.Redacted())
 		case u.Scheme == "http" && !isLoopback(u.Hostname()) && !c.Server.InsecureHTTP:
 			v.errorf(key+".url", "must be https unless it is a loopback address or server.insecure_http is true")
 		}
