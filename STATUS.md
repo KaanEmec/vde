@@ -1,21 +1,25 @@
 # STATUS
 
-Where the project stands, as of **2026-10-18** (last commit `11570b0`). How to work here is in
+Where the project stands, as of **2026-10-18** (last commit `c0b03a4`). How to work here is in
 [AGENTS.md](AGENTS.md). Job files under [docs/roadmap/](docs/roadmap/README.md) stay the
 source of truth; this page summarizes them and must be updated at the end of every session.
 
 ## Summary
 
-v0.1 to v0.4 are implemented and committed on `main`: the extractor-judge engine and CLI,
-the authenticated HTTP service of the TravelInbox contract, Postgres/S3 storage, more
-providers, escalation, delivery options, an evaluation harness, multi-replica operation, and
-(v0.4) judge policies `always`/`never`/`auto` with a deterministic grounding check and PDF
-preparation in the service. Everything is proven with the fake provider and the conformance
-suite; real-model evidence is one smoke run, the TravelInbox live test and a few evaluation
-runs through one OpenAI-compatible endpoint. The owner's comparison of the judge policies on
-real documents has not been run, so v0.4's exit criteria 1 to 3 are verified only by tests.
-There is no git remote yet, so CI and the release workflow have never run. Not
-production-ready; v1.0 (freeze, security review, performance, release engineering) is planned.
+v0.1 to v1.0 are implemented and committed on `main` (remote `origin`, public, CI runs
+there): the extractor-judge engine and CLI, the authenticated HTTP service of the
+TravelInbox contract, Postgres/S3 storage, more providers, escalation, delivery options, an
+evaluation harness, multi-replica operation, (v0.4) judge policies `always`/`never`/`auto`
+with a deterministic grounding check and PDF preparation in the service, and (v1.0) the
+`/v1` and configuration freeze under a [compatibility policy](docs/compatibility.md), a
+closed security review ([docs/security.md](docs/security.md)) and `503` backpressure.
+The owner took the performance baseline and release engineering (signed images, SBOMs,
+docs site) out of v1.0 on 2026-10-18; drafts are on the unpushed branch
+`wip/release-engineering`. Everything is proven with the fake provider and the
+conformance suite; real-model evidence is one smoke run, the TravelInbox live test and a
+few evaluation runs through one OpenAI-compatible endpoint. The owner's comparison of the
+judge policies on real documents has not been run. The `v1.0.0` tag is not pushed yet
+(CHANGELOG 1.0.0 is written); `make live` before tagging is the CONTRIBUTING rule.
 
 ## Versions
 
@@ -25,7 +29,7 @@ production-ready; v1.0 (freeze, security review, performance, release engineerin
 | [v0.2 Service](docs/roadmap/v0.2-service/README.md) | done 2026-10-16 | none (CHANGELOG 0.2.0) | HTTP API, applications and tokens, jobs, quota, retention, operations, admin API, packaging, contract conformance |
 | [v0.3 Hardening and extensions](docs/roadmap/v0.3-hardening-and-extensions/README.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
-| [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | planned | none | Epics: 01 API and configuration freeze, 02 security review, 03 performance baseline, 04 release engineering (signing, SBOM, docs site) |
+| [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | none yet (CHANGELOG 1.0.0) | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
 
 ## What is verified, and how
 
@@ -36,8 +40,17 @@ production-ready; v1.0 (freeze, security review, performance, release engineerin
   `TestCheck_eventInvoice`, `TestExtractPDFWithoutPages`); details in the
   [v0.4 exit criterion check](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md#exit-criterion-check-2026-10-18).
 - **Contract conformance** (`make conformance`): contract §14 items 1 to 9 against the built
-  binary, unchanged under `always` after v0.4; MUST traceability in
+  binary, unchanged under `always` after v0.4 and after the v1.0 limits; MUST traceability in
   [travelinbox-v1.md](docs/conformance/travelinbox-v1.md).
+- **v1.0 freeze and security** (`make check`): `TestOpenAPISupersetOfSnapshot` against
+  `api/openapi.v1.0.0.yaml` (proven to catch a lost enum value, property, header, error
+  code or required field), `internal/config/schema_test.go` (every example validates, the
+  struct tree and the schema agree both ways), seven fuzzers clean for 20 to 30 s each and
+  run in the CI `fuzz` job, regression tests for every fixed finding in
+  [docs/security.md](docs/security.md), `govulncheck` clean with `toolchain go1.26.9`.
+- **CI on GitHub**: runs on every push to `main`; the flaky timing tests found on the
+  first runs (grounding performance bound, worker heartbeat, pdfium cold start) were fixed
+  on 2026-10-18.
 - **Storage and scaling**: Postgres and S3 suites (opt-in env vars); two worker pools run
   100 jobs exactly once and resume a killed pool's job; `examples/compose/scaled` ran
   locally with PostgreSQL 17 and RustFS ([v0.3 check](docs/roadmap/v0.3-hardening-and-extensions/README.md#exit-criterion-check-2026-10-17)).
@@ -67,8 +80,13 @@ production-ready; v1.0 (freeze, security review, performance, release engineerin
 - Anthropic, OpenAI and Gemini direct keys: live runs went through the OpenAI-compatible
   adapter only; the others are covered by httptest (Anthropic and Gemini also have opt-in
   `live_test.go` files, with no recorded run).
-- The multi-arch image: no local buildx and no remote, so it has never been built; image
-  size for v0.4 not measured.
+- The multi-arch image is built by the release workflow on a tag; the v0.3.0 and v0.4.0
+  release runs failed on the flaky tests above (a separate session is rebuilding v0.4.0).
+  Releases are unsigned: signing, SBOMs and provenance are drafted on
+  `wip/release-engineering`, never run.
+- A load test: never run on the target VM; no capacity document (deferred).
+- An external security audit: the two v1.0 reviews were internal (a checklist pass and an
+  independent read-only pass by a separate agent); a paid audit is the owner's option.
 - The owner's judge-policy comparison (`always`/`auto`/`never` on the owner suite and the
   TravelInbox corpus): **pending**, table of placeholders in
   [quality.md, "Judge policy"](docs/quality.md#judge-policy).
@@ -100,6 +118,15 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
 - Idea, not documented or implemented elsewhere: `auto` thresholds per application
   (`max_document_chars`, `max_items`, `min_grounded_share`) that send large or weakly
   grounded results to the judge.
+- Accepted info findings of the independent review (F9 to F13 in
+  [docs/security.md](docs/security.md)): 403 vs 401 for a token on the wrong listener,
+  `trusted_proxy` trusting any peer, `queue_age_seconds` on an unauthenticated
+  `/healthz`, `debug.log_content` with `trusted_proxy`, workers reading `max_in_progress`
+  from YAML applications only.
+- Git history note: the v1.0 wave-1 code (API freeze, config schema, hardening,
+  backpressure) landed inside commits `31dfa36` and `b315948`, whose messages name CI
+  fixes, because a parallel session committed with `git add -A`; the job files and
+  `docs/security.md` say what each job delivered.
 
 ## Recommended next steps (in order)
 
@@ -107,12 +134,11 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
    records the rows; then decide v0.4 criteria 1 to 3 on real models.
 2. Annotate schemas with `x-vde-grounding` (owner suite first; TravelInbox's is their choice)
    and re-run `auto` to measure judge calls saved.
-3. v1.0 freeze work: [01 API and configuration freeze](docs/roadmap/v1.0-stable/01-api-freeze/README.md),
-   [02 security review](docs/roadmap/v1.0-stable/02-security-review/README.md),
-   [03 performance baseline](docs/roadmap/v1.0-stable/03-performance/README.md),
-   [04 release engineering](docs/roadmap/v1.0-stable/04-release-engineering/README.md)
-   (push to the remote first so CI and the release workflow run).
-4. If the comparison justifies it, the `auto` thresholds above (needs an ADR 0009 amendment).
+3. Tag `v1.0.0`: `make live` with a real key (CONTRIBUTING, "Releasing"), then
+   `git tag -a v1.0.0 -m v1.0.0 && git push origin v1.0.0`, and check the release run.
+4. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
+   SBOMs first, then the docs site, then the load test), each as its own job.
+5. If the comparison justifies it, the `auto` thresholds above (needs an ADR 0009 amendment).
 
 ## How to resume
 

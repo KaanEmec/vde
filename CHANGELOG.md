@@ -6,6 +6,109 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-18
+
+The stable release: `/v1` and the configuration schema are frozen under a published
+[compatibility policy](docs/compatibility.md), the service has had a security review
+(a hardening pass with fuzzers, then an independent review; [docs/security.md](docs/security.md)),
+and it degrades predictably under load with `503` backpressure. The owner deferred the
+performance baseline and release engineering (signed images, SBOMs, a documentation site)
+out of v1.0; their drafts are listed in the [backlog](docs/roadmap/backlog.md).
+
+### Added
+
+- Compatibility policy for `/v1` (`docs/compatibility.md`): what is frozen, what may
+  change, deprecation and `/v2`. The API document is frozen as `api/openapi.v1.0.0.yaml`;
+  `TestOpenAPISupersetOfSnapshot` keeps `api/openapi.yaml` a superset of it (paths,
+  methods, response codes, required fields, enum values, headers may only grow; a request
+  may not gain a required field). Operations carry `x-stability` (`stable`; the completion
+  webhook and `document.url` are `experimental`). `info.version` is `1.0.0` and now means
+  the API's version, not the service release.
+- Configuration schema frozen for 1.x: `internal/config/schema.json` (JSON Schema 2020-12,
+  100 keys, `additionalProperties: false`), printed by `vde config schema` for editors
+  (`yaml-language-server`); `vde config check` also validates against it and reports
+  `error: schema: <key>: <message>`. No key was renamed, so a 0.x file needs no migration.
+  Deprecation rule: a renamed key keeps working for one minor version with a warning.
+- `limits.max_queued_jobs` (default `0`, no ceiling): at or above it, `POST /v1/jobs` and
+  `POST /v1/extract` answer `503 unavailable` with `Retry-After: 5` before any part is
+  buffered; nothing is stored or charged and polls are unaffected. A request with an
+  `Idempotency-Key` is read first and meets the ceiling only when its key is unused, so a
+  replay answers `202`. `Store.CountQueued` (SQLite and Postgres), cached for one second
+  per process.
+- `limits.max_submits_in_flight` (default `16`): submissions read at once per process, at
+  most half of them (at least one) per application; over it, `503 unavailable` with
+  `Retry-After: 5`.
+- Fuzzers `FuzzReadSubmission` (multipart submit), `FuzzParseVerdict` and `FuzzHTMLText`,
+  next to the existing four; a CI `fuzz` job runs every fuzzer for 20 s.
+- Metric `vde_audit_auth_failed_dropped_total`.
+- Operations guide section "Memory and backpressure": memory bounds per request and job,
+  why uploads stay buffered, the queue ceiling and in-flight limit, `GOMEMLIMIT` guidance.
+
+### Security
+
+- JSON Schema bounds: nesting over 64 levels, `$ref` chains expanding past 10,000
+  evaluations, or number literals over 1000 digits or with an exponent beyond ±1000 are
+  `422 invalid_schema`; candidates with such numbers, or too deep for a recursive schema,
+  get schema feedback. Validator panics are recovered (a `multipleOf` of `1e-9999999` made
+  the library panic).
+- At most two image decodes in flight per process (one 120-megapixel decode holds about
+  1.2 GB).
+- The document URL fetch also refuses `0.0.0.0/8`, `240.0.0.0/4`, `::/96`, `2002::/16` and
+  `2001::/32`.
+- The extraction loop logs through the redacting logger (`extract.Input.Logger`), and
+  `vde serve` makes it the process default, so no line bypasses the key allow-list (the
+  loop and the WAL checkpoint used the unredacted default before).
+- Refused authentications write at most 10 `auth.failed` audit rows per second per
+  listener (burst 30); the rest are counted in `vde_audit_auth_failed_dropped_total`.
+- Submission rate, in-progress limits and a read-only quota check run before the document
+  URL fetch, schema compilation and PDF preparation, so a caller over its limits costs
+  nothing.
+- Configuration warnings for a plain-HTTP endpoint `base_url` on a non-loopback host and
+  for a tokened non-loopback `metrics.listen`; URL credentials are no longer echoed in
+  validation messages.
+- Release toolchain pinned (`toolchain go1.26.9` in `go.mod`): `govulncheck` is clean;
+  Go 1.26.0 carried reachable standard-library vulnerabilities.
+
+### Changed
+
+- The `/healthz` database check runs one at a time, at most 5 times per second (burst 10)
+  per process, under its own 1 s timeout; over that or while a check runs, the last result
+  is reused, so orchestrator probes never fail because of load.
+- `vde serve` warms the pdfium engine before serving, so no request pays the cold
+  WebAssembly compile.
+- The OpenAPI document lists `503` (`ServiceUnavailable`, with `Retry-After`) on
+  `POST /v1/jobs` and `POST /v1/extract`. When a request has several faults, the answer can
+  be `429` where it used to be `400` or `422` (allowed by the compatibility policy).
+- `limits.pages` is capped at 999 (stored page names have three digits).
+
+### Fixed
+
+- Submissions with more than 99 pages failed to store (`503` after the quota was charged).
+- An idempotent replay of a finished `retention: none` job no longer returns its result:
+  until the first `GET` reads and deletes it, a replay answers the job without its content
+  (no `content_deleted_at`) and deletes nothing, so a resubmission after a poll timeout
+  (contract §13) still gets the result. Before, the result could be replayed until a `GET`
+  or expiry.
+- A recursive JSON Schema with several recursive properties refused valid candidates from
+  depth 11 on as nested too deeply; the bound now follows what the candidate contains.
+- `/healthz` could cache a failed database check when a client hung up, then answer
+  `503 [db]` with a healthy database.
+- `quota.window: ""` and `retention.default: ""` failed `config check` although they mean
+  the default.
+- The image decode wait now ends with the request's or job's context.
+- Flaky tests under `-race` on shared CI runners (grounding performance bound, worker
+  heartbeat slack, e2e waits).
+
+### Known gaps
+
+- Performance baseline (v1.0 03-01) and release engineering (signing, SBOMs, docs site)
+  are deferred; releases are still unsigned archives with `checksums.txt`.
+- An external paid security audit is the owner's option; the review in `docs/security.md`
+  was internal (two independent passes).
+- Everything listed under 0.4.0 "Known gaps" that is not named above still holds (owner's
+  judge-policy comparison, Bedrock and Vertex live runs, classifier judge vendor, HEIC,
+  `LISTEN/NOTIFY`, in-memory webhook deliveries, `debug.log_content` sink, no OCR).
+
 ## [0.4.0] - 2026-10-18
 
 Judge policy, a deterministic grounding check and PDF preparation in the service
