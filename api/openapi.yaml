@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Verified Document Extraction API
-  version: 0.2.0
+  version: 0.4.0
   description: |
     The HTTP surface of vde, the verified document extraction service. It is a superset
     of TravelInbox's `FromTravelApp/extraction-service-api.yaml` (ADR 0005): every path,

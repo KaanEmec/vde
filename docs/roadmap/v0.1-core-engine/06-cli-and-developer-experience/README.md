@@ -1,6 +1,6 @@
 # Epic 06: CLI and developer experience
 
-Version: v0.1 · Status: done · Depends on: 05
+Version: v0.1 · Status: done· Depends on: 05
 
 A way to run the engine from the command line against a file, a documented minimal
 configuration, scripted end-to-end scenarios with the fake provider, and an opt-in smoke

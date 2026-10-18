@@ -1,6 +1,6 @@
 # Epic 05: Delivery options
 
-Version: v0.3 · Status: done · Depends on: v0.2
+Version: v0.3 · Status: done· Depends on: v0.2
 
 Other ways to get a result than polling a multipart-submitted job. All additive to `/v1`.
 

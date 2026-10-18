@@ -1,6 +1,6 @@
 # Epic 01: Storage backends
 
-Version: v0.3 · Status: done · Depends on: v0.2
+Version: v0.3 · Status: done· Depends on: v0.2
 
 Second implementations of the two storage interfaces, chosen by configuration.
 

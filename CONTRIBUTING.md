@@ -73,3 +73,5 @@ Procedure:
 First release only: GHCR creates the package private. After the first push, open the
 package settings on GitHub and make it public, and link it to the repository, so that
 consumers can pull without credentials. Signing and SBOMs are v1.0 work.
+
+For coding agents: [AGENTS.md](AGENTS.md) says how to work in this repository and [STATUS.md](STATUS.md) where the project stands.

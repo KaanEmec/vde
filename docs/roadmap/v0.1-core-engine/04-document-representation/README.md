@@ -1,6 +1,6 @@
 # Epic 04: Document representation
 
-Version: v0.1 · Status: done · Depends on: 01, 02 (capabilities)
+Version: v0.1 · Status: done· Depends on: 01, 02 (capabilities)
 
 The document model, the media types the service accepts (including email), and the
 decision of what the models actually read: the document bytes, the page images, or text.

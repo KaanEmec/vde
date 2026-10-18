@@ -1,6 +1,6 @@
 # Epic 06: Evaluation harness
 
-Version: v0.3 · Status: done · Depends on: v0.2
+Version: v0.3 · Status: done· Depends on: v0.2
 
 Measure extraction quality per `service_version` on a corpus with ground truth, so model,
 framing and representation changes are decided on numbers. The "99% correct" aspiration
