@@ -20,6 +20,14 @@ import (
 // RGBA. A compressed image can be tiny and still decode to far more.
 const maxPixels = 120_000_000
 
+// maxConcurrentDecodes bounds the images the process decodes at once. One decode at
+// maxPixels holds up to about 1.2 GB (the decoded source, its RGBA copy and a rotated
+// copy), so this, not the number of concurrent requests and jobs, bounds the memory
+// image conversion takes. A conversion waits for a slot; each holds it for seconds.
+const maxConcurrentDecodes = 2
+
+var decodeSlots = make(chan struct{}, maxConcurrentDecodes)
+
 // Defaults for ImagePolicy fields left at zero.
 const (
 	defaultConvertTo = "image/jpeg"
@@ -141,8 +149,11 @@ func (p ImagePolicy) variants(data []byte, mediaType string) ([]Page, error) {
 }
 
 // convert decodes the image, scales it down to MaxDimension, applies the EXIF
-// orientation and encodes it as ConvertTo. p must be resolved.
+// orientation and encodes it as ConvertTo, holding one of the decode slots. p must be
+// resolved.
 func (p ImagePolicy) convert(data []byte) ([]byte, error) {
+	decodeSlots <- struct{}{}
+	defer func() { <-decodeSlots }()
 	src, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, err

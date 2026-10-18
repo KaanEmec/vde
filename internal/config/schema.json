@@ -1,0 +1,469 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kaanemec/vde/internal/config/schema.json",
+  "title": "vde configuration",
+  "description": "The vde.yaml file of vde 1.x. vde config check is authoritative; this schema catches typos, types and enum values in an editor. Reference: docs/operator/configuration.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["endpoints", "groups", "roles"],
+  "properties": {
+    "server": {
+      "description": "The HTTP listener.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "listen": {"type": "string", "description": "Listen address, host:port; default 127.0.0.1:8090."},
+        "tls": {
+          "description": "TLS terminated in the binary; set both files or neither.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cert_file": {"type": "string", "description": "TLS certificate file."},
+            "key_file": {"type": "string", "description": "TLS private key file."}
+          }
+        },
+        "trusted_proxy": {"type": "boolean", "description": "A reverse proxy terminates TLS; requests must carry X-Forwarded-Proto: https."},
+        "insecure_http": {"type": "boolean", "description": "Accept plain HTTP from any peer, for development or a trusted private network only."},
+        "data_dir": {"type": "string", "description": "Directory for the database, blobs and caches; default /var/lib/vde."}
+      }
+    },
+    "endpoints": {
+      "description": "Provider endpoints by name.",
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/endpoint"}
+    },
+    "groups": {
+      "description": "Ordered failover lists of endpoint-model pairs by name.",
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/group"}
+    },
+    "roles": {
+      "description": "The group serving each role.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extractor", "judge"],
+      "properties": {
+        "extractor": {
+          "description": "The extractor role; its groups must have no classifier endpoint.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["group"],
+          "properties": {
+            "group": {"type": "string", "description": "Group serving the extractor."},
+            "escalation": {"$ref": "#/$defs/escalation"}
+          }
+        },
+        "judge": {
+          "description": "The judge role; may use the extractor's group.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["group"],
+          "properties": {
+            "group": {"type": "string", "description": "Group serving the judge."},
+            "escalation": {"$ref": "#/$defs/escalation"},
+            "policy": {"$ref": "#/$defs/judgePolicy", "description": "When the judge is asked: always (default), never or auto."},
+            "feedback_fallback": {
+              "type": "string",
+              "enum": ["", "whole_result", "llm"],
+              "description": "What a classifier reject carries: whole_result (default) or llm feedback from feedback_group."
+            },
+            "feedback_group": {"type": "string", "description": "LLM group asked for feedback on classifier rejections; only with feedback_fallback: llm."}
+          }
+        },
+        "second_judge": {
+          "description": "An optional second judge that must also accept.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "group": {"type": "string", "description": "Group serving the second judge; empty means off."}
+          }
+        }
+      }
+    },
+    "limits": {
+      "description": "Bounds of the extraction loop and the documents accepted.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts": {"type": "integer", "minimum": 1, "description": "Default attempt limit per application; default 3."},
+        "job_timeout": {"$ref": "#/$defs/duration", "description": "Deadline per job from its creation; default 5m, at most 8m."},
+        "judge_reparse_tries": {"type": "integer", "minimum": 0, "description": "Extra judge calls when its verdict cannot be parsed; default 1."},
+        "feedback_message_chars": {"type": "integer", "minimum": 0, "description": "Characters kept per feedback message; 0 means 4000."},
+        "document_bytes": {"type": "integer", "exclusiveMinimum": 0, "description": "Largest document in bytes; default 25 MiB."},
+        "page_bytes": {"type": "integer", "exclusiveMinimum": 0, "description": "Largest page image in bytes; default 10 MiB."},
+        "pages": {"type": "integer", "exclusiveMinimum": 0, "description": "Most page images per job; default 20."},
+        "request_bytes": {"type": "integer", "exclusiveMinimum": 0, "description": "Largest whole request body in bytes; default 128 MiB."},
+        "max_queued_jobs": {"type": "integer", "minimum": 0, "description": "Global ceiling on queued jobs, above which submissions answer 503; 0 means none."}
+      }
+    },
+    "documents": {
+      "description": "The representation policy.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "html": {
+          "type": "string",
+          "enum": ["raw_html", "visible_text"],
+          "description": "HTML representation; default raw_html."
+        },
+        "images": {
+          "description": "Image preparation at submit: downscale, EXIF rotation, WebP conversion.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean", "description": "Prepare images once at submit; default true."},
+            "max_dimension": {"type": "integer", "minimum": 64, "maximum": 16384, "description": "Longest side in pixels; default 2048."},
+            "convert_to": {"type": "string", "enum": ["image/jpeg", "image/png"], "description": "Type a converted image is encoded as; default image/jpeg."},
+            "quality": {"type": "integer", "minimum": 1, "maximum": 100, "description": "JPEG quality; default 85."}
+          }
+        },
+        "pdf": {
+          "description": "How a PDF reaches groups that do not read application/pdf natively.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["auto", "native", "text", "pages"],
+              "description": "auto (default), native, text or pages."
+            },
+            "dpi": {"type": "integer", "minimum": 72, "maximum": 300, "description": "Resolution of rendered pages; default 150."},
+            "max_pages": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Longer PDFs are refused unless read natively; default 20."},
+            "min_text_chars_per_page": {"type": "integer", "minimum": 0, "description": "Characters every page needs for auto to send text; default 200."},
+            "workers": {"type": "integer", "minimum": 1, "maximum": 16, "description": "pdfium instances per process; default 1."}
+          }
+        },
+        "fetch": {
+          "description": "Documents named by URL in JSON submissions; off by default.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean", "description": "Allow document URLs; default false."},
+            "allowed_hosts": {"type": "array", "items": {"type": "string"}, "description": "Exact host names fetched from; required when enabled."},
+            "max_bytes": {"type": "integer", "minimum": 0, "description": "Largest fetched document; 0 means limits.document_bytes."},
+            "timeout": {"$ref": "#/$defs/duration", "description": "Whole fetch; default 10s, at most 1m."}
+          }
+        }
+      }
+    },
+    "applications": {
+      "description": "Callers with their own limits.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/application"}
+    },
+    "auth": {
+      "description": "Bounds of the access tokens.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_token_ttl": {"$ref": "#/$defs/duration", "description": "Longest token lifetime; default 17520h."}
+      }
+    },
+    "logging": {
+      "description": "Log output.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {"type": "string", "enum": ["debug", "info", "warn", "error"], "description": "Log level; default info."},
+        "format": {"type": "string", "enum": ["json", "text"], "description": "Log format; default json."}
+      }
+    },
+    "debug": {
+      "description": "Switches for local development only.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "log_content": {"type": "boolean", "description": "Log document content to content.log; loopback listen only."}
+      }
+    },
+    "metrics": {
+      "description": "Protection of GET /metrics.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "token_env": {"$ref": "#/$defs/envName", "description": "Environment variable holding the bearer token /metrics requires."},
+        "listen": {"type": "string", "description": "A second listener, host:port, serving only /metrics."},
+        "go_runtime": {"type": "boolean", "description": "Add the Go runtime and process series."}
+      }
+    },
+    "admin": {
+      "description": "The admin API.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "listen": {"type": "string", "description": "Admin listener, host:port; default 127.0.0.1:8091, empty disables it."}
+      }
+    },
+    "worker": {
+      "description": "The job worker pool.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "size": {"type": "integer", "minimum": 1, "maximum": 256, "description": "Jobs run at once; default 4."},
+        "poll_interval": {"$ref": "#/$defs/duration", "description": "Sleep of an idle worker between looks at the queue; default 500ms."},
+        "lease": {"$ref": "#/$defs/duration", "description": "Lease on a running job without renewal; default 2m."}
+      }
+    },
+    "rate": {
+      "description": "Process-wide rate limiting choice.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "shared": {"type": "boolean", "description": "Count rate limits in the job store across replicas; default false."}
+      }
+    },
+    "retention": {
+      "description": "Process-wide retention settings.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sweep_interval": {"$ref": "#/$defs/duration", "description": "Time between expiry sweeps; default 1m."}
+      }
+    },
+    "audit": {
+      "description": "The audit trail.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "log": {"type": "boolean", "description": "Also write each audit event as a log line."},
+        "retention": {"$ref": "#/$defs/duration", "description": "How long audit events are kept; default 8760h."}
+      }
+    },
+    "storage": {
+      "description": "The job store.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "driver": {"type": "string", "enum": ["sqlite", "postgres"], "description": "sqlite (default) or postgres."},
+        "dsn_env": {"$ref": "#/$defs/envName", "description": "Environment variable holding the PostgreSQL DSN; VDE_DATABASE_URL by default."},
+        "max_open_conns": {"type": "integer", "minimum": 0, "maximum": 1000, "description": "PostgreSQL pool size; 0 means 16."}
+      }
+    },
+    "blobs": {
+      "description": "The blob store of documents and page images.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "driver": {"type": "string", "enum": ["fs", "s3"], "description": "fs (default) or s3."},
+        "bucket": {"type": "string", "description": "S3 bucket name; required with s3."},
+        "endpoint": {"type": "string", "description": "S3 API URL of a non-AWS store; empty means AWS S3."},
+        "region": {"type": "string", "description": "The bucket's region; required with s3."},
+        "path_style": {"type": "boolean", "description": "Address the bucket in the URL path (MinIO)."},
+        "sse": {"type": "string", "enum": ["AES256", ""], "description": "Server-side encryption: AES256 (default) or empty for none."}
+      }
+    },
+    "sync": {
+      "description": "Bounds of POST /v1/extract.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_wait": {"$ref": "#/$defs/duration", "description": "Longest wait before answering 202; default 60s, at most 120s."}
+      }
+    }
+  },
+  "$defs": {
+    "duration": {
+      "description": "A Go duration such as 90s, 3m or 1h30m; a bare number is rejected.",
+      "type": "string",
+      "pattern": "^(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$"
+    },
+    "envName": {
+      "description": "Name of an environment variable; empty means none.",
+      "type": "string",
+      "pattern": "^([A-Za-z_][A-Za-z0-9_]*)?$"
+    },
+    "judgePolicy": {
+      "type": "string",
+      "enum": ["", "always", "never", "auto"]
+    },
+    "pdfMode": {
+      "type": "string",
+      "enum": ["", "auto", "native", "text", "pages"]
+    },
+    "mediaType": {
+      "type": "string",
+      "enum": ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "text/plain", "text/html", "text/markdown"]
+    },
+    "escalation": {
+      "description": "Serve the role from group from attempt from_attempt on.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from_attempt", "group"],
+        "properties": {
+          "from_attempt": {"type": "integer", "minimum": 2, "description": "First attempt served by group; strictly increasing."},
+          "group": {"type": "string", "description": "Group serving the role from that attempt."}
+        }
+      }
+    },
+    "endpoint": {
+      "description": "One provider endpoint and the models it serves.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "models"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["anthropic", "openai_compatible", "gemini", "bedrock", "vertex", "classifier", "fake"],
+          "description": "Provider adapter."
+        },
+        "preset": {"type": "string", "enum": ["", "openrouter"], "description": "openrouter, with openai_compatible only."},
+        "base_url": {"type": "string", "description": "API base URL; default per provider or preset."},
+        "api_key_env": {"$ref": "#/$defs/envName", "description": "Environment variable holding the key."},
+        "region": {"type": "string", "description": "Cloud region; bedrock and vertex only."},
+        "project": {"type": "string", "description": "Google Cloud project id; vertex only."},
+        "timeout": {"$ref": "#/$defs/duration", "description": "Per-call timeout; default 90s."},
+        "models": {
+          "description": "Models by name with their capability declaration.",
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/model"}
+        }
+      }
+    },
+    "model": {
+      "description": "One endpoint-model pair's capability declaration.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepts"],
+      "properties": {
+        "accepts": {
+          "description": "Media types the model reads natively.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/mediaType"}
+        },
+        "max_output_tokens": {"type": "integer", "minimum": 0, "description": "Output-token limit per call; 0 means 16384."},
+        "questions": {
+          "description": "The fixed questions of a classifier model.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "text", "threshold"],
+            "properties": {
+              "id": {"type": "string", "description": "Unique question id."},
+              "text": {"type": "string", "description": "The question, phrased so that yes passes."},
+              "threshold": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Probability of yes needed to pass."}
+            }
+          }
+        }
+      }
+    },
+    "group": {
+      "description": "An ordered failover list of endpoint-model pairs.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoints"],
+      "properties": {
+        "endpoints": {
+          "description": "Pairs in failover order.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["endpoint", "model"],
+            "properties": {
+              "endpoint": {"type": "string", "description": "Endpoint name."},
+              "model": {"type": "string", "description": "Model declared on the endpoint."}
+            }
+          }
+        },
+        "failover": {
+          "description": "Bounds of one role call across the pairs.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_tries": {"type": "integer", "minimum": 0, "description": "Tries across the list; 0 means 3."},
+            "max_total_time": {"$ref": "#/$defs/duration", "description": "Time for one role call; default 3m, below limits.job_timeout."},
+            "failover_on_permanent": {"type": "boolean", "description": "Try the next pair after a permanent failure."}
+          }
+        }
+      }
+    },
+    "application": {
+      "description": "One caller with its own limits.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string", "description": "Unique application id."},
+        "name": {"type": "string", "description": "Display name."},
+        "max_attempts": {"type": "integer", "minimum": 0, "description": "Attempt limit; 0 means limits.max_attempts."},
+        "quota": {
+          "description": "Submissions per window.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {"type": "integer", "minimum": 0, "description": "Submissions per window; 0 means 1000."},
+            "window": {
+              "type": "string",
+              "pattern": "^P([0-9]+W)?([0-9]+D)?(T([0-9]+H)?([0-9]+M)?([0-9]+S)?)?$",
+              "description": "ISO 8601 duration in weeks, days, hours, minutes or seconds; default P1D."
+            }
+          }
+        },
+        "rate": {
+          "description": "Rate limits.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requests_per_minute": {"type": "integer", "minimum": 0, "description": "Requests per minute across /v1; 0 means 300."},
+            "submits_per_minute": {"type": "integer", "minimum": 0, "description": "Job submissions per minute; 0 means 30."},
+            "max_in_progress": {"type": "integer", "minimum": 0, "description": "Jobs queued or running at once; 0 means 20."}
+          }
+        },
+        "retention": {
+          "description": "Retention policy.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "type": "string",
+              "pattern": "^(none|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$",
+              "description": "Retention of retention: default jobs, a positive duration or none; default 24h."
+            },
+            "force_none": {"type": "boolean", "description": "Treat every job as retention: none."},
+            "delete_blobs_at_terminal": {"type": "boolean", "description": "Delete the document and pages at the terminal state instead of at expiry."}
+          }
+        },
+        "documents": {
+          "description": "Per-application representation overrides.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "html": {"type": "string", "enum": ["", "raw_html", "visible_text"], "description": "Overrides documents.html."},
+            "pdf": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {"$ref": "#/$defs/pdfMode", "description": "Overrides documents.pdf.mode."}
+              }
+            }
+          }
+        },
+        "webhook": {
+          "description": "Completion webhook; empty url means none.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": {"type": "string", "description": "https URL receiving the signed job.finished notice."},
+            "secret_env": {"$ref": "#/$defs/envName", "description": "Environment variable holding the signing secret; required with url."},
+            "events": {"type": "array", "items": {"type": "string", "enum": ["job.finished"]}, "description": "Events to send; job.finished is the only one."}
+          }
+        },
+        "judge": {
+          "description": "The application's judge policy.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "policy": {"$ref": "#/$defs/judgePolicy", "description": "Overrides roles.judge.policy: always, never or auto."},
+            "allow_override": {"type": "boolean", "description": "Let a request choose the policy with the judge part."},
+            "sample_rate": {"type": "number", "minimum": 0, "maximum": 1, "description": "Under auto, the share of grounded jobs still sent to the judge; default 0.05."}
+          }
+        }
+      }
+    }
+  }
+}

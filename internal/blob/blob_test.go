@@ -102,7 +102,7 @@ func TestFSLayoutAndPermissions(t *testing.T) {
 func TestRejectsUnsafeNames(t *testing.T) {
 	forEachStore(t, func(t *testing.T, s Store) {
 		for _, tt := range []struct{ id, name string }{
-			{"../../etc", Document}, {"j_", Document}, {jobA, "../document"}, {jobA, "page-1"}, {jobA, "other"},
+			{"../../etc", Document}, {"j_", Document}, {jobA, "../document"}, {jobA, "page-1"}, {jobA, "page-1000"}, {jobA, "other"},
 		} {
 			if err := s.Put(t.Context(), tt.id, tt.name, strings.NewReader("x")); err == nil {
 				t.Errorf("Put(%q, %q) accepted", tt.id, tt.name)
@@ -113,6 +113,19 @@ func TestRejectsUnsafeNames(t *testing.T) {
 		}
 		if err := s.DeleteAll(t.Context(), "../x"); err == nil {
 			t.Error("DeleteAll accepted an unsafe id")
+		}
+	})
+}
+
+// TestPageNamesBeyond99: a request with more than 99 pages (limits.pages allows it)
+// stores every page.
+func TestPageNamesBeyond99(t *testing.T) {
+	forEachStore(t, func(t *testing.T, s Store) {
+		for _, n := range []int{99, 100, 999} {
+			put(t, s, jobA, Page(n), "page")
+			if got, err := read(t, s, jobA, Page(n)); err != nil || got != "page" {
+				t.Errorf("%s = %q, %v", Page(n), got, err)
+			}
 		}
 	})
 }

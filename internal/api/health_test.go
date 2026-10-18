@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -137,5 +138,63 @@ func TestHealthzDataDir(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Errorf("the probe left files: %v", entries)
+	}
+}
+
+// countingStore counts the health check's database queries and fails them on demand.
+type countingStore struct {
+	job.Store
+	queries atomic.Int64
+	down    atomic.Bool
+}
+
+func (c *countingStore) CountRunning(ctx context.Context, appID string) (int, error) {
+	c.queries.Add(1)
+	if c.down.Load() {
+		return 0, errors.New("database is locked")
+	}
+	return c.Store.CountRunning(ctx, appID)
+}
+
+// TestHealthzDatabaseRate: a flood of /healthz runs the database check at most
+// healthDBBurst times, then healthDBRate times per second; every request still gets an
+// answer from the last result (never 429), and the result follows the database once
+// the rate allows a new check.
+func TestHealthzDatabaseRate(t *testing.T) {
+	t.Parallel()
+	store := &countingStore{Store: newTestStore(t)}
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	advance := func(d time.Duration) { mu.Lock(); defer mu.Unlock(); now = now.Add(d) }
+	h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true), Now: clock})
+	for i := range 100 {
+		if code, _, raw := getHealth(t, h); code != http.StatusOK {
+			t.Fatalf("request %d: %d %s, want 200", i, code, raw)
+		}
+	}
+	if got := store.queries.Load(); got != healthDBBurst {
+		t.Errorf("100 requests at one instant ran %d queries, want %d", got, healthDBBurst)
+	}
+	store.down.Store(true)
+	if code, _, _ := getHealth(t, h); code != http.StatusOK {
+		t.Errorf("over the rate: %d, want the last result (200)", code)
+	}
+	advance(time.Second / healthDBRate)
+	if code, body, _ := getHealth(t, h); code != http.StatusServiceUnavailable || !slices.Equal(body.Reasons, []string{reasonDB}) {
+		t.Errorf("after one refill: %d %v, want 503 [db]", code, body.Reasons)
+	}
+	if got := store.queries.Load(); got != healthDBBurst+1 {
+		t.Errorf("queries = %d, want %d", got, healthDBBurst+1)
+	}
+	advance(time.Minute)
+	store.down.Store(false)
+	for i := range healthDBBurst {
+		if code, _, raw := getHealth(t, h); code != http.StatusOK {
+			t.Fatalf("after a minute, request %d: %d %s, want 200", i, code, raw)
+		}
+	}
+	if got := store.queries.Load(); got != 2*healthDBBurst+1 {
+		t.Errorf("the bucket refills to its burst: queries = %d, want %d", got, 2*healthDBBurst+1)
 	}
 }

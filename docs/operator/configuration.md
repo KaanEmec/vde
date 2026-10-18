@@ -17,6 +17,29 @@ explained in [troubleshooting](troubleshooting.md#config-check-messages).
 only warns "probe not available" for each endpoint and checks nothing more. Reachability
 probing is planned for v0.3; until then test an endpoint with `vde extract` and a small document.
 
+## Schema
+
+The keys of 1.x are described by a JSON Schema (draft 2020-12) built into the binary;
+`vde config schema` prints it. For completion and inline errors in an editor, save it next
+to the file with `vde config schema > vde.schema.json` and make
+`# yaml-language-server: $schema=./vde.schema.json` the file's first line; VS Code's YAML
+extension and other editors using yaml-language-server read that comment.
+Save the schema again after upgrading `vde`. `vde config check` validates the file against
+the same schema after its own checks and reports each violation as
+`error: schema: <key>: <message>`; any violation fails the check. The schema checks key
+names, types, accepted values, ranges and the form of durations; rules across keys (a
+group's model declared on its endpoint, `failover.max_total_time` below
+`limits.job_timeout`, a named variable being set) are only in `config check`'s own
+validation, which is also all that `serve` and `extract` run. A key with no value
+(`server:`) counts as absent, as it does for `vde`.
+
+**Changes within 1.x.** The keys of 1.0 are the keys of every 1.x release. A new key
+arrives with a default that reproduces the previous behaviour. If a key ever has to be
+renamed, the old name keeps working for one minor version, with a warning from
+`vde config check` and `vde serve` that names the replacement, and is removed in the next;
+the CHANGELOG lists it under "Deprecated". No key is deprecated in 1.0, and a 0.x file
+needs no rewrite: no key changed on the way to 1.0, so there is no migration command.
+
 ## `server` (used from v0.2)
 
 | Key | Type | Default | Meaning |

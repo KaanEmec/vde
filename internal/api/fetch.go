@@ -67,12 +67,16 @@ func newFetcher(c config.Fetch, tlsConfig *tls.Config, allow func(netip.Addr) bo
 	return f
 }
 
-// nonPublic are ranges IsGlobalUnicast and IsPrivate leave out: shared address space,
-// IETF protocol assignments, benchmarking, and NAT64, which can embed a private IPv4.
+// nonPublic are ranges IsGlobalUnicast and IsPrivate leave out: "this network"
+// (0.0.0.0/8, which some stacks route to the host itself), shared address space, IETF
+// protocol assignments, benchmarking, reserved (240.0.0.0/4), and the IPv6 forms that
+// can embed an IPv4 address: IPv4-compatible (::/96), NAT64, 6to4 and Teredo.
 var nonPublic = []netip.Prefix{
-	netip.MustParsePrefix("100.64.0.0/10"), netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"), netip.MustParsePrefix("64:ff9b::/96"),
-	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"), netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"), netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("64:ff9b::/96"), netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2002::/16"), netip.MustParsePrefix("2001::/32"),
 }
 
 // publicAddr reports whether a is a public unicast address.

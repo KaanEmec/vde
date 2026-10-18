@@ -9,7 +9,7 @@ with `/v1` available for at least 12 months after. The reference is
 
 The admin API (`/admin/v1`), configuration keys, metrics series, the CLI and log lines are
 not covered here: they are operator surfaces with their own rules (configuration:
-[config freeze](roadmap/v1.0-stable/01-api-freeze/02-config-freeze.md)).
+[below](#configuration)).
 
 ## Stable and experimental
 
@@ -99,6 +99,16 @@ changes them changes `service_version`, as a new model or framing would.
 Something stable is never removed from `/v1`. It may be deprecated: marked `deprecated:
 true` in the API document, listed under "Deprecated" in the CHANGELOG and in the API guide,
 with what replaces it. It keeps working for as long as `/v1` is served.
+
+## Configuration
+
+Not part of the API promise, but frozen for 1.x on its own terms: the keys of `vde.yaml`
+at 1.0 are the keys of every 1.x release, described by the JSON Schema that
+`vde config schema` prints (`internal/config/schema.json`). A new key arrives with a
+default that reproduces the previous behaviour; a renamed key keeps its old name working
+for one minor version, with a warning from `vde config check` and `vde serve`, then the old
+name is removed. Details:
+[configuration reference, "Schema"](operator/configuration.md#schema).
 
 ## `/v2`
 

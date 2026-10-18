@@ -281,3 +281,76 @@ func TestRunConfigCheck(t *testing.T) {
 		})
 	}
 }
+
+// Not parallel: t.Setenv provides the provider key through the process environment.
+func TestRunConfigSchema(t *testing.T) {
+	t.Setenv("VDE_TEST_ANTHROPIC_KEY", testSecret)
+	tests := []struct {
+		name       string
+		args       []string
+		wantCode   int
+		wantStdout []string
+		wantStderr []string // in this order
+	}{
+		{
+			name:       "prints the schema",
+			args:       []string{"config", "schema"},
+			wantCode:   exitOK,
+			wantStdout: []string{`"$schema": "https://json-schema.org/draft/2020-12/schema"`, `"max_queued_jobs"`},
+		},
+		{
+			name:       "schema takes no argument",
+			args:       []string{"config", "schema", "--config", "vde.yaml"},
+			wantCode:   exitUsage,
+			wantStderr: []string{`vde config schema: unexpected argument "--config"`},
+		},
+		{
+			name:     "violations after the validation errors",
+			args:     []string{"config", "check", "--config", writeConfig(t, brokenConfig)},
+			wantCode: exitFailure,
+			wantStderr: []string{
+				"error: debug.log_content:",
+				"error: schema: endpoints.anthropic.models.claude.accepts[1]: value must be one of",
+				"5 blocking problem(s)",
+			},
+		},
+		{
+			name:     "a violation alone fails the check",
+			args:     []string{"config", "check", "--config", writeConfig(t, goodConfig+"applications: [{id: inbox, name: 42}]\n")},
+			wantCode: exitFailure,
+			wantStderr: []string{
+				"error: schema: applications[0].name: got number, want string",
+				"has 1 schema violation(s)",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(tt.args, &stdout, &stderr)
+			if code != tt.wantCode {
+				t.Errorf("exit code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tt.wantCode, &stdout, &stderr)
+			}
+			for _, w := range tt.wantStdout {
+				if !strings.Contains(stdout.String(), w) {
+					t.Errorf("stdout does not contain %q", w)
+				}
+			}
+			rest := stderr.String()
+			for _, w := range tt.wantStderr {
+				i := strings.Index(rest, w)
+				if i < 0 {
+					t.Errorf("stderr does not contain %q after the previous line:\n%s", w, &stderr)
+					break
+				}
+				rest = rest[i+len(w):]
+			}
+			if tt.wantCode != exitOK && stdout.Len() > 0 {
+				t.Errorf("stdout not empty on failure:\n%s", &stdout)
+			}
+			if strings.Contains(stdout.String()+stderr.String(), testSecret) {
+				t.Errorf("output contains the secret")
+			}
+		})
+	}
+}

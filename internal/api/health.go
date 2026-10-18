@@ -21,6 +21,13 @@ const (
 const (
 	healthDBTimeout   = time.Second
 	dataDirCheckEvery = 30 * time.Second
+	// The database check runs at most healthDBBurst times at once and healthDBRate times
+	// per second after that, for the whole process; a request over the rate gets the last
+	// database result. Orchestrator probes (a few per minute) never reach the limit, and
+	// a flood of unauthenticated requests cannot turn into a flood of queries, nor make
+	// the probes fail as a 429 would.
+	healthDBRate  = 5
+	healthDBBurst = 10
 )
 
 type healthBody struct {
@@ -33,15 +40,22 @@ type healthBody struct {
 }
 
 // health is GET /healthz. It is unauthenticated, so every check is cheap: a one-row
-// query with a 1 s timeout, the role groups' in-memory marks, and a data directory
-// write probe cached for 30 s. It is not rate limited; operators expose it to the
-// orchestrator (docs/operator).
+// query with a 1 s timeout under a global rate (healthDBRate), the role groups'
+// in-memory marks, and a data directory write probe cached for 30 s. Requests are not
+// refused: over the rate, the last database result is reused (docs/security.md).
 type health struct {
 	s *server
 
 	mu        sync.Mutex
 	checkedAt time.Time
 	writable  bool
+
+	dbMu      sync.Mutex // held through a database check
+	dbTokens  float64    // database checks available now, at most healthDBBurst
+	dbAt      time.Time  // when dbTokens was last refilled; zero before the first check
+	dbChecked bool       // dbAge and dbUp hold a result
+	dbAge     int64
+	dbUp      bool
 }
 
 func (s *server) healthHandler() http.Handler { return &health{s: s} }
@@ -54,15 +68,12 @@ func (s *server) healthHandler() http.Handler { return &health{s: s} }
 func (h *health) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reasons []string
 	body := healthBody{Status: "ok"}
-	if h.s.deps.Role == RoleAPI {
-		age, ok := h.queueAge(r.Context())
-		if !ok {
-			reasons = append(reasons, reasonDB)
-		} else {
-			body.QueueAgeSeconds = &age
-		}
-	} else if !h.dbOK(r.Context()) {
+	age, ok := h.dbCheck(r.Context())
+	switch {
+	case !ok:
 		reasons = append(reasons, reasonDB)
+	case h.s.deps.Role == RoleAPI:
+		body.QueueAgeSeconds = &age
 	}
 	if !h.dataDirOK() {
 		reasons = append(reasons, reasonBlobs)
@@ -83,6 +94,35 @@ func (h *health) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body.Status, body.Reasons = "unavailable", reasons
 	body.Error = &errorDetail{Code: e.code, Message: e.message, RequestID: w.Header().Get(headerRequestID)}
 	writeJSON(w, e.status, body)
+}
+
+// dbCheck runs the database check of the process's role (queueAge for an API-only
+// process, dbOK otherwise) when the rate allows, else returns the last result. Checks
+// run one at a time.
+func (h *health) dbCheck(ctx context.Context) (int64, bool) {
+	h.dbMu.Lock()
+	defer h.dbMu.Unlock()
+	now := h.s.now()
+	switch {
+	case h.dbAt.IsZero():
+		h.dbTokens = healthDBBurst
+	case now.After(h.dbAt):
+		h.dbTokens = min(h.dbTokens+now.Sub(h.dbAt).Seconds()*healthDBRate, healthDBBurst)
+	}
+	if !now.Before(h.dbAt) {
+		h.dbAt = now // a clock that went back refills nothing until it passes dbAt again
+	}
+	if h.dbTokens < 1 && h.dbChecked {
+		return h.dbAge, h.dbUp
+	}
+	h.dbTokens--
+	if h.s.deps.Role == RoleAPI {
+		h.dbAge, h.dbUp = h.queueAge(ctx)
+	} else {
+		h.dbAge, h.dbUp = 0, h.dbOK(ctx)
+	}
+	h.dbChecked = true
+	return h.dbAge, h.dbUp
 }
 
 // queueAge is the database check of an API-only process: the age in whole seconds of the

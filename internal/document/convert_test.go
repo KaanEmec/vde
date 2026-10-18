@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaanemec/vde/internal/config"
 )
@@ -453,5 +454,44 @@ func TestSelectConvertsPages(t *testing.T) {
 	rep, err = SelectWith(pngPages, capsFor(t, pngOnly), capsFor(t, pngOnly), "", enabled(40))
 	if err != nil || rep.Kind != Pages || rep.MediaTypes[0] != "image/png" || !bytes.Equal(rep.Parts[0].Image.Data, big) {
 		t.Fatalf("PNG-only pages: %v %v, %v", rep.Kind, rep.MediaTypes, err)
+	}
+}
+
+// TestConvertWaitsForDecodeSlot: with every decode slot taken, a conversion waits, and
+// proceeds once a slot is free, so the decoded images in memory are bounded per process.
+// Not parallel: it holds the process-wide slots.
+func TestConvertWaitsForDecodeSlot(t *testing.T) {
+	for range maxConcurrentDecodes {
+		decodeSlots <- struct{}{}
+	}
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			for range maxConcurrentDecodes {
+				<-decodeSlots
+			}
+		}
+	}
+	t.Cleanup(release)
+	data := encodePNG(t, splitImage(80, 40))
+	done := make(chan error, 1)
+	go func() {
+		_, err := enabled(40).resolve().convert(data)
+		done <- err
+	}()
+	select {
+	case <-done:
+		t.Fatal("convert ran with every decode slot taken")
+	case <-time.After(50 * time.Millisecond):
+	}
+	release()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("convert: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("convert did not proceed after the slots were freed")
 	}
 }

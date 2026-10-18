@@ -72,6 +72,41 @@ jobs:
           go-version-input: stable
           go-package: ./...
 
+  fuzz:
+    name: fuzz (20 s per target)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Every fuzz target for a bounded time
+        # go test runs one fuzz target per invocation. A failure leaves the input under
+        # the package's testdata/fuzz/, uploaded below; add it there as a regression seed.
+        run: |
+          set -euo pipefail
+          for target in \
+            "FuzzReadSubmission ./internal/api" \
+            "FuzzNew ./internal/document" \
+            "FuzzHTMLText ./internal/document" \
+            "FuzzParseJSON ./internal/extract" \
+            "FuzzParseVerdict ./internal/extract" \
+            "FuzzNormalize ./internal/ground" \
+            "FuzzOpen ./internal/pdf"; do
+            set -- $target
+            echo "::group::$1"
+            go test -run='^$' -fuzz="^$1\$" -fuzztime=20s "$2"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: fuzz-failures
+          path: internal/**/testdata/fuzz/
+          retention-days: 14
+
   cross:
     name: cross-compile
     runs-on: ubuntu-latest

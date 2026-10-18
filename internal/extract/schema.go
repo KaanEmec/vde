@@ -44,6 +44,7 @@ type Schema struct {
 	allowArray bool         // the top level may be an array
 	rules      ground.Rules // x-vde-grounding, enum and const per location (ADR 0009)
 	annotated  bool         // some x-vde-grounding annotation: the repair runs under always
+	recursive  bool         // a reference cycle: Validate bounds the expansion by the candidate's depth
 }
 
 // noLoader refuses every resource the schema does not contain itself: remote $refs and
@@ -56,11 +57,22 @@ func (noLoader) Load(string) (any, error) {
 
 // CompileSchema compiles a JSON Schema, draft 2020-12 by default, with format assertions
 // on, and reads its grounding annotations (x-vde-grounding, ADR 0009). Any error,
-// including an unknown annotation value, wraps ErrInvalidSchema.
-func CompileSchema(data []byte) (*Schema, error) {
+// including an unknown annotation value, wraps ErrInvalidSchema. A schema over the
+// bounds of schema_limits.go (nesting, number literals, expanded size) is invalid too,
+// and a panic in the library is reported as an invalid schema.
+func CompileSchema(data []byte) (_ *Schema, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%w: the validator failed on it", ErrInvalidSchema)
+		}
+	}()
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("%w: not JSON: %w", ErrInvalidSchema, err)
+	}
+	if _, ok := checkJSONBounds(doc, maxSchemaDepth); !ok {
+		return nil, fmt.Errorf("%w: nested deeper than %d levels or a number literal over %d digits or exponent %d",
+			ErrInvalidSchema, maxSchemaDepth, maxNumberDigits, maxNumberExponent)
 	}
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
@@ -72,6 +84,10 @@ func CompileSchema(data []byte) (*Schema, error) {
 	compiled, err := c.Compile(schemaURL)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidSchema, err)
+	}
+	_, recursive, ok := expansion(compiled, -1, maxSchemaExpansion)
+	if !ok {
+		return nil, fmt.Errorf("%w: its references expand to more than %d subschemas", ErrInvalidSchema, maxSchemaExpansion)
 	}
 	rules, annotated, err := ground.RulesFromSchema(data)
 	if err != nil {
@@ -86,6 +102,7 @@ func CompileSchema(data []byte) (*Schema, error) {
 		allowArray: compiled.Types == nil || slices.Contains(compiled.Types.ToStrings(), "array"),
 		rules:      rules,
 		annotated:  annotated,
+		recursive:  recursive,
 	}, nil
 }
 
@@ -107,11 +124,28 @@ func (s *Schema) GroundingAnnotated() bool {
 // Validate returns one feedback entry per violation of the schema by candidate, each with
 // a pointer into the candidate and a message naming the keyword and the expected form,
 // sorted by pointer, at most maxSchemaFeedback plus a summary. It returns nil when the
-// candidate is valid.
-func (s *Schema) Validate(candidate json.RawMessage) []Feedback {
+// candidate is valid. A candidate the validator cannot check within the bounds of
+// schema_limits.go gets one entry on the whole result, never acceptance.
+func (s *Schema) Validate(candidate json.RawMessage) (out []Feedback) {
+	defer func() {
+		if r := recover(); r != nil {
+			out = []Feedback{schemaFeedback("", "The result could not be validated against the schema.")}
+		}
+	}()
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(candidate))
 	if err != nil {
 		return []Feedback{schemaFeedback("", "The result is not valid JSON.")}
+	}
+	depth, ok := checkJSONBounds(inst, 0)
+	if !ok {
+		return []Feedback{schemaFeedback("", fmt.Sprintf(
+			"The result has a number with more than %d digits or an exponent beyond %d; write numbers plainly.",
+			maxNumberDigits, maxNumberExponent))}
+	}
+	if s.recursive {
+		if _, _, ok := expansion(s.compiled, depth, maxSchemaExpansion); !ok {
+			return []Feedback{schemaFeedback("", "The result is nested too deeply to be validated against the schema.")}
+		}
 	}
 	err = s.compiled.Validate(inst)
 	if err == nil {
@@ -123,7 +157,7 @@ func (s *Schema) Validate(candidate json.RawMessage) []Feedback {
 	}
 	f := &flattener{s: s, inst: inst}
 	f.flatten(ve, nil)
-	out := f.out
+	out = f.out
 	if len(out) == 0 { // never let a failed validation pass as valid
 		out = []Feedback{schemaFeedback("", "The result does not validate against the schema.")}
 	}

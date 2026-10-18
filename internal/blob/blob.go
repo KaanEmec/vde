@@ -41,7 +41,7 @@ const orphanGrace = time.Hour
 
 var (
 	validJobID = regexp.MustCompile(`^[A-Za-z0-9_-]{3,64}$`)
-	validName  = regexp.MustCompile(`^(document|page-[0-9]{2})$`)
+	validName  = regexp.MustCompile(`^(document|page-[0-9]{2,3})$`) // pages 1 to 999; limits.pages has no cap of 99
 )
 
 // FS stores blobs as files: <root>/<shard>/<job id>/<name>, where shard is the last two

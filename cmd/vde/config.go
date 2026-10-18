@@ -25,12 +25,16 @@ import (
 const defaultConfigPath = "vde.yaml"
 
 const configUsage = `Usage: vde config check [--config path] [--strict] [--probe]
+       vde config schema
 
-Validates the configuration without network calls and prints a summary of endpoints,
-groups, roles and the media types each role can read. Exits 1 and lists every error when
-the configuration is invalid. Secrets are never printed.
+check validates the configuration without network calls, then against the JSON Schema,
+and prints a summary of endpoints, groups, roles and the media types each role can read.
+Exits 1 and lists every error and schema violation when the configuration is invalid.
+Secrets are never printed.
 
-Flags:
+schema prints the JSON Schema of the configuration file (draft 2020-12) for editors.
+
+Flags of check:
 `
 
 // probes holds the reachability check of each provider adapter, keyed by provider name.
@@ -41,6 +45,17 @@ var probes = map[string]func(ctx context.Context, e *config.Endpoint) error{}
 const probeTimeout = 15 * time.Second
 
 func runConfig(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "schema" {
+		if len(args) > 1 {
+			fmt.Fprintf(stderr, "vde config schema: unexpected argument %q\n", args[1])
+			return exitUsage
+		}
+		if _, err := stdout.Write(config.Schema()); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitFailure
+		}
+		return exitOK
+	}
 	if len(args) == 0 || args[0] != "check" {
 		fmt.Fprint(stderr, configUsage)
 		return exitUsage
@@ -69,8 +84,28 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 	for _, i := range issues {
 		fmt.Fprintln(stderr, i)
 	}
-	if err != nil {
+	decodeFailed := err != nil && len(issues) == 0 // unreadable, not YAML, unknown key, wrong type
+	if decodeFailed {
 		fmt.Fprintln(stderr, err)
+	}
+	// The schema's violations come after Validate's, whether or not Validate passed. A
+	// file that cannot be read or is not YAML fails loadConfig already.
+	violations, serr := schemaViolations(*path)
+	for _, v := range violations {
+		fmt.Fprintf(stderr, "error: schema: %s: %s\n", v.Key, v.Message)
+	}
+	if err != nil {
+		if !decodeFailed {
+			fmt.Fprintln(stderr, err)
+		}
+		return exitFailure
+	}
+	if serr != nil {
+		fmt.Fprintln(stderr, serr)
+		return exitFailure
+	}
+	if len(violations) > 0 {
+		fmt.Fprintf(stderr, "config: %s has %d schema violation(s)\n", *path, len(violations))
 		return exitFailure
 	}
 	printSummary(stdout, *path, cfg)
@@ -108,6 +143,16 @@ func loadConfigEnv(path string, strict bool, getenv func(string) string) (*confi
 		return nil, issues, fmt.Errorf("config: %s has %d blocking problem(s)", path, n)
 	}
 	return cfg, issues, nil
+}
+
+// schemaViolations validates the file at path against the embedded JSON Schema. Only
+// config check calls it: serve and extract rely on Validate alone.
+func schemaViolations(path string) (config.Issues, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	return config.CheckSchema(data)
 }
 
 func printSummary(w io.Writer, path string, cfg *config.Config) {

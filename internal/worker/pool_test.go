@@ -643,9 +643,11 @@ func TestStopAbandonsAfterGrace(t *testing.T) {
 // TestHeartbeatKeepsLease: a job running longer than the lease is not leased a second
 // time by another worker, because the running worker renews it.
 func TestHeartbeatKeepsLease(t *testing.T) {
-	r := newRig(t, fake.Script{{Answer: candidate, Delay: 300 * time.Millisecond, Repeat: true}},
+	// A 600 ms lease renews every 200 ms, leaving 400 ms of slack for scheduler noise under
+	// -race on a shared runner; the job outlives several leases.
+	r := newRig(t, fake.Script{{Answer: candidate, Delay: 1500 * time.Millisecond, Repeat: true}},
 		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}},
-		worker.Options{Size: 2, PollInterval: 10 * time.Millisecond, Lease: 60 * time.Millisecond})
+		worker.Options{Size: 2, PollInterval: 10 * time.Millisecond, Lease: 600 * time.Millisecond})
 	j := r.submit(t, "app", nil)
 	r.start(t)
 	if got := r.waitTerminal(t, j.ID); got.Status != job.StatusAccepted {
