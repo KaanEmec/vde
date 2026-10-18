@@ -1,6 +1,6 @@
 # Job: Load test and capacity document
 
-Version: v1.0 · Epic: 03 Performance · Status: planned · Depends on: v0.2
+Version: v1.0 · Epic: 03 Performance · Status: dropped (deferred by the owner 2026-10-18; a draft `test/load` tool and partial runs are on branch `wip/release-engineering`) · Depends on: v0.2
 
 ## Goal
 

@@ -26,7 +26,7 @@ Commands:
   serve        run the HTTP service (vde serve -h)
   extract      run one extraction on a document file (vde extract -h)
   eval         measure extraction quality on a corpus (vde eval -h)
-  config       check the configuration file (vde config check -h)
+  config       check the configuration file or print its JSON Schema (vde config check -h)
   app          list the applications in the database (vde app list -h)
   token        create, list and revoke access and admin tokens (vde token -h)
   audit        list the audit log (vde audit list -h)

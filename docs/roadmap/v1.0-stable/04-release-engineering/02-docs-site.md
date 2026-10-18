@@ -1,6 +1,6 @@
 # Job: Documentation site
 
-Version: v1.0 · Epic: 04 Release engineering · Status: planned · Depends on: v0.2 10-*
+Version: v1.0 · Epic: 04 Release engineering · Status: dropped (deferred by the owner 2026-10-18; MkDocs Material + Redocly draft on branch `wip/release-engineering`, builds clean with --strict) · Depends on: v0.2 10-*
 
 ## Goal
 

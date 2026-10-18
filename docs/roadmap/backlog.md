@@ -19,3 +19,19 @@ giving it an epic folder in a version and removing it here.
 | ~~Server-side PDF page rendering~~ | Resolved in v0.4 by [ADR 0010](../architecture/decisions/0010-pdf-preprocessing-in-service.md) (2026-10-17): the service reads the text layer and renders pages itself with pdfium on WebAssembly (`documents.pdf`). ADR 0006 had decided against it on 2026-10-16. | Done |
 | Grounding of partially printed dates | In the offline fake-provider validation of the owner suite under `auto` (2026-10-18), the only critical values that sent emails and PDFs to the judge were derived dates: a next-day arrival, and dates printed without a year whose year comes from the document's own date. Today such a date is ungrounded and the judge decides, which is the safe default. | Measured judge cost on date-derived cases high enough to justify a rule "day and month printed, year equals the document date's year" in `internal/ground` |
 | Helm chart | First deployment is docker compose on one VM. | A Kubernetes user |
+
+## Deferred from v1.0 (owner's decision, 2026-10-18)
+
+Drafts for all three are on the unpushed branch `wip/release-engineering` (one commit on
+top of `691e651`); none has run in CI.
+
+- **Load test and capacity document** (v1.0 03-01): a `test/load` Go tool (multipart
+  submit and poll, latency percentiles, RSS sampling) and a fake-provider harness; the
+  measurement runs and `docs/operator/capacity.md` were not finished.
+- **Signed releases and SBOMs** (v1.0 04-01): keyless cosign signature of the image by
+  digest, SPDX SBOMs (syft) for the image and each archive, GitHub build-provenance
+  attestations, a "Verify a release" section for the install guide. `goreleaser check`
+  passed; the workflow has not run.
+- **Documentation site** (v1.0 04-02): MkDocs Material from `docs/` as-is (a hook rewrites
+  links that leave `docs/` to GitHub URLs), Redocly-rendered API references, a Pages
+  workflow on tags. `mkdocs build --strict` passes locally; Pages was never enabled.

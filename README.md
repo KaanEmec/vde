@@ -234,7 +234,8 @@ Every key is in the [configuration reference](docs/operator/configuration.md).
 | Judge policy and grounding | [docs/operator/judge-policy.md](docs/operator/judge-policy.md) |
 | PDF preprocessing | [docs/operator/pdf.md](docs/operator/pdf.md) |
 | Provider adapters | [docs/providers/](docs/providers/README.md) |
-| Security model and policy | [docs/security.md](docs/security.md), [SECURITY.md](SECURITY.md) |
+| Compatibility policy: what `/v1` and `vde.yaml` promise from 1.0.0 | [docs/compatibility.md](docs/compatibility.md) |
+| Security model, hardening and review findings | [docs/security.md](docs/security.md), [SECURITY.md](SECURITY.md) |
 | Architecture and decisions | [docs/architecture/overview.md](docs/architecture/overview.md), [ADRs](docs/architecture/decisions/) |
 | Roadmap | [docs/roadmap/](docs/roadmap/README.md) |
 | Contract conformance | [docs/conformance/travelinbox-v1.md](docs/conformance/travelinbox-v1.md) |
@@ -247,8 +248,11 @@ v0.1 to v0.4 are implemented: the engine and CLI (v0.1); the HTTP service with j
 tokens, quota, retention, the admin API and packaging (v0.2); Postgres and S3, Bedrock and
 Vertex, the classifier judge, escalation, webhooks, the synchronous endpoint, the
 evaluation harness and multiple replicas (v0.3); judge policies, the grounding check and
-PDF preparation in the service (v0.4). v1.0 is planned: API and configuration freeze,
-security review, performance baseline and release engineering.
+PDF preparation in the service (v0.4). v1.0 freezes `/v1` and the configuration schema
+([compatibility policy](docs/compatibility.md), `vde config schema` for editors), adds a
+queue ceiling and in-flight limits with `503` backpressure, and closes a security review
+(hardening pass, fuzzers in CI, an independent review; [docs/security.md](docs/security.md)).
+A performance baseline and signed releases with SBOMs are deferred.
 
 Not verified yet, so do not treat `vde` as production-ready:
 
