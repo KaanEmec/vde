@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -205,12 +206,23 @@ func TestServiceVersion_missingGroup(t *testing.T) {
 	}
 }
 
-func TestModuleVersion(t *testing.T) {
-	if got := moduleVersion("example.com/not/linked"); got != "unknown" {
-		t.Errorf("moduleVersion(unlinked) = %q, want unknown", got)
+func TestPinnedModuleVersionsMatchGoMod(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := moduleVersion(validatorModule); !strings.HasPrefix(got, "v6.") {
-		t.Errorf("moduleVersion(validator) = %q, want v6.x", got)
+	for _, tc := range []struct{ module, want string }{
+		{validatorModule, validatorVersion},
+		{pdfEngineModule, pdfEngineVersion},
+	} {
+		re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(tc.module) + `\s+(v\S+)`)
+		m := re.FindStringSubmatch(string(data))
+		if m == nil {
+			t.Fatalf("%s not found in go.mod", tc.module)
+		}
+		if m[1] != tc.want {
+			t.Errorf("%s: go.mod has %s, version.go pins %s; update the constant", tc.module, m[1], tc.want)
+		}
 	}
 }
 
@@ -389,12 +401,9 @@ func TestServiceVersion_pdfPolicy(t *testing.T) {
 	cfg.Endpoints["main"].Models["model-a"] = config.Model{Accepts: []string{"text/plain"}} // no group reads PDFs now
 	global := ServiceVersion(cfg, "v0.4.0")
 	var v versionedConfig
-	wantPDF := "auto/dpi=150/min_chars=200/engine=github.com/klippa-app/go-pdfium@" + moduleVersion(pdfEngineModule)
+	wantPDF := "auto/dpi=150/min_chars=200/engine=github.com/klippa-app/go-pdfium@" + pdfEngineVersion
 	if err := json.Unmarshal(canonicalConfig(cfg, config.DefaultSampleRate), &v); err != nil || v.PDF != wantPDF {
 		t.Errorf("pdf = %q (%v), want the default policy and the engine version %q hashed", v.PDF, err, wantPDF)
-	}
-	if moduleVersion(pdfEngineModule) == "unknown" {
-		t.Error("the PDF engine's module version is not in the build info")
 	}
 	for name, edit := range map[string]func(*config.Config){
 		"dpi":       func(c *config.Config) { c.Documents.PDF.DPI = 200 },

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/url"
 	"regexp"
-	"runtime/debug"
 	"slices"
 
 	"github.com/kaanemec/vde/internal/config"
@@ -17,6 +16,15 @@ import (
 // pdfEngineModule is the module of the PDF engine (internal/pdf: pdfium compiled to
 // WebAssembly, ADR 0010), whose version is hashed with the PDF policy.
 const pdfEngineModule = "github.com/klippa-app/go-pdfium"
+
+// Pinned versions of the libraries whose behaviour is part of service_version. They are
+// constants rather than runtime/debug build info because test binaries built with
+// -cover on some platforms carry no dependency list, and the hash must not depend on how
+// the binary was built. TestPinnedModuleVersionsMatchGoMod keeps them equal to go.mod.
+const (
+	validatorVersion = "v6.0.3"
+	pdfEngineVersion = "v1.21.3"
+)
 
 // devVersion is the semver of a build without a release version.
 const devVersion = "0.0.0-dev"
@@ -172,7 +180,7 @@ func canonicalConfig(cfg *config.Config, sampleRate float64) []byte {
 			reaskReminder,
 		},
 		Parser:    parserLeniency,
-		Validator: validatorModule + "@" + moduleVersion(validatorModule),
+		Validator: validatorModule + "@" + validatorVersion,
 		Grounding: ground.RulesVersion,
 	}
 	v.ExtractorEscalation = versionSteps(cfg, cfg.Roles.Extractor.Escalation)
@@ -194,7 +202,7 @@ func canonicalConfig(cfg *config.Config, sampleRate float64) []byte {
 	if cfg.RolePolicy() != config.JudgeAlways || (cfg.Documents.PDF.Mode != config.PDFModeNative && !readsPDFNatively(cfg)) {
 		// The engine's version too: another pdfium build may read other text or render
 		// other pixels from the same PDF.
-		v.PDF = document.NewPDFPolicy(cfg.Documents.PDF, "", nil).String() + "/engine=" + pdfEngineModule + "@" + moduleVersion(pdfEngineModule)
+		v.PDF = document.NewPDFPolicy(cfg.Documents.PDF, "", nil).String() + "/engine=" + pdfEngineModule + "@" + pdfEngineVersion
 	}
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -254,21 +262,4 @@ func versionGroup(cfg *config.Config, name string) versionedGroup {
 		out.Pairs = append(out.Pairs, p)
 	}
 	return out
-}
-
-// moduleVersion returns the version of a module linked into the binary, or "unknown".
-func moduleVersion(path string) string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "unknown"
-	}
-	for _, dep := range info.Deps {
-		if dep.Path == path {
-			if dep.Replace != nil {
-				return dep.Replace.Version
-			}
-			return dep.Version
-		}
-	}
-	return "unknown"
 }
