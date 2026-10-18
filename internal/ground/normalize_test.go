@@ -109,7 +109,9 @@ func syntheticText(n int) string {
 func TestNewText_performance(t *testing.T) {
 	text := syntheticText(200 << 10)
 	candidate := []byte(`{"a":"Übernachtung Doppelzimmer","b":"2027-01-01","c":1234.34,"d":"Grand Hotel","e":"2027-12-31T23:59","f":"RX00042"}`)
-	limit := 100 * time.Millisecond
+	// A loose bound: it catches a quadratic regression (seconds), not scheduler noise.
+	// Under -race with coverage on a shared CI runner the same work has taken 1.3 s.
+	limit := 500 * time.Millisecond
 	if raceEnabled {
 		limit *= 10
 	}
