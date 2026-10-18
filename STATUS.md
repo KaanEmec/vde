@@ -18,8 +18,9 @@ docs site) out of v1.0 on 2026-10-18; drafts are on the unpushed branch
 `wip/release-engineering`. Everything is proven with the fake provider and the
 conformance suite; real-model evidence is one smoke run, the TravelInbox live test and a
 few evaluation runs through one OpenAI-compatible endpoint. The owner's comparison of the
-judge policies on real documents has not been run. The `v1.0.0` tag is not pushed yet
-(CHANGELOG 1.0.0 is written); `make live` before tagging is the CONTRIBUTING rule.
+judge policies on real documents has not been run. `v1.0.0` was tagged and released on
+2026-10-18 after `make live` passed (21 of 21 sample runs accepted through the owner's
+endpoint); the release workflow built the image and four archives.
 
 ## Versions
 
@@ -29,7 +30,7 @@ judge policies on real documents has not been run. The `v1.0.0` tag is not pushe
 | [v0.2 Service](docs/roadmap/v0.2-service/README.md) | done 2026-10-16 | none (CHANGELOG 0.2.0) | HTTP API, applications and tokens, jobs, quota, retention, operations, admin API, packaging, contract conformance |
 | [v0.3 Hardening and extensions](docs/roadmap/v0.3-hardening-and-extensions/README.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
-| [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | none yet (CHANGELOG 1.0.0) | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
+| [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
 
 ## What is verified, and how
 
@@ -134,8 +135,8 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
    records the rows; then decide v0.4 criteria 1 to 3 on real models.
 2. Annotate schemas with `x-vde-grounding` (owner suite first; TravelInbox's is their choice)
    and re-run `auto` to measure judge calls saved.
-3. Tag `v1.0.0`: `make live` with a real key (CONTRIBUTING, "Releasing"), then
-   `git tag -a v1.0.0 -m v1.0.0 && git push origin v1.0.0`, and check the release run.
+3. Make the GHCR package public if `docker pull ghcr.io/kaanemec/vde:1.0.0` needs a
+   login (CONTRIBUTING, "First release only").
 4. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
    SBOMs first, then the docs site, then the load test), each as its own job.
 5. If the comparison justifies it, the `auto` thresholds above (needs an ADR 0009 amendment).
