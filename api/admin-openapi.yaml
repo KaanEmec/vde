@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Verified Document Extraction admin API
-  version: 0.2.0
+  version: 0.4.0
   description: |
     Run-time management of applications, tokens and jobs (epic 11), for operators. It is
     not part of the TravelInbox contract and is served only on its own listener,

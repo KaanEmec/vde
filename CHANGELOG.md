@@ -213,7 +213,7 @@ yet verified live (see Known gaps).
 
 - The real-provider smoke test (`make live`) and the TravelInbox live evaluation have not been
   run.
-- The multi-architecture image has been built only in CI, not verified on both architectures
+- The multi-architecture image has been built not yet built here (no buildx); CI builds it after the first push, not verified on both architectures
   by hand.
 - `vde config check --probe` is not implemented: no provider has a probe, so it only warns
   "probe not available" (planned for v0.3).

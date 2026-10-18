@@ -1,6 +1,6 @@
 # Epic 03: Escalation and model tiers
 
-Version: v0.3 · Status: done · Depends on: v0.2
+Version: v0.3 · Status: done· Depends on: v0.2
 
 Optionally use a stronger (or different) group for later attempts, as a per-role setting
 separate from failover, visible to callers only through `service_version`.

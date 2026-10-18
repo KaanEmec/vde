@@ -107,10 +107,10 @@ suite; the reports land in `eval-reports/`, one `service_version` per policy):
 
 ```
 go build -o bin/vde ./cmd/vde
-bin/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge always
-bin/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge auto \
+go run ./cmd/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge always
+go run ./cmd/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge auto \
   --compare eval-reports/<the always report>.json
-bin/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge never \
+go run ./cmd/vde eval --corpus testdata/user-docs/eval --config testdata/user-docs/vde.nous.yaml --judge never \
   --compare eval-reports/<the always report>.json
 VDE_USER_DOCS=1 go test ./internal/document -run UserDocs -v   # PDFs: representation per file, no caller pages
 ```

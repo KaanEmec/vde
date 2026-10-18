@@ -1,0 +1,123 @@
+# STATUS
+
+Where the project stands, as of **2026-10-18** (last commit `11570b0`). How to work here is in
+[AGENTS.md](AGENTS.md). Job files under [docs/roadmap/](docs/roadmap/README.md) stay the
+source of truth; this page summarizes them and must be updated at the end of every session.
+
+## Summary
+
+v0.1 to v0.4 are implemented and committed on `main`: the extractor-judge engine and CLI,
+the authenticated HTTP service of the TravelInbox contract, Postgres/S3 storage, more
+providers, escalation, delivery options, an evaluation harness, multi-replica operation, and
+(v0.4) judge policies `always`/`never`/`auto` with a deterministic grounding check and PDF
+preparation in the service. Everything is proven with the fake provider and the conformance
+suite; real-model evidence is one smoke run, the TravelInbox live test and a few evaluation
+runs through one OpenAI-compatible endpoint. The owner's comparison of the judge policies on
+real documents has not been run, so v0.4's exit criteria 1 to 3 are verified only by tests.
+There is no git remote yet, so CI and the release workflow have never run. Not
+production-ready; v1.0 (freeze, security review, performance, release engineering) is planned.
+
+## Versions
+
+| Version | Status | Tag | Scope |
+| --- | --- | --- | --- |
+| [v0.1 Core engine](docs/roadmap/v0.1-core-engine/README.md) | done 2026-10-16 | none (CHANGELOG 0.1.0) | Config, Anthropic/OpenAI-compatible/Gemini adapters, failover, representation incl. email, the loop, `vde extract` |
+| [v0.2 Service](docs/roadmap/v0.2-service/README.md) | done 2026-10-16 | none (CHANGELOG 0.2.0) | HTTP API, applications and tokens, jobs, quota, retention, operations, admin API, packaging, contract conformance |
+| [v0.3 Hardening and extensions](docs/roadmap/v0.3-hardening-and-extensions/README.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
+| [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
+| [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | planned | none | Epics: 01 API and configuration freeze, 02 security review, 03 performance baseline, 04 release engineering (signing, SBOM, docs site) |
+
+## What is verified, and how
+
+- **Automated, fake provider, no network** (`make check`, `make scenarios`, `make eval`):
+  every loop scenario in `testdata/scenarios/` (incl. `judge-policy/`), the HTTP e2e tests in
+  `cmd/vde` (`serve_e2e_test.go`, `admin_e2e_test.go`, `webhook_e2e_test.go`,
+  `TestServeJudgePolicies`), and v0.4's criteria (`TestRun_autoNeverGroundsInvented`,
+  `TestCheck_eventInvoice`, `TestExtractPDFWithoutPages`); details in the
+  [v0.4 exit criterion check](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md#exit-criterion-check-2026-10-18).
+- **Contract conformance** (`make conformance`): contract §14 items 1 to 9 against the built
+  binary, unchanged under `always` after v0.4; MUST traceability in
+  [travelinbox-v1.md](docs/conformance/travelinbox-v1.md).
+- **Storage and scaling**: Postgres and S3 suites (opt-in env vars); two worker pools run
+  100 jobs exactly once and resume a killed pool's job; `examples/compose/scaled` ran
+  locally with PostgreSQL 17 and RustFS ([v0.3 check](docs/roadmap/v0.3-hardening-and-extensions/README.md#exit-criterion-check-2026-10-17)).
+- **Smoke test, real model** (2026-10-16, `make live` via Nous Research,
+  `google/gemini-3.8-flash`): samples (text, HTML, email, PDF, JPEG, with and without schema)
+  and the owner's ten documents all `accepted`
+  ([job record](docs/roadmap/v0.1-core-engine/06-cli-and-developer-experience/04-real-provider-smoke-test.md)).
+- **TravelInbox live test** (2026-10-16, local `vde serve`, same model): `TestServiceLive`
+  PASS (`one_document`; `corpus_end_to_end` skipped). TravelInbox's evaluation: 50 documents,
+  0 failed, no-correction share flights 33.3 %, lodging 5.9 % (below TravelInbox's 90 %
+  targets) ([record](docs/conformance/travelinbox-v1.md)).
+- **`vde eval` on the TravelInbox corpus** (2026-10-16, [quality.md](docs/quality.md)): false
+  accepts 86.0 % (gemini-3.8-flash both roles), 88.9 % (Sonnet 5.5 judge), 80.5 % (Sonnet 5.5
+  both); mostly ground-truth convention disagreements, not document errors.
+- **Owner suite runs** (2026-10-17, recorded in [ADR 0009](docs/architecture/decisions/0009-judge-policy-and-grounding.md)
+  and [ADR 0010](docs/architecture/decisions/0010-pdf-preprocessing-in-service.md), not as
+  rows in quality.md): Haiku 5.5 extractor with GLM 5.3 Flash judge, 8 of 10 fully correct,
+  field accuracy 96.8 %, about 0.6 cents per document; every judge tried (Gemini Flash,
+  Sonnet, Haiku, GLM, DeepSeek) accepted an event invoice with invented values. PDF selection
+  without caller pages on the owner suite (`VDE_USER_DOCS=1`, 2026-10-17): all 5 PDFs.
+- **Binary size** (v0.4): linux/amd64 35.9 MB, linux/arm64 34.2 MB, static, `CGO_ENABLED=0`.
+
+## What is NOT verified
+
+- Bedrock and Vertex adapters against live endpoints (no credentials).
+- The classifier judge against a vendor API (unavailable); only the generic contract ships.
+- Anthropic, OpenAI and Gemini direct keys: live runs went through the OpenAI-compatible
+  adapter only; the others are covered by httptest (Anthropic and Gemini also have opt-in
+  `live_test.go` files, with no recorded run).
+- The multi-arch image: no local buildx and no remote, so it has never been built; image
+  size for v0.4 not measured.
+- The owner's judge-policy comparison (`always`/`auto`/`never` on the owner suite and the
+  TravelInbox corpus): **pending**, table of placeholders in
+  [quality.md, "Judge policy"](docs/quality.md#judge-policy).
+- Conformance in container mode (only local binary and fake provider so far).
+- A real second consumer (v0.3 criterion a).
+
+## Known gaps and follow-ups
+
+Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.md),
+[open questions](docs/roadmap/open-questions.md), the
+[contract review](docs/conformance/travelinbox-v1-review.md#6-open-items-for-the-review-meeting).
+
+- Idempotency replay of a content-deleted job answers the same id with `result: null` and
+  `content_deleted_at`; TravelInbox has to confirm this reading of contract §4/§5 (review
+  item 10). The review meeting has not happened.
+- TravelInbox to confirm it tolerates `verification`, `extracted`, `source: "grounding"` and
+  which `documents.pdf.mode` it wants.
+- `vde config check --probe` is accepted but no provider implements a probe.
+- HEIC is not converted (no pure-Go decoder); accepted only where an endpoint declares it.
+- Postgres `LISTEN/NOTIFY` skipped (workers poll); pending webhook deliveries live in memory.
+- Grounding of partially printed dates (no year, next-day arrival) is ungrounded today and
+  goes to the judge ([backlog](docs/roadmap/backlog.md)).
+- Unannotated schemas (TravelInbox's, the owner suite's) mark derived values as critical
+  misses, so under `auto` most such jobs still go to the judge.
+- pdfium: no system fonts, about 500 MB per `documents.pdf.workers`, interpreted outside
+  amd64/arm64. No OCR: images and scanned PDFs are ungroundable.
+- `debug.log_content` sink opened but not written by provider adapters
+  ([v0.2 06-03](docs/roadmap/v0.2-service/06-retention-and-privacy/03-log-redaction.md), in progress).
+- Idea, not documented or implemented elsewhere: `auto` thresholds per application
+  (`max_document_chars`, `max_items`, `min_grounded_share`) that send large or weakly
+  grounded results to the judge.
+
+## Recommended next steps (in order)
+
+1. Owner runs the policy comparison ([quality.md](docs/quality.md#judge-policy) commands) and
+   records the rows; then decide v0.4 criteria 1 to 3 on real models.
+2. Annotate schemas with `x-vde-grounding` (owner suite first; TravelInbox's is their choice)
+   and re-run `auto` to measure judge calls saved.
+3. v1.0 freeze work: [01 API and configuration freeze](docs/roadmap/v1.0-stable/01-api-freeze/README.md),
+   [02 security review](docs/roadmap/v1.0-stable/02-security-review/README.md),
+   [03 performance baseline](docs/roadmap/v1.0-stable/03-performance/README.md),
+   [04 release engineering](docs/roadmap/v1.0-stable/04-release-engineering/README.md)
+   (push to the remote first so CI and the release workflow run).
+4. If the comparison justifies it, the `auto` thresholds above (needs an ADR 0009 amendment).
+
+## How to resume
+
+1. `git log --oneline | head -20` and `git status`; compare with the last commit above.
+2. `make check` (and `make conformance`, `make eval` if you touch the loop or API).
+3. Read this file, then [AGENTS.md](AGENTS.md), then the next `planned` job file.
+4. Work the job; update its `Status:`, the epic table and, at the end of the session, this
+   file (date, last commit, what changed in the sections above).
