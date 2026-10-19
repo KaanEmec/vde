@@ -61,8 +61,6 @@ type Pool struct {
 
 	apps          map[string]config.Application
 	maxInProgress map[string]int
-	extractorCaps []config.Capability
-	judgeCaps     []config.Capability
 
 	wake      chan struct{}
 	stopping  chan struct{} // closed by Stop: lease nothing more
@@ -81,15 +79,10 @@ func New(store job.Store, blobs blob.Store, cfg *config.Config, roles extract.Ro
 		opts.Logger = slog.Default()
 	}
 	opts.Audit = opts.Audit.WithActor(audit.ActorWorker)
-	// Every group that may serve a role (escalation, second judge, feedback group) must
-	// read the representation, as at submit.
-	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
 	p := &Pool{
 		store: store, blobs: blobs, cfg: cfg, roles: roles, opts: opts,
 		apps:          map[string]config.Application{},
 		maxInProgress: map[string]int{},
-		extractorCaps: extractorCaps,
-		judgeCaps:     judgeCaps,
 		wake:          make(chan struct{}, cfg.Worker.Size),
 		stopping:      make(chan struct{}),
 	}
@@ -332,10 +325,9 @@ func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in
 	if err != nil {
 		return in, "html policy", err
 	}
-	// The same selection as at submit: the image policy, and the PDF policy with the
-	// process's engine (a PDF chosen as text at submit is read as text again).
-	pdfPolicy := document.NewPDFPolicy(p.cfg.Documents.PDF, app.Documents.PDF.Mode, p.opts.PDF)
-	rep, err := document.Select(ctx, doc, p.extractorCaps, p.judgeCaps, policy, document.NewImagePolicy(p.cfg.Documents.Images), pdfPolicy)
+	// The same selection as at submit, with the process's engine (a PDF chosen as text at
+	// submit is read as text again).
+	rep, pdfPolicy, err := extract.SelectRepresentation(ctx, p.cfg, doc, policy, app.Documents.PDF.Mode, p.opts.PDF)
 	if err != nil {
 		return in, "representation", err
 	}

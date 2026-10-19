@@ -8,13 +8,12 @@
 // Wiring, once per process:
 //
 //	roles, err := extract.NewRoles(cfg, build) // every group of the roles, escalation included
-//	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg) // what every group of a role reads
 //	version := extract.ServiceVersion(cfg, version.Version)
 //
 // and per job:
 //
 //	schema, err := extract.CompileSchema(schemaBytes) // errors.Is(err, extract.ErrInvalidSchema)
-//	rep, err := document.Select(ctx, doc, extractorCaps, judgeCaps, htmlPolicy, imagePolicy, pdfPolicy)
+//	rep, pdfPolicy, err := extract.SelectRepresentation(ctx, cfg, doc, htmlPolicy, appPDFMode, engine)
 //	out := extract.Run(ctx, extract.Input{
 //		Representation:        rep,
 //		ExtractorInstructions: extractorInstructions,

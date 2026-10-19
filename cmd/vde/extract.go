@@ -335,17 +335,13 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 	return out, nil
 }
 
-// selectRepresentation chooses what both roles read as the service does: the image and
-// PDF policies, the PDF prepared with engine when no group reads it natively. Under
-// judge policy never and auto it also reads the grounding text of a PDF sent natively or
-// as pages; under always it does not, so pdfium never starts for PDF-capable models.
+// selectRepresentation chooses what both roles read as the service does, the PDF
+// prepared with engine when no group reads it natively. Under judge policy never and auto
+// it also reads the grounding text of a PDF sent natively or as pages; under always it
+// does not, so pdfium never starts for PDF-capable models.
 func selectRepresentation(ctx context.Context, cfg *config.Config, doc *document.Document, html document.HTMLPolicy,
 	engine *pdf.Engine, judgePolicy config.JudgePolicy) (document.Representation, error) {
-	// Every group that may serve a role (escalation, second judge, feedback group) must
-	// read the representation.
-	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
-	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, "", document.PDFEngineOf(engine))
-	rep, err := document.Select(ctx, doc, extractorCaps, judgeCaps, html, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
+	rep, pdfPolicy, err := extract.SelectRepresentation(ctx, cfg, doc, html, "", document.PDFEngineOf(engine))
 	if err != nil {
 		return document.Representation{}, err
 	}

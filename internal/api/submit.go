@@ -637,22 +637,16 @@ func (sub *submission) hash() string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-// selectRepresentation chooses what both roles read, from the configured groups'
-// capabilities, the application's HTML policy, the image policy and the PDF policy
-// (documents.pdf with the application's mode, ADR 0010): a PDF no group reads natively
-// is opened here with engine, its pages counted and its text layer measured, and a PDF
-// that cannot be prepared is refused (415). The worker selects again with the same
-// policies.
+// selectRepresentation is extract.SelectRepresentation with the application's HTML and
+// PDF policies: a PDF no group reads natively is opened here with engine, and a PDF that
+// cannot be prepared is refused (415). The worker selects again with the same policies.
 func selectRepresentation(ctx context.Context, cfg *config.Config, app job.Application, doc *document.Document, engine document.PDFEngine) (document.Representation, error) {
 	policy, err := document.ResolveHTMLPolicy(cfg.Documents.HTML, app.HTMLPolicy)
 	if err != nil {
 		return document.Representation{}, err
 	}
-	// Every group that may serve a role (escalation, second judge, feedback group) must
-	// read the representation.
-	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
-	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, cfg.PDFModeOf(app.ID), engine)
-	return document.Select(ctx, doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
+	rep, _, err := extract.SelectRepresentation(ctx, cfg, doc, policy, cfg.PDFModeOf(app.ID), engine)
+	return rep, err
 }
 
 // refuseDocument answers a refused document (*document.Error) with its contract code

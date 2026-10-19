@@ -1,6 +1,6 @@
 # Epic 03: One source for each rule
 
-Version: v1.1 · Status: planned · Depends on: 01
+Version: v1.1 · Status: in progress · Depends on: 01
 
 The same rule is written in several places today: representation selection three times,
 job error messages three times, token handling in the CLI and in the admin API, the local
@@ -11,7 +11,7 @@ in order; 06 can run in parallel.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [One representation selection](01-representation-selection.md) | planned |
+| 01 | [One representation selection](01-representation-selection.md) | done |
 | 02 | [Job outcomes, error messages and the sweeper](02-job-outcomes-and-sweeper.md) | planned |
 | 03 | [CLI and admin API share one code path](03-cli-admin-shared-paths.md) | planned |
 | 04 | [CLI boilerplate and one local runner](04-cli-boilerplate.md) | planned |

@@ -76,7 +76,7 @@ Release `v1.1.0` with `make release` when:
 | 00 | [Preparation: skills, local CI and release, baseline](00-preparation/README.md) | none; runs first, merged into `main` before the rest | planned |
 | 01 | [Dead code and dead features](01-dead-code/README.md) | 00 | done |
 | 02 | [Remove unneeded abstractions](02-de-abstraction/README.md) | 01 | planned |
-| 03 | [One source for each rule](03-single-source/README.md) | 01 | planned |
+| 03 | [One source for each rule](03-single-source/README.md) | 01 | in progress |
 | 04 | [Provider adapters](04-providers/README.md) | 01-03 | planned |
 | 05 | [Long functions](05-long-functions/README.md) | 02, 03 | planned |
 | 06 | [Tests and testdata](06-tests-and-testdata/README.md) | 00 | planned |

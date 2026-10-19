@@ -1,11 +1,13 @@
 package extract
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/router"
 )
@@ -213,6 +215,20 @@ func RoleGroups(cfg *config.Config) (extractor, judge []string) {
 func RoleCapabilities(cfg *config.Config) (extractor, judge []config.Capability) {
 	e, j := RoleGroups(cfg)
 	return commonCapabilities(cfg, e), commonCapabilities(cfg, j)
+}
+
+// SelectRepresentation chooses what both roles read, the one selection of submit, worker
+// and CLI: the capabilities of every group that may serve a role (escalation, second
+// judge, feedback group), the HTML policy html, the image policy and the PDF policy
+// (documents.pdf with the application's pdfMode, "" for none; ADR 0010). A PDF no group
+// reads natively is opened with engine. The PDF policy is returned for
+// document.GroundingText. The worker refuses a job whose selection differs from submit's.
+func SelectRepresentation(ctx context.Context, cfg *config.Config, doc *document.Document, html document.HTMLPolicy,
+	pdfMode string, engine document.PDFEngine) (document.Representation, document.PDFPolicy, error) {
+	extractorCaps, judgeCaps := RoleCapabilities(cfg)
+	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, pdfMode, engine)
+	rep, err := document.Select(ctx, doc, extractorCaps, judgeCaps, html, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
+	return rep, pdfPolicy, err
 }
 
 // commonCapabilities intersects the capabilities of groups. A media type keeps its Via
