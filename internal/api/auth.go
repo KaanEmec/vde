@@ -54,13 +54,13 @@ func (s *server) authenticate(need string, next http.Handler) http.Handler {
 			}
 			closeIfBodyPending(w, r)
 			w.Header().Set("WWW-Authenticate", `Bearer realm="vde"`)
-			writeError(w, r, newError(codeUnauthorized, msgUnauthorized))
+			writeError(w, newError(codeUnauthorized, msgUnauthorized))
 			return
 		case err != nil:
 			s.log.LogAttrs(ctx, slog.LevelError, "authentication store error",
 				slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
 			closeIfBodyPending(w, r)
-			writeError(w, r, newError(codeInternal, msgInternal))
+			writeError(w, newError(codeInternal, msgInternal))
 			return
 		}
 		if f, ok := ctx.Value(logFieldsKey{}).(*logFields); ok {
@@ -75,7 +75,7 @@ func (s *server) authenticate(need string, next http.Handler) http.Handler {
 					return
 				}
 			}
-			writeError(w, r, newError(codeForbidden, msgForbidden))
+			writeError(w, newError(codeForbidden, msgForbidden))
 			return
 		}
 		if now.Sub(p.Token.LastUsedAt) >= lastUsedInterval {

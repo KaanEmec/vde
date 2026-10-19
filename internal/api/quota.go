@@ -89,7 +89,7 @@ func (s *server) quotaHeaders(w http.ResponseWriter, r *http.Request, app job.Ap
 		s.log.LogAttrs(r.Context(), slog.LevelError, "quota not readable",
 			slog.String("request_id", requestIDFrom(r.Context())), slog.String("error", err.Error()))
 		closeIfBodyPending(w, r)
-		writeError(w, r, newError(codeInternal, msgInternal))
+		writeError(w, newError(codeInternal, msgInternal))
 		return false
 	}
 	s.setQuotaHeaders(w.Header(), app, q)

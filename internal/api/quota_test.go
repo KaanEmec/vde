@@ -119,7 +119,7 @@ func TestQuotaHeaders(t *testing.T) {
 		app: func(a *job.Application) { a.RequestsPerMinute = 3 },
 	})
 	notFound := requestID(rg.s.authenticate("", rg.s.limit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, r, newError(codeNotFound, msgRouteNotFound))
+		writeError(w, newError(codeNotFound, msgRouteNotFound))
 	}))))
 	auth := func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+rg.token) }
 	check := func(name string, w interface {

@@ -161,9 +161,9 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	r.Body = &limitedBody{ReadCloser: http.MaxBytesReader(w, r.Body, requestLimit)}
 	// Every refusal first reads what is left of the body, up to the request limit, so
 	// the client sees the status instead of a reset connection.
-	refuse := func(e apiError) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		writeError(w, r, e)
+	refuse := func(err error) {
+		drainBody(r)
+		writeError(w, err)
 	}
 
 	// The submissions in flight come first, before any part is buffered, for every
@@ -185,28 +185,28 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	// Idempotency-Key: a replay creates nothing and must answer 202 (contract §4) even
 	// with the queue full, so a keyed request is read in full under its slot first and
 	// meets the ceiling only once the lookup found the key unused.
-	if key == "" && !s.queueRoom(r, refuse) {
+	if key == "" && !s.queueRoom(w, r) {
 		return nil, true
 	}
 	var sub *submission
-	var e apiError
+	var err error
 	if mediaTypeIn(r.Header.Get("Content-Type"), "", "application/json") {
-		sub, e, ok = s.readJSONSubmission(r, cfg, requestLimit)
+		sub, err = s.readJSONSubmission(r, cfg, requestLimit)
 	} else {
-		sub, e, ok = readSubmission(r, cfg.Limits, requestLimit)
+		sub, err = readSubmission(r, cfg.Limits, requestLimit)
 	}
-	if !ok {
-		refuse(e)
+	if err != nil {
+		refuse(err)
 		return nil, true
 	}
-	retention, maxAttempts, e, ok := sub.options(app)
-	if !ok {
-		refuse(e)
+	retention, maxAttempts, err := sub.options(app)
+	if err != nil {
+		refuse(err)
 		return nil, true
 	}
-	policy, e, ok := sub.judgePolicy(app, cfg)
-	if !ok {
-		refuse(e)
+	policy, err := sub.judgePolicy(app, cfg)
+	if err != nil {
+		refuse(err)
 		return nil, true
 	}
 
@@ -219,22 +219,22 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		}
 		if found {
 			// The replay needs the body hash only: the job was checked when it was created.
-			if e, ok := s.fetchPending(r, sub, cfg.Limits); !ok {
-				refuse(e)
+			if err := s.fetchPending(r, sub, cfg.Limits); err != nil {
+				refuse(err)
 				return nil, true
 			}
 			s.answerReplay(w, r, *existing, sub.hash())
 			return nil, true
 		}
-		if !s.queueRoom(r, refuse) {
+		if !s.queueRoom(w, r) {
 			return nil, true
 		}
 	}
 	if !s.limitSubmit(w, r, app) {
 		return nil, true
 	}
-	if e, ok := s.fetchPending(r, sub, cfg.Limits); !ok {
-		refuse(e)
+	if err := s.fetchPending(r, sub, cfg.Limits); err != nil {
+		refuse(err)
 		return nil, true
 	}
 
@@ -292,9 +292,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		return nil, true // another process created the job with this key between lookup and insert
 	}
 	if err != nil {
-		s.log.LogAttrs(ctx, slog.LevelError, "job not stored",
-			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
+		s.storeUnavailable(w, r, "job not stored", err)
 		return nil, true
 	}
 	if cfg.Limits.MaxQueuedJobs > 0 {
@@ -310,22 +308,21 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 }
 
 // queueRoom applies limits.max_queued_jobs: it reports false after refusing with 503
-// when the ceiling is reached or the queue cannot be counted.
-func (s *server) queueRoom(r *http.Request, refuse func(apiError)) bool {
+// when the ceiling is reached or the queue cannot be counted, the body drained first.
+func (s *server) queueRoom(w http.ResponseWriter, r *http.Request) bool {
 	limit := s.deps.Config.Limits.MaxQueuedJobs
 	if limit <= 0 {
 		return true
 	}
-	ctx := r.Context()
-	full, err := s.queued.atLeast(ctx, s.deps.Store, limit)
+	full, err := s.queued.atLeast(r.Context(), s.deps.Store, limit)
 	if err != nil {
-		s.log.LogAttrs(ctx, slog.LevelError, "queued jobs not counted",
-			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-		refuse(newError(codeUnavailable, msgStorageFailed))
+		drainBody(r)
+		s.storeUnavailable(w, r, "queued jobs not counted", err)
 		return false
 	}
 	if full {
-		refuse(newError(codeUnavailable, msgQueueFull).withRetryAfter(queueFullRetryAfter))
+		drainBody(r)
+		writeError(w, newError(codeUnavailable, msgQueueFull).withRetryAfter(queueFullRetryAfter))
 		return false
 	}
 	return true
@@ -401,10 +398,10 @@ func (q *queuedCount) add() {
 
 // readSubmission streams the multipart body, enforcing the part rules and the per-part
 // limits while reading. It reports false with the refusal on the first violation.
-func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (*submission, apiError, bool) {
+func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (*submission, error) {
 	mr, err := r.MultipartReader()
 	if err != nil {
-		return nil, newError(codeBadRequest, msgNotMultipart), false
+		return nil, newError(codeBadRequest, msgNotMultipart)
 	}
 	maxPages := limits.Pages
 	sub := &submission{}
@@ -414,7 +411,7 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 			break
 		}
 		if err != nil {
-			return nil, readError(r, err, requestLimit), false
+			return nil, readError(r, err, requestLimit)
 		}
 		name := p.FormName()
 		var slot **part
@@ -423,11 +420,11 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 		case partDocument:
 			slot, limit = &sub.document, limits.DocumentBytes
 			if p.Header.Get("Content-Type") == "" {
-				return nil, newError(codeBadRequest, msgPartNoMediaType, partDocument), false
+				return nil, newError(codeBadRequest, msgPartNoMediaType, partDocument)
 			}
 		case partPage:
 			if len(sub.pages) == maxPages {
-				return nil, newError(codePayloadTooLarge, msgTooManyPages, maxPages), false
+				return nil, newError(codePayloadTooLarge, msgTooManyPages, maxPages)
 			}
 			limit = limits.PageBytes
 		case partExtractorInstructions, partJudgeInstructions:
@@ -436,12 +433,12 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 				slot = &sub.judgeInstructions
 			}
 			if !mediaTypeIn(p.Header.Get("Content-Type"), "text/plain", "text/plain", "text/markdown") {
-				return nil, newError(codeBadRequest, msgPartMediaType, name), false
+				return nil, newError(codeBadRequest, msgPartMediaType, name)
 			}
 		case partSchema:
 			slot, limit = &sub.schema, maxSchemaBytes
 			if !mediaTypeIn(p.Header.Get("Content-Type"), "", "application/schema+json", "application/json") {
-				return nil, newError(codeBadRequest, msgPartMediaType, name), false
+				return nil, newError(codeBadRequest, msgPartMediaType, name)
 			}
 		case partRetention:
 			slot, limit = &sub.retention, maxOptionBytes
@@ -450,29 +447,29 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 		case partJudge:
 			slot, limit = &sub.judge, maxJudgeBytes
 			if !mediaTypeIn(p.Header.Get("Content-Type"), "text/plain", "text/plain") {
-				return nil, newError(codeBadRequest, msgPartMediaType, name), false
+				return nil, newError(codeBadRequest, msgPartMediaType, name)
 			}
 		default:
-			return nil, newError(codeBadRequest, msgUnknownPart), false
+			return nil, newError(codeBadRequest, msgUnknownPart)
 		}
 		if slot != nil && *slot != nil {
-			return nil, newError(codeBadRequest, msgPartRepeated, name), false
+			return nil, newError(codeBadRequest, msgPartRepeated, name)
 		}
 		read, err := readPart(p, limit)
 		switch {
 		case errors.Is(err, errPartTooLarge) && (name == partRetention || name == partMaxAttempts || name == partJudge):
-			return nil, optionError(name), false
+			return nil, optionError(name)
 		case errors.Is(err, errPartTooLarge):
-			return nil, newError(codePayloadTooLarge, msgPartTooLarge, name), false
+			return nil, newError(codePayloadTooLarge, msgPartTooLarge, name)
 		case err != nil:
-			return nil, readError(r, err, requestLimit), false
+			return nil, readError(r, err, requestLimit)
 		}
 		if slot == nil {
 			sub.pages = append(sub.pages, read)
 			continue
 		}
 		if (name == partExtractorInstructions || name == partJudgeInstructions) && !utf8.Valid(read.data) {
-			return nil, newError(codeBadRequest, msgPartNotUTF8, name), false
+			return nil, newError(codeBadRequest, msgPartNotUTF8, name)
 		}
 		*slot = &read
 	}
@@ -485,10 +482,10 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 		{partJudgeInstructions, sub.judgeInstructions},
 	} {
 		if required.p == nil {
-			return nil, newError(codeBadRequest, msgPartMissing, required.name), false
+			return nil, newError(codeBadRequest, msgPartMissing, required.name)
 		}
 	}
-	return sub, newError(codeInternal, msgInternal), true
+	return sub, nil
 }
 
 var errPartTooLarge = errors.New("api: part exceeds its limit")
@@ -566,18 +563,18 @@ func optionError(name string) apiError {
 // judgePolicy is the job's effective judge policy (ADR 0009): the judge part when the
 // application allows override, else the application's, else roles.judge.policy. The part
 // is refused when the application does not allow override, whatever its value.
-func (sub *submission) judgePolicy(app job.Application, cfg *config.Config) (config.JudgePolicy, apiError, bool) {
+func (sub *submission) judgePolicy(app job.Application, cfg *config.Config) (config.JudgePolicy, error) {
 	if sub.judge == nil {
-		return appJudgePolicy(app, cfg), newError(codeInternal, msgInternal), true
+		return appJudgePolicy(app, cfg), nil
 	}
 	if !app.JudgeAllowOverride {
-		return "", newError(codeBadRequest, msgJudgeNotAllowed), false
+		return "", newError(codeBadRequest, msgJudgeNotAllowed)
 	}
 	p, err := config.ParseJudgePolicy(strings.TrimSpace(string(sub.judge.data)))
 	if err != nil {
-		return "", optionError(partJudge), false
+		return "", optionError(partJudge)
 	}
-	return p, newError(codeInternal, msgInternal), true
+	return p, nil
 }
 
 // appJudgePolicy is the application's effective judge policy: its own, else the role's.
@@ -593,28 +590,28 @@ func appJudgePolicy(app job.Application, cfg *config.Config) config.JudgePolicy 
 
 // options reads retention (default when absent) and max_attempts (0, the
 // application's limit, when absent; clamped to it otherwise).
-func (sub *submission) options(app job.Application) (job.Retention, int, apiError, bool) {
+func (sub *submission) options(app job.Application) (job.Retention, int, error) {
 	retention := job.RetentionDefault
 	if sub.retention != nil {
 		switch v := strings.TrimSpace(string(sub.retention.data)); v {
 		case string(job.RetentionNone), string(job.RetentionDefault):
 			retention = job.Retention(v)
 		default:
-			return "", 0, optionError(partRetention), false
+			return "", 0, optionError(partRetention)
 		}
 	}
 	attempts := 0
 	if sub.maxAttempts != nil {
 		v := strings.TrimSpace(string(sub.maxAttempts.data))
 		if v == "" || v[0] == '0' || len(v) > 9 || strings.Trim(v, "0123456789") != "" {
-			return "", 0, optionError(partMaxAttempts), false
+			return "", 0, optionError(partMaxAttempts)
 		}
 		attempts, _ = strconv.Atoi(v) // nine digits at most: no overflow
 		if app.MaxAttempts > 0 {
 			attempts = min(attempts, app.MaxAttempts)
 		}
 	}
-	return retention, attempts, newError(codeInternal, msgInternal), true
+	return retention, attempts, nil
 }
 
 // hash is the idempotency body hash: SHA-256 over name, declared media type and
@@ -665,13 +662,13 @@ func (s *server) refuseDocument(w http.ResponseWriter, r *http.Request, err erro
 	if errors.Is(err, pdf.ErrBusy) {
 		// Every pdfium instance stayed busy for the engine's wait: nothing is wrong with
 		// the document or the configuration.
-		writeError(w, r, newError(codeUnavailable, msgPDFBusy).withRetryAfter(pdfBusyRetryAfter))
+		writeError(w, newError(codeUnavailable, msgPDFBusy).withRetryAfter(pdfBusyRetryAfter))
 		return
 	}
 	if !errors.As(err, &de) {
 		s.log.LogAttrs(r.Context(), slog.LevelError, "document configuration not usable",
 			slog.String("request_id", requestIDFrom(r.Context())))
-		writeError(w, r, newError(codeInternal, msgSubmitConfigIncomplete))
+		writeError(w, newError(codeInternal, msgSubmitConfigIncomplete))
 		return
 	}
 	e := newError(codeBadRequest, msgDocumentUnreadable)
@@ -686,7 +683,7 @@ func (s *server) refuseDocument(w http.ResponseWriter, r *http.Request, err erro
 			e = newError(codeUnsupportedDocument, msgPDFTooManyPages, s.deps.Config.Documents.PDF.MaxPages)
 		}
 	}
-	writeError(w, r, e)
+	writeError(w, e)
 }
 
 // replay answers a submission whose Idempotency-Key the application used before
@@ -710,9 +707,7 @@ func (s *server) findIdempotent(w http.ResponseWriter, r *http.Request, app job.
 	case errors.Is(err, job.ErrNotFound):
 		return &job.Job{}, false
 	case err != nil:
-		s.log.LogAttrs(ctx, slog.LevelError, "idempotency lookup failed",
-			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
+		s.storeUnavailable(w, r, "idempotency lookup failed", err)
 		return nil, false
 	}
 	return &existing, true
@@ -727,7 +722,7 @@ func (s *server) findIdempotent(w http.ResponseWriter, r *http.Request, app job.
 // charges no quota and runs nothing.
 func (s *server) answerReplay(w http.ResponseWriter, r *http.Request, existing job.Job, bodyHash string) {
 	if existing.BodyHash != bodyHash {
-		writeError(w, r, newError(codeIdempotencyMismatch, msgIdempotencyMismatch))
+		writeError(w, newError(codeIdempotencyMismatch, msgIdempotencyMismatch))
 		return
 	}
 	w.Header().Set(headerIdempotencyReplayed, "true")
@@ -744,62 +739,67 @@ func (s *server) limitSubmit(w http.ResponseWriter, r *http.Request, app job.App
 	ctx := r.Context()
 	now := s.now()
 	if wait, ok := s.takeRate(ctx, app.ID, bucketSubmits, app.SubmitsPerMinute, now); !ok {
-		writeError(w, r, newError(codeRateLimited, msgSubmitRateLimited).withRetryAfter(wait))
-		return false
-	}
-	storeFailed := func(what string, err error) bool {
-		s.log.LogAttrs(ctx, slog.LevelError, what,
-			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
+		writeError(w, newError(codeRateLimited, msgSubmitRateLimited).withRetryAfter(wait))
 		return false
 	}
 	if app.MaxInProgress > 0 { // queued and running: the ceiling holds before the workers lease
 		inProgress, err := s.deps.Store.CountInProgress(ctx, app.ID)
 		if err != nil {
-			return storeFailed("jobs in progress not counted", err)
+			s.storeUnavailable(w, r, "jobs in progress not counted", err)
+			return false
 		}
 		if inProgress >= app.MaxInProgress {
-			writeError(w, r, newError(codeRateLimited, msgTooManyInProgress, app.MaxInProgress).
+			writeError(w, newError(codeRateLimited, msgTooManyInProgress, app.MaxInProgress).
 				withRetryAfter(inProgressRetryAfter))
 			return false
 		}
 	}
 	q, err := s.currentQuota(ctx, app)
 	if err != nil {
-		return storeFailed("quota not readable", err)
+		s.storeUnavailable(w, r, "quota not readable", err)
+		return false
 	}
 	if q.Remaining <= 0 {
 		s.setQuotaHeaders(w.Header(), app, q)
-		writeError(w, r, newError(codeQuotaExhausted, msgQuotaExhausted, q.Limit).withRetryAfter(untilReset(now, q.Reset)))
+		writeError(w, newError(codeQuotaExhausted, msgQuotaExhausted, q.Limit).withRetryAfter(untilReset(now, q.Reset)))
 		return false
 	}
 	return true
 }
+
+// storeUnavailable logs a store failure as what and answers 503 unavailable: the client
+// may submit again.
+func (s *server) storeUnavailable(w http.ResponseWriter, r *http.Request, what string, err error) {
+	ctx := r.Context()
+	s.log.LogAttrs(ctx, slog.LevelError, what,
+		slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
+	writeError(w, newError(codeUnavailable, msgStorageFailed))
+}
+
+// drainBody reads what is left of the request body, up to the request limit, so the
+// client sees the status of a refusal instead of a reset connection.
+func drainBody(r *http.Request) { _, _ = io.Copy(io.Discard, r.Body) }
 
 // chargeSubmit charges the quota and updates X-Quota-Remaining, or answers 429 (or 503
 // when the store fails) and reports false.
 func (s *server) chargeSubmit(w http.ResponseWriter, r *http.Request, app job.Application) bool {
 	ctx := r.Context()
 	now := s.now()
-	storeFailed := func(what string, err error) bool {
-		s.log.LogAttrs(ctx, slog.LevelError, what,
-			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-		writeError(w, r, newError(codeUnavailable, msgStorageFailed))
-		return false
-	}
 	q, err := s.currentQuota(ctx, app)
 	if err != nil {
-		return storeFailed("quota not readable", err)
+		s.storeUnavailable(w, r, "quota not readable", err)
+		return false
 	}
 	q, err = s.chargeQuota(ctx, app, q)
 	if errors.Is(err, job.ErrQuotaExhausted) {
 		q.Remaining = 0
 		s.setQuotaHeaders(w.Header(), app, q)
-		writeError(w, r, newError(codeQuotaExhausted, msgQuotaExhausted, q.Limit).withRetryAfter(untilReset(now, q.Reset)))
+		writeError(w, newError(codeQuotaExhausted, msgQuotaExhausted, q.Limit).withRetryAfter(untilReset(now, q.Reset)))
 		return false
 	}
 	if err != nil {
-		return storeFailed("quota not charged", err)
+		s.storeUnavailable(w, r, "quota not charged", err)
+		return false
 	}
 	s.setQuotaHeaders(w.Header(), app, q)
 	return true

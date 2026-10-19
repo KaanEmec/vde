@@ -1,6 +1,6 @@
 # Job: API error plumbing
 
-Version: v1.1 · Epic: 02 De-abstraction · Status: planned · Depends on: 02-03
+Version: v1.1 · Epic: 02 De-abstraction · Status: done (SIMPLIFY and Gate left to the orchestrator) · Depends on: 02-03
 
 ## Goal
 
@@ -27,7 +27,7 @@ same.
 
 ## Tasks
 
-- [ ] Plan and execute.
+- [x] Plan and execute.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: in internal/api make apiError an error and
     change the eight (T, apiError, bool) functions to (T, error); add one storeUnavailable
@@ -35,12 +35,12 @@ same.
     reuse optionalTime in jobjson.go; drop the unused *http.Request parameter of
     writeError with gopls. Every HTTP response must stay identical. Guardrails: skills.md."
     Then "/golang-refactoring Execute mode: step <n>."
-- [ ] Simplify what is left in the submit path.
+- [ ] Simplify what is left in the submit path (orchestrator).
   - Skill: SIMPLIFY.
   - Prompt: "/simplify internal/api/submit.go internal/api/submit_json.go — after the
     error change, remove leftover branches and comments that restate the code (the
     15-line doc of createJob). Do not split createJob yet (05-02). Guardrails: skills.md."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW, PRTK, SEC.
   - Prompt: `/code-review high <first>^..<last>`, then
     `/pr-review-toolkit:review-pr errors`, then `/security-review` (request parsing and
@@ -55,3 +55,25 @@ same.
 
 - Error codes and messages (frozen codes; message texts may change but this job keeps
   them).
+
+## Result
+
+- `apiError` implements `error` (`code: message`, never request content); the eight
+  `(T, apiError, bool)` functions return `(T, error)` and the nine dummy
+  `newError(codeInternal, msgInternal), true` successes are `nil`.
+- `writeError(w, err error)`: the unused `*http.Request` is gone at every call site; an
+  error that is not an `apiError` is answered 500 internal without its text
+  (`TestWriteErrorOther`); `TestErrorMessagesAreTemplates` checks the two-argument form.
+- `s.storeUnavailable(w, r, what, err)` replaces the five storage-failure blocks (both
+  `storeFailed` closures included); `queueRoom(w, r)` drains the body with `drainBody`,
+  as the `refuse` closure does.
+- `/healthz` takes its database-check tokens from `rateLimiter.takeBucket` (new
+  `bucketHealthDB`, same rate and burst); one edge differs: a check whose result is not
+  kept (a context error) no longer runs the bucket below zero.
+- `jobjson.go` uses `optionalTime`.
+- No expected response changed in any test; `make check`, `make conformance` and `make ci` green.
+
+`git diff --stat` (Go): production 14 files, +177 −182 (net −5; about 50 of the changed
+lines are the `writeError` parameter drop, +1 −1 each); tests 5 files, +26 −12 (net
++14). The −70 estimate is missed: the `, false` removals shorten lines rather than
+delete them, and the createJob doc trim belongs to the SIMPLIFY task.

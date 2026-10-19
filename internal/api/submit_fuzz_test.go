@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -93,8 +94,10 @@ func FuzzReadSubmission(f *testing.F) {
 		r := httptest.NewRequest(http.MethodPost, "/v1/jobs", bytes.NewReader(body))
 		r.Header.Set("Content-Type", "multipart/form-data; boundary="+fuzzBoundary)
 		r.Body = &limitedBody{ReadCloser: http.MaxBytesReader(httptest.NewRecorder(), r.Body, fuzzRequestLimit)}
-		sub, e, ok := readSubmission(r, fuzzLimits, fuzzRequestLimit)
-		if !ok {
+		sub, err := readSubmission(r, fuzzLimits, fuzzRequestLimit)
+		if err != nil {
+			var e apiError
+			errors.As(err, &e)
 			if e.status != http.StatusBadRequest && e.status != http.StatusRequestEntityTooLarge {
 				t.Fatalf("refused with %d %s, want 400 or 413", e.status, e.code)
 			}

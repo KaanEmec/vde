@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -89,6 +90,9 @@ func newError(code, template string, args ...any) apiError {
 	return apiError{status: status, code: code, message: msg}
 }
 
+// Error is the code and the fixed message, never request content.
+func (e apiError) Error() string { return e.code + ": " + e.message }
+
 // withRetryAfter returns e with a Retry-After of d, rounded up to whole seconds.
 func (e apiError) withRetryAfter(d time.Duration) apiError {
 	e.retryAfter = d
@@ -105,10 +109,15 @@ type errorDetail struct {
 	RequestID string `json:"request_id,omitempty"`
 }
 
-// writeError writes e in the contract §9 shape. It keeps headers already set (the quota
-// headers, X-Service-Version), adds Retry-After when e has one, and takes
-// request_id from the X-Request-Id response header set by the request id middleware.
-func writeError(w http.ResponseWriter, _ *http.Request, e apiError) {
+// writeError writes err, an apiError (any other error is a 500 internal error), in the
+// contract §9 shape. It keeps headers already set (the quota headers,
+// X-Service-Version), adds Retry-After when the error has one, and takes request_id
+// from the X-Request-Id response header set by the request id middleware.
+func writeError(w http.ResponseWriter, err error) {
+	var e apiError
+	if !errors.As(err, &e) {
+		e = newError(codeInternal, msgInternal)
+	}
 	h := w.Header()
 	if e.retryAfter > 0 {
 		h.Set("Retry-After", strconv.Itoa(int(math.Ceil(e.retryAfter.Seconds()))))

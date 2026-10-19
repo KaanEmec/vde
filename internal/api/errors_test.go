@@ -1,8 +1,9 @@
 package api
 
 import (
-	"net/http"
+	"errors"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -40,7 +41,7 @@ func TestWriteError(t *testing.T) {
 			w := httptest.NewRecorder()
 			w.Header().Set(headerRequestID, "r_test")
 			w.Header().Set("X-Quota-Remaining", "7") // set earlier by the quota step
-			writeError(w, httptest.NewRequest(http.MethodGet, "/", nil), newError(tt.code, msgInternal))
+			writeError(w, newError(tt.code, msgInternal))
 			if w.Code != tt.status {
 				t.Errorf("status = %d, want %d", w.Code, tt.status)
 			}
@@ -70,11 +71,21 @@ func TestWriteErrorRetryAfter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		w := httptest.NewRecorder()
-		writeError(w, httptest.NewRequest(http.MethodPost, "/v1/jobs", nil),
-			newError(codeRateLimited, msgInternal).withRetryAfter(tt.d))
+		writeError(w, newError(codeRateLimited, msgInternal).withRetryAfter(tt.d))
 		if got := w.Header().Get("Retry-After"); got != tt.want {
 			t.Errorf("Retry-After for %s = %q, want %q", tt.d, got, tt.want)
 		}
+	}
+}
+
+// TestWriteErrorOther: an error that is not an apiError is answered as a 500 internal
+// error, its text never reaching the body.
+func TestWriteErrorOther(t *testing.T) {
+	t.Parallel()
+	w := httptest.NewRecorder()
+	writeError(w, errors.New("SENTINEL store detail"))
+	if e := decodeError(t, w); w.Code != 500 || e.Code != codeInternal || strings.Contains(w.Body.String(), "SENTINEL") {
+		t.Errorf("status %d, body %s", w.Code, w.Body)
 	}
 }
 

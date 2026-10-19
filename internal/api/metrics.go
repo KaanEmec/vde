@@ -61,5 +61,5 @@ func notProxied(next http.Handler) http.Handler {
 }
 
 func routeNotFound(w http.ResponseWriter, r *http.Request) {
-	writeError(w, r, newError(codeNotFound, msgRouteNotFound))
+	writeError(w, newError(codeNotFound, msgRouteNotFound))
 }

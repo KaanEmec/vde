@@ -22,6 +22,7 @@ const (
 	bucketSubmits                          // POST /v1/jobs and /v1/extract, after the part rules and an idempotent replay, before the fetch and document work
 	bucketAdmin                            // every admin API request, keyed by admin token id
 	bucketAuthFailed                       // auth.failed audit rows of the handler, one bucket (app "")
+	bucketHealthDB                         // database checks of /healthz, one bucket (app "")
 )
 
 // The auth.failed audit rows a handler writes: anyone can provoke a 401 without a token,

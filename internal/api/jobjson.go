@@ -62,14 +62,7 @@ func jobToResponse(j *job.Job) jobResponse {
 		}
 		resp.Verification = &v
 	}
-	if !j.FinishedAt.IsZero() {
-		f := formatTime(j.FinishedAt)
-		resp.FinishedAt = &f
-	}
-	if !j.ContentDeletedAt.IsZero() {
-		d := formatTime(j.ContentDeletedAt)
-		resp.ContentDeletedAt = &d
-	}
+	resp.FinishedAt, resp.ContentDeletedAt = optionalTime(j.FinishedAt), optionalTime(j.ContentDeletedAt)
 	return resp
 }
 

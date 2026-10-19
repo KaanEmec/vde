@@ -1064,8 +1064,8 @@ func TestSubmitIdempotency(t *testing.T) {
 			body, ct := multipartBody(t, parts)
 			r := httptest.NewRequest(http.MethodPost, "/v1/jobs", bytes.NewReader(body))
 			r.Header.Set("Content-Type", ct)
-			sub, _, ok := readSubmission(r, testConfig(t, "").Limits, 1<<20)
-			if !ok {
+			sub, err := readSubmission(r, testConfig(t, "").Limits, 1<<20)
+			if err != nil {
 				t.Fatal("submission refused")
 			}
 			return sub.hash()

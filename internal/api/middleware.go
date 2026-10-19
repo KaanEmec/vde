@@ -56,7 +56,7 @@ func (s *server) recoverPanics(next http.Handler) http.Handler {
 				"panic", panicked,
 				"stack", string(debug.Stack()))
 			if !sw.wroteHeader {
-				writeError(sw, r, newError(codeInternal, msgInternal))
+				writeError(sw, newError(codeInternal, msgInternal))
 			}
 		}()
 		next.ServeHTTP(sw, r)
@@ -115,7 +115,7 @@ func requireHTTPS(trustedProxy, insecure bool, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		writeError(w, r, newError(codeBadRequest, msgHTTPSRequired))
+		writeError(w, newError(codeBadRequest, msgHTTPSRequired))
 	})
 }
 
@@ -172,7 +172,7 @@ func (s *server) limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		app, ok := ApplicationFrom(r.Context())
 		if !ok { // authenticate always runs first; fail closed if it did not
-			writeError(w, r, newError(codeInternal, msgInternal))
+			writeError(w, newError(codeInternal, msgInternal))
 			return
 		}
 		if !s.quotaHeaders(w, r, app) {
@@ -180,7 +180,7 @@ func (s *server) limit(next http.Handler) http.Handler {
 		}
 		if wait, ok := s.takeRate(r.Context(), app.ID, bucketRequests, app.RequestsPerMinute, s.now()); !ok {
 			closeIfBodyPending(w, r)
-			writeError(w, r, newError(codeRateLimited, msgRateLimited).withRetryAfter(wait))
+			writeError(w, newError(codeRateLimited, msgRateLimited).withRetryAfter(wait))
 			return
 		}
 		next.ServeHTTP(w, r)

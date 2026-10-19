@@ -121,11 +121,11 @@ func TestErrorMessagesAreTemplates(t *testing.T) {
 						}
 					case "writeError":
 						nWrites++
-						if len(n.Args) != 3 {
-							t.Errorf("%s: writeError takes (w, r, apiError)", pos)
+						if len(n.Args) != 2 {
+							t.Errorf("%s: writeError takes (w, err)", pos)
 							return true
 						}
-						if _, isIdent := n.Args[2].(*ast.Ident); !isIdent && !fromNewError(n.Args[2]) {
+						if _, isIdent := n.Args[1].(*ast.Ident); !isIdent && !fromNewError(n.Args[1]) {
 							t.Errorf("%s: writeError's error must come from newError", pos)
 						}
 					}

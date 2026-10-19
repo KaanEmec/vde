@@ -51,7 +51,7 @@ type jsonSubmission struct {
 // readJSONSubmission decodes a JSON body into the same submission the multipart path
 // builds, with the same limits applied to the decoded bytes, so the checks after it are
 // shared. It reports false with the refusal on the first violation.
-func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, requestLimit int64) (*submission, apiError, bool) {
+func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, requestLimit int64) (*submission, error) {
 	var in jsonSubmission
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -61,39 +61,39 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 	}
 	if err != nil {
 		if e := readError(r, err, requestLimit); e.code == codePayloadTooLarge {
-			return nil, e, false
+			return nil, e
 		}
-		return nil, newError(codeBadRequest, msgMalformedJSON), false
+		return nil, newError(codeBadRequest, msgMalformedJSON)
 	}
 	limits := cfg.Limits
 	docLimit, pageLimit, maxPages := limits.DocumentBytes, limits.PageBytes, limits.Pages
 	sub := &submission{}
 	switch d := in.Document; {
 	case d == nil:
-		return nil, newError(codeBadRequest, msgPartMissing, partDocument), false
+		return nil, newError(codeBadRequest, msgPartMissing, partDocument)
 	case d.MediaType == "":
-		return nil, newError(codeBadRequest, msgPartNoMediaType, partDocument), false
+		return nil, newError(codeBadRequest, msgPartNoMediaType, partDocument)
 	case (d.DataBase64 == nil) == (d.URL == ""):
-		return nil, newError(codeBadRequest, msgDocumentSource), false
+		return nil, newError(codeBadRequest, msgDocumentSource)
 	case d.DataBase64 != nil:
-		data, e, ok := decodeBase64(partDocument, *d.DataBase64, docLimit)
-		if !ok {
-			return nil, e, false
+		data, err := decodeBase64(partDocument, *d.DataBase64, docLimit)
+		if err != nil {
+			return nil, err
 		}
 		sub.document = newPart(d.MediaType, d.Filename, data)
 	case s.fetch == nil:
-		return nil, newError(codeBadRequest, msgFetchDisabled), false
+		return nil, newError(codeBadRequest, msgFetchDisabled)
 	default: // fetched after the submission limits (fetchPending)
 		sub.document = &part{mediaType: d.MediaType, filename: d.Filename}
 		sub.documentURL = d.URL
 	}
 	if len(in.Pages) > maxPages {
-		return nil, newError(codePayloadTooLarge, msgTooManyPages, maxPages), false
+		return nil, newError(codePayloadTooLarge, msgTooManyPages, maxPages)
 	}
 	for _, p := range in.Pages {
-		data, e, ok := decodeBase64(partPage, p.DataBase64, pageLimit)
-		if !ok {
-			return nil, e, false
+		data, err := decodeBase64(partPage, p.DataBase64, pageLimit)
+		if err != nil {
+			return nil, err
 		}
 		sub.pages = append(sub.pages, *newPart(p.MediaType, "", data))
 	}
@@ -107,18 +107,18 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 	} {
 		switch {
 		case f.v == nil:
-			return nil, newError(codeBadRequest, msgPartMissing, f.name), false
+			return nil, newError(codeBadRequest, msgPartMissing, f.name)
 		case len(*f.v) > maxInstructionsBytes:
-			return nil, newError(codePayloadTooLarge, msgPartTooLarge, f.name), false
+			return nil, newError(codePayloadTooLarge, msgPartTooLarge, f.name)
 		}
 		*f.slot = newPart(jsonInstructionsType, "", []byte(*f.v))
 	}
 	if schema := bytes.TrimSpace(in.Schema); len(schema) > 0 && string(schema) != "null" {
 		switch {
 		case len(schema) > maxSchemaBytes:
-			return nil, newError(codePayloadTooLarge, msgPartTooLarge, partSchema), false
+			return nil, newError(codePayloadTooLarge, msgPartTooLarge, partSchema)
 		case schema[0] != '{':
-			return nil, newError(codeInvalidSchema, msgSchemaNotObject), false
+			return nil, newError(codeInvalidSchema, msgSchemaNotObject)
 		}
 		sub.schema = newPart(jsonSchemaType, "", schema)
 	}
@@ -127,7 +127,7 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 	}
 	if in.Judge != nil {
 		if len(*in.Judge) > maxJudgeBytes {
-			return nil, optionError(partJudge), false
+			return nil, optionError(partJudge)
 		}
 		sub.judge = newPart("text/plain", "", []byte(*in.Judge))
 	}
@@ -136,22 +136,22 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 	if v := bytes.TrimSpace(in.MaxAttempts); len(v) > 0 && string(v) != "null" {
 		sub.maxAttempts = newPart("text/plain", "", v)
 	}
-	return sub, newError(codeInternal, msgInternal), true
+	return sub, nil
 }
 
 // decodeBase64 decodes a field of the named part under the part's limit.
-func decodeBase64(name, s string, limit int64) ([]byte, apiError, bool) {
+func decodeBase64(name, s string, limit int64) ([]byte, error) {
 	if int64(base64.StdEncoding.DecodedLen(len(s))) > limit+2 { // padding slack
-		return nil, newError(codePayloadTooLarge, msgPartTooLarge, name), false
+		return nil, newError(codePayloadTooLarge, msgPartTooLarge, name)
 	}
 	data, err := base64.StdEncoding.DecodeString(s)
 	switch {
 	case err != nil:
-		return nil, newError(codeBadRequest, msgBadBase64, name), false
+		return nil, newError(codeBadRequest, msgBadBase64, name)
 	case int64(len(data)) > limit:
-		return nil, newError(codePayloadTooLarge, msgPartTooLarge, name), false
+		return nil, newError(codePayloadTooLarge, msgPartTooLarge, name)
 	}
-	return data, newError(codeInternal, msgInternal), true
+	return data, nil
 }
 
 func newPart(mediaType, filename string, data []byte) *part {
@@ -162,20 +162,20 @@ func newPart(mediaType, filename string, data []byte) *part {
 // sub.document under documents.fetch (fetch.go). createJob calls it after the submission
 // limits, so a refused or rate-limited caller makes the service fetch nothing; decoding
 // already refused a url when fetching is disabled.
-func (s *server) fetchPending(r *http.Request, sub *submission, limits config.Limits) (apiError, bool) {
+func (s *server) fetchPending(r *http.Request, sub *submission, limits config.Limits) error {
 	if sub.documentURL == "" {
-		return newError(codeInternal, msgInternal), true
+		return nil
 	}
 	data, err := s.fetch.get(r.Context(), sub.documentURL, limits.DocumentBytes)
 	switch {
 	case errors.Is(err, errFetchRefused):
-		return newError(codeBadRequest, msgFetchRefused), false
+		return newError(codeBadRequest, msgFetchRefused)
 	case errors.Is(err, errFetchTooLarge):
-		return newError(codePayloadTooLarge, msgFetchedTooLarge), false
+		return newError(codePayloadTooLarge, msgFetchedTooLarge)
 	case err != nil:
-		return newError(codeBadRequest, msgFetchFailed), false
+		return newError(codeBadRequest, msgFetchFailed)
 	}
 	sub.document = newPart(sub.document.mediaType, sub.document.filename, data)
 	sub.documentURL = ""
-	return newError(codeInternal, msgInternal), true
+	return nil
 }

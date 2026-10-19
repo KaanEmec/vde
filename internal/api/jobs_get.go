@@ -42,7 +42,7 @@ func (s *server) deleteJob(w http.ResponseWriter, r *http.Request) {
 	}
 	switch err := s.deps.Store.DeleteJob(ctx, j.ID); {
 	case errors.Is(err, job.ErrNotFound): // a concurrent DELETE won
-		writeError(w, r, newError(codeNotFound, msgJobNotFound))
+		writeError(w, newError(codeNotFound, msgJobNotFound))
 		return
 	case err != nil:
 		s.jobError(w, r, j, "job not deleted", err)
@@ -67,7 +67,7 @@ func (s *server) loadJob(w http.ResponseWriter, r *http.Request) (job.Job, bool)
 	default:
 		return j, true
 	}
-	writeError(w, r, newError(codeNotFound, msgJobNotFound))
+	writeError(w, newError(codeNotFound, msgJobNotFound))
 	return job.Job{}, false
 }
 
@@ -79,7 +79,7 @@ func (s *server) loadJob(w http.ResponseWriter, r *http.Request) (job.Job, bool)
 func (s *server) deleteOnFirstRead(w http.ResponseWriter, r *http.Request, j job.Job) bool {
 	switch err := s.clearFirstRead(r, j); {
 	case errors.Is(err, job.ErrNotFound): // another read deleted it first
-		writeError(w, r, newError(codeNotFound, msgJobNotFound))
+		writeError(w, newError(codeNotFound, msgJobNotFound))
 		return false
 	case err != nil:
 		s.jobError(w, r, j, "job content not deleted", err)
@@ -115,5 +115,5 @@ func (s *server) jobError(w http.ResponseWriter, r *http.Request, j job.Job, msg
 	s.log.LogAttrs(r.Context(), slog.LevelError, msg,
 		slog.String("request_id", requestIDFrom(r.Context())), slog.String("app_id", j.ApplicationID),
 		slog.String("job_id", j.ID), slog.String("error", err.Error()))
-	writeError(w, r, newError(codeInternal, msgInternal))
+	writeError(w, newError(codeInternal, msgInternal))
 }

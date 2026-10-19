@@ -153,10 +153,10 @@ func (s *server) dispatch(w http.ResponseWriter, r *http.Request) {
 	h.ServeHTTP(probe, r)
 	if probe.status == http.StatusMethodNotAllowed {
 		w.Header().Set("Allow", probe.header.Get("Allow"))
-		writeError(w, r, newError(codeMethodNotAllowed, msgMethodNotAllowed))
+		writeError(w, newError(codeMethodNotAllowed, msgMethodNotAllowed))
 		return
 	}
-	writeError(w, r, newError(codeNotFound, msgRouteNotFound))
+	writeError(w, newError(codeNotFound, msgRouteNotFound))
 }
 
 // probeWriter records the status and headers of the mux's not-found and

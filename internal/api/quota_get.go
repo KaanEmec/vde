@@ -24,7 +24,7 @@ func (s *server) getQuota(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.LogAttrs(ctx, slog.LevelError, "quota not readable",
 			slog.String("request_id", requestIDFrom(ctx)), slog.String("error", err.Error()))
-		writeError(w, r, newError(codeInternal, msgInternal))
+		writeError(w, newError(codeInternal, msgInternal))
 		return
 	}
 	s.setQuotaHeaders(w.Header(), app, q)

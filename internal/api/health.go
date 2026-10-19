@@ -52,8 +52,6 @@ type health struct {
 
 	dbMu      sync.Mutex // guards the fields below, never held through a query
 	dbBusy    bool       // a database check is running; others reuse the last result
-	dbTokens  float64    // database checks available now, at most healthDBBurst
-	dbAt      time.Time  // when dbTokens was last refilled; zero before the first check
 	dbChecked bool       // dbAge and dbUp hold a result
 	dbAge     int64
 	dbUp      bool
@@ -105,21 +103,15 @@ func (h *health) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // not kept.
 func (h *health) dbCheck(ctx context.Context) (int64, bool) {
 	h.dbMu.Lock()
-	now := h.s.now()
-	switch {
-	case h.dbAt.IsZero():
-		h.dbTokens = healthDBBurst
-	case now.After(h.dbAt):
-		h.dbTokens = min(h.dbTokens+now.Sub(h.dbAt).Seconds()*healthDBRate, healthDBBurst)
+	reuse := h.dbChecked && h.dbBusy // a running check costs the others no token
+	if !reuse {
+		_, ok := h.s.limits.takeBucket(bucketKey{kind: bucketHealthDB}, healthDBBurst, healthDBRate, h.s.now())
+		reuse = h.dbChecked && !ok // without a result yet, the check runs anyway
 	}
-	if !now.Before(h.dbAt) {
-		h.dbAt = now // a clock that went back refills nothing until it passes dbAt again
-	}
-	if h.dbChecked && (h.dbTokens < 1 || h.dbBusy) {
+	if reuse {
 		defer h.dbMu.Unlock()
 		return h.dbAge, h.dbUp
 	}
-	h.dbTokens--
 	h.dbBusy = true
 	h.dbMu.Unlock()
 

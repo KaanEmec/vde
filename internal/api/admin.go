@@ -83,7 +83,7 @@ func (s *server) adminLimit(next http.Handler) http.Handler {
 		p, _ := r.Context().Value(principalKey{}).(auth.Principal)
 		if wait, ok := s.limits.take(p.Token.ID, bucketAdmin, adminRequestsPerMinute, s.now()); !ok {
 			closeIfBodyPending(w, r)
-			writeError(w, r, newError(codeRateLimited, msgAdminRateLimited).withRetryAfter(wait))
+			writeError(w, newError(codeRateLimited, msgAdminRateLimited).withRetryAfter(wait))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -166,7 +166,7 @@ func appToResponse(a job.Application) appResponse {
 
 // checkApp applies the YAML defaults to st and validates it like an applications[]
 // entry (config.CheckApplication), returning the row to store or the refusal.
-func (s *server) checkApp(id string, st appSettings) (job.Application, apiError, bool) {
+func (s *server) checkApp(id string, st appSettings) (job.Application, error) {
 	c := config.Application{ID: id, Name: st.Name, MaxAttempts: st.MaxAttempts}
 	c.Quota.Limit, c.Quota.Window = st.Quota.Limit, st.Quota.Window
 	c.Rate.RequestsPerMinute, c.Rate.SubmitsPerMinute, c.Rate.MaxInProgress =
@@ -178,7 +178,7 @@ func (s *server) checkApp(id string, st appSettings) (job.Application, apiError,
 	}
 	for _, issue := range s.deps.Config.CheckApplication(&c) {
 		if !issue.Warning {
-			return job.Application{}, newError(codeBadRequest, msgAdminInvalidField, issue.Key), false
+			return job.Application{}, newError(codeBadRequest, msgAdminInvalidField, issue.Key)
 		}
 	}
 	return job.Application{
@@ -188,7 +188,7 @@ func (s *server) checkApp(id string, st appSettings) (job.Application, apiError,
 		RetentionDefault: c.Retention.Default, ForceNone: c.Retention.ForceNone,
 		HTMLPolicy: c.Documents.HTML, JudgePolicy: string(c.Judge.Policy),
 		JudgeAllowOverride: c.Judge.AllowOverride, JudgeSampleRate: c.Judge.SampleRate,
-	}, newError(codeInternal, msgInternal), true
+	}, nil
 }
 
 func (s *server) adminListApps(w http.ResponseWriter, r *http.Request) {
@@ -212,19 +212,19 @@ func (s *server) adminCreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !appIDRe.MatchString(body.ID) {
-		writeError(w, r, newError(codeBadRequest, msgAdminInvalidField, "id"))
+		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "id"))
 		return
 	}
-	row, e, ok := s.checkApp(body.ID, body.appSettings)
-	if !ok {
-		writeError(w, r, e)
+	row, err := s.checkApp(body.ID, body.appSettings)
+	if err != nil {
+		writeError(w, err)
 		return
 	}
 	row.Enabled = body.Enabled == nil || *body.Enabled
 	ctx := r.Context()
 	switch err := s.deps.Store.CreateApplication(ctx, row, s.now()); {
 	case errors.Is(err, job.ErrDuplicate):
-		writeError(w, r, newError(codeConflict, msgAdminAppExists))
+		writeError(w, newError(codeConflict, msgAdminAppExists))
 		return
 	case err != nil:
 		s.jobError(w, r, job.Job{ApplicationID: row.ID}, "application not created", err)
@@ -253,12 +253,12 @@ func (s *server) adminPatchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.ID != "" && body.ID != prev.ID {
-		writeError(w, r, newError(codeBadRequest, msgAdminInvalidField, "id"))
+		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "id"))
 		return
 	}
-	row, e, ok := s.checkApp(prev.ID, body.appSettings)
-	if !ok {
-		writeError(w, r, e)
+	row, err := s.checkApp(prev.ID, body.appSettings)
+	if err != nil {
+		writeError(w, err)
 		return
 	}
 	row.Enabled = prev.Enabled
@@ -292,7 +292,7 @@ func (s *server) loadApp(w http.ResponseWriter, r *http.Request) (job.Applicatio
 	a, err := s.deps.Store.GetApplication(r.Context(), r.PathValue("id"))
 	switch {
 	case errors.Is(err, job.ErrNotFound):
-		writeError(w, r, newError(codeNotFound, msgAdminAppNotFound))
+		writeError(w, newError(codeNotFound, msgAdminAppNotFound))
 		return a, false
 	case err != nil:
 		s.jobError(w, r, job.Job{}, "application not readable", err)
@@ -384,26 +384,26 @@ func (s *server) adminCreateToken(w http.ResponseWriter, r *http.Request) {
 	}
 	scopes, err := auth.ParseScopes(strings.Join(body.Scopes, ","))
 	if err != nil || len(body.Scopes) == 0 {
-		writeError(w, r, newError(codeBadRequest, msgAdminInvalidField, "scopes"))
+		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "scopes"))
 		return
 	}
 	now := s.now()
 	expires, err := auth.ParseExpires(body.Expires, now)
 	if err != nil {
-		writeError(w, r, newError(codeBadRequest, msgAdminInvalidField, "expires"))
+		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "expires"))
 		return
 	}
 	maxTTL := s.deps.Config.Auth.MaxTokenTTL
 	// auth.Create checks the same; checked here first to name the field.
 	switch {
 	case !expires.After(now) || expires.Sub(now) > maxTTL:
-		writeError(w, r, newError(codeBadRequest, msgAdminInvalidField, "expires"))
+		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "expires"))
 		return
 	case len(body.Label) > maxLabelChars:
-		writeError(w, r, newError(codeBadRequest, msgAdminInvalidField, "label"))
+		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "label"))
 		return
 	case !a.Enabled:
-		writeError(w, r, newError(codeConflict, msgAdminAppDisabled))
+		writeError(w, newError(codeConflict, msgAdminAppDisabled))
 		return
 	}
 	ctx := r.Context()
@@ -428,7 +428,7 @@ func (s *server) adminRevokeToken(w http.ResponseWriter, r *http.Request) {
 	t, err := s.deps.Store.GetTokenByID(ctx, r.PathValue("id"))
 	switch {
 	case errors.Is(err, job.ErrNotFound):
-		writeError(w, r, newError(codeNotFound, msgAdminTokenNotFound))
+		writeError(w, newError(codeNotFound, msgAdminTokenNotFound))
 		return
 	case err != nil:
 		s.jobError(w, r, job.Job{}, "token not readable", err)
@@ -503,7 +503,7 @@ func (s *server) adminListJobs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := job.JobFilter{ApplicationID: q.Get("app"), Status: job.Status(q.Get("status"))}
 	if f.Status != "" && !slices.Contains(job.Statuses, f.Status) {
-		writeError(w, r, newError(codeBadRequest, msgAdminInvalidParam, "status"))
+		writeError(w, newError(codeBadRequest, msgAdminInvalidParam, "status"))
 		return
 	}
 	since, limit, ok := s.listParams(w, r, time.Time{})
@@ -545,7 +545,7 @@ func (s *server) adminDeleteJob(w http.ResponseWriter, r *http.Request) {
 	}
 	switch err := s.deps.Store.DeleteJob(ctx, j.ID); {
 	case errors.Is(err, job.ErrNotFound):
-		writeError(w, r, newError(codeNotFound, msgAdminJobNotFound))
+		writeError(w, newError(codeNotFound, msgAdminJobNotFound))
 		return
 	case err != nil:
 		s.jobError(w, r, j, "job not deleted", err)
@@ -560,7 +560,7 @@ func (s *server) loadAnyJob(w http.ResponseWriter, r *http.Request) (job.Job, bo
 	j, err := s.deps.Store.GetJobAny(r.Context(), r.PathValue("id"))
 	switch {
 	case errors.Is(err, job.ErrNotFound):
-		writeError(w, r, newError(codeNotFound, msgAdminJobNotFound))
+		writeError(w, newError(codeNotFound, msgAdminJobNotFound))
 		return j, false
 	case err != nil:
 		s.jobError(w, r, job.Job{}, "job not readable", err)
@@ -587,7 +587,7 @@ func (s *server) adminListAudit(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := job.AuditFilter{ApplicationID: q.Get("app"), Kind: q.Get("kind")}
 	if f.Kind != "" && !slices.Contains(audit.Kinds(), audit.Kind(f.Kind)) {
-		writeError(w, r, newError(codeBadRequest, msgAdminInvalidParam, "kind"))
+		writeError(w, newError(codeBadRequest, msgAdminInvalidParam, "kind"))
 		return
 	}
 	since, limit, ok := s.listParams(w, r, s.now().Add(-adminAuditSince))
@@ -624,7 +624,7 @@ func (s *server) listParams(w http.ResponseWriter, r *http.Request, defaultSince
 	if v := q.Get("since"); v != "" {
 		t, err := audit.ParseSince(v, s.now())
 		if err != nil {
-			writeError(w, r, newError(codeBadRequest, msgAdminInvalidParam, "since"))
+			writeError(w, newError(codeBadRequest, msgAdminInvalidParam, "since"))
 			return since, 0, false
 		}
 		since = t
@@ -633,7 +633,7 @@ func (s *server) listParams(w http.ResponseWriter, r *http.Request, defaultSince
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > adminListMax {
-			writeError(w, r, newError(codeBadRequest, msgAdminInvalidParam, "limit"))
+			writeError(w, newError(codeBadRequest, msgAdminInvalidParam, "limit"))
 			return since, 0, false
 		}
 		limit = n
@@ -647,7 +647,7 @@ func decodeAdminBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, adminBodyBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil || dec.More() {
-		writeError(w, r, newError(codeBadRequest, msgAdminBadBody))
+		writeError(w, newError(codeBadRequest, msgAdminBadBody))
 		return false
 	}
 	return true
