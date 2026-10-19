@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # vde container image: static, cgo-free binary on distroless, non-root.
 # Build:  docker build --build-arg VERSION=$(git describe --tags --always) -t vde .
-# Multi-arch builds use `make image-multiarch`; the builder always runs on the build
+# Multi-arch release builds use `make image-release`; the builder always runs on the build
 # platform and cross-compiles, so no emulation is needed for arm64.
 
 # The toolchain line of go.mod; the Makefile passes it as a build arg.

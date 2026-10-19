@@ -31,7 +31,7 @@ endpoint); the release workflow built the image and four archives.
 | [v0.3 Hardening and extensions](docs/roadmap/v0.3-hardening-and-extensions/README.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
 | [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
-| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | planned 2026-10-19 (roadmap only, no code changed) | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
+| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | in progress: epic 00 jobs 02 and 03 (local CI and release) merged into `main` 2026-10-19, not pushed | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
 
 ## What is verified, and how
 
@@ -82,8 +82,8 @@ endpoint); the release workflow built the image and four archives.
 - Anthropic, OpenAI and Gemini direct keys: live runs went through the OpenAI-compatible
   adapter only; the others are covered by httptest (Anthropic and Gemini also have opt-in
   `live_test.go` files, with no recorded run).
-- The multi-arch image is built by the release workflow on a tag; the v0.3.0 and v0.4.0
-  release runs failed on the flaky tests above (a separate session is rebuilding v0.4.0).
+- The multi-arch image is built by `make release` (buildx, not yet installed on the owner's
+  machine, so the v1.1 dry run skipped it); the v0.3.0 and v0.4.0 GitHub release runs failed on the flaky tests above (a separate session is rebuilding v0.4.0).
   Releases are unsigned: signing, SBOMs and provenance are drafted on
   `wip/release-engineering`, never run.
 - A load test: never run on the target VM; no capacity document (deferred).
@@ -141,13 +141,14 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
 4. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
    SBOMs first, then the docs site, then the load test), each as its own job.
 5. If the comparison justifies it, the `auto` thresholds above (needs an ADR 0009 amendment).
-6. v1.1 Lean ([roadmap](docs/roadmap/v1.1-lean/README.md)): epic 00 first (skills; local CI and release merged into `main`;
-   then the baseline), then the waves in the version README.
+6. v1.1 Lean ([roadmap](docs/roadmap/v1.1-lean/README.md)): epic 00 first. Local CI and release (00-02, 00-03)
+   are merged into `main`; owner: push `main`, turn GitHub Actions off, install buildx and
+   give `gh` `write:packages` (00-03). Then 00-01 skills and 00-04 baseline, then the waves.
 
 ## How to resume
 
 1. `git log --oneline | head -20` and `git status`; compare with the last commit above.
-2. `make check` (and `make conformance`, `make eval` if you touch the loop or API).
+2. `make check` (and `make ci` before merging into `main`).
 3. Read this file, then [AGENTS.md](AGENTS.md), then the next `planned` job file.
 4. Work the job; update its `Status:`, the epic table and, at the end of the session, this
    file (date, last commit, what changed in the sections above).

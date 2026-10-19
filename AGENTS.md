@@ -56,7 +56,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 | `examples/` | Example configs, compose (single and `scaled`), synthetic samples ([README](examples/README.md)) |
 | `testdata/` | `scenarios/` (fake-provider scripts), `eval/` (corpus), `travelinbox/` (co-owned assets, [README](testdata/travelinbox/README.md)); `user-docs/` is local only |
 | `FromTravelApp/` | TravelInbox contract, its OpenAPI and schema (read-only input) |
-| `.githooks/` | `pre-push` runs `make check` (enable with `make hooks`); every check runs locally with `make ci`, nothing runs on GitHub |
+| `.githooks/` | `pre-push` runs `make check` (enable with `make hooks`); every check runs locally with `make ci` and releases with `make release`; GitHub only hosts the repository and the release artifacts |
 
 ## Where the specs live
 
@@ -85,7 +85,8 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 | `make conformance` | Builds `vde`, serves it against a fake OpenAI-compatible provider, walks contract §14 items 1 to 9 |
 | `make eval` | `vde eval` on `testdata/eval` with the fake provider under `always`, `never`, `auto`; reports to `eval-reports/` |
 | `make live` | `VDE_LIVE=1` smoke test (`TestLiveProviders`) against every provider whose key is set: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`; model per provider `VDE_LIVE_<PROVIDER>_MODEL`, other host `VDE_LIVE_OPENAI_BASE_URL` |
-| `make cross` / `make image` | Static linux/amd64 and arm64 binaries / local Docker image (`image-multiarch` needs buildx) |
+| `make cross` / `make image` | Static linux/amd64 and arm64 binaries (checked static) / local Docker image |
+| `make release VERSION=vX.Y.Z [DRY_RUN=1]` | Runs `make ci`, builds four archives and `checksums.txt` into `dist/` with the `go.mod` toolchain, the multi-arch image with buildx (GHCR), then tag and `gh release create` ([CONTRIBUTING.md](CONTRIBUTING.md#releasing)) |
 
 Opt-in suites (skipped unless set): `VDE_TEST_POSTGRES` (DSN) and `VDE_TEST_S3_ENDPOINT`
 (+ `VDE_TEST_S3_SSE`, `VDE_TEST_S3_BUCKET`, `VDE_TEST_S3_REGION`, AWS credentials) for the
