@@ -24,7 +24,8 @@ to the file with `vde config schema > vde.schema.json` and make
 `# yaml-language-server: $schema=./vde.schema.json` the file's first line; VS Code's YAML
 extension and other editors using yaml-language-server read that comment.
 Save the schema again after upgrading `vde`. The schema describes key names, types,
-accepted values, ranges and the form of durations for editors; `vde` itself does not
+accepted values, ranges and the form of durations for editors, with a one-line hint per
+key; this page is the description; `vde` itself does not
 validate against it. `vde config check`, `serve` and `extract` run the same validation,
 which covers everything the schema refuses plus the rules across keys (a group's model
 declared on its endpoint, `failover.max_total_time` below `limits.job_timeout`, a named

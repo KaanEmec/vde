@@ -319,6 +319,30 @@ func TestSchemaMatchesStructs(t *testing.T) {
 	}
 }
 
+// TestSchemaDescriptionsAreHints keeps docs/operator/configuration.md the one description
+// of each key: a description in schema.json is a one-line editor hint, without defaults.
+func TestSchemaDescriptionsAreHints(t *testing.T) {
+	t.Parallel()
+	var walk func(n any, path string)
+	walk = func(n any, path string) {
+		switch node := n.(type) {
+		case schemaNode:
+			if d, ok := node["description"].(string); ok && path != "" &&
+				(len(d) > 80 || strings.Contains(d, "; default")) {
+				t.Errorf("%s: description %q is more than a short hint (at most 80 characters, no default)", path, d)
+			}
+			for k, child := range node {
+				walk(child, path+"/"+k)
+			}
+		case []any:
+			for _, child := range node {
+				walk(child, path)
+			}
+		}
+	}
+	walk(loadSchema(t), "")
+}
+
 // TestDocumentedKeysAreInSchema checks that every key in the Key column of
 // docs/operator/configuration.md's tables exists in the schema.
 func TestDocumentedKeysAreInSchema(t *testing.T) {
