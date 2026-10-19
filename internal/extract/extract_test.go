@@ -342,20 +342,6 @@ func TestRun_rejectedOnSchemaFeedback(t *testing.T) {
 	}
 }
 
-func TestRun_extractorFailover(t *testing.T) {
-	r := newRig(t, fake.AlwaysRetryable(503), fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)})
-	in := input(t, personSchema)
-	out := Run(t.Context(), in, r.roles)
-	checkOutcome(t, in, out, StatusAccepted, 1, "")
-	if n := len(r.primary.Calls()); n != 1 {
-		t.Errorf("primary calls = %d, want 1", n)
-	}
-	checkCalls(t, in, r.fallback.Calls(), r.judge.Calls(), 1, 1)
-	if m := r.fallback.Calls()[0].Request.Model; m != "fallback-model" {
-		t.Errorf("fallback model = %q", m)
-	}
-}
-
 func TestRun_extractorGroupDown(t *testing.T) {
 	r := newRig(t, fake.AlwaysRetryable(503), fake.AlwaysRetryable(502), nil)
 	in := input(t, personSchema)
@@ -365,15 +351,6 @@ func TestRun_extractorGroupDown(t *testing.T) {
 	if out.Result != nil {
 		t.Errorf("result = %s, want none", out.Result)
 	}
-}
-
-func TestRun_judgeGroupDown(t *testing.T) {
-	r := newRig(t, fake.Script{fake.Answer(valid)}, nil, fake.AlwaysRetryable(503))
-	in := input(t, personSchema)
-	out := Run(t.Context(), in, r.roles)
-	checkOutcome(t, in, out, StatusFailed, 1, CodeProviderUnavailable)
-	checkCalls(t, in, r.extractorCalls(), r.judge.Calls(), 1, 1)
-	sameJSON(t, out.Result, valid)
 }
 
 func TestRun_deadline(t *testing.T) {
@@ -977,7 +954,8 @@ func TestRun_autoNeverGroundsInvented(t *testing.T) {
 }
 
 // TestRun_judgePolicy covers the loop's policy paths on a groundable text document: the
-// outcome, the calls, the decision for the metrics and where grounding entries go.
+// outcome, the calls, the decision for the metrics and where grounding entries go. The
+// scenarios in testdata/scenarios/judge-policy cover the same paths end to end.
 func TestRun_judgePolicy(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -998,28 +976,18 @@ func TestRun_judgePolicy(t *testing.T) {
 			StatusAccepted, VerificationJudge, 1, 1, DecisionJudged, 0},
 		{"always repaired", config.JudgeAlways, 0, 3, fake.Script{fake.Answer(invented), fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false, true,
 			StatusAccepted, VerificationJudge, 2, 1, DecisionJudged, 0},
-		{"always repair fails, judge rejects to the limit", config.JudgeAlways, 0, 3, fake.Script{{Answer: invented, Repeat: true}},
-			fake.Script{{Answer: reject, Repeat: true}}, false, true, StatusRejected, VerificationNone, 3, 2, DecisionJudged, 0},
-		{"always unannotated, no repair", config.JudgeAlways, 0, 3, fake.Script{fake.Answer(invented)}, fake.Script{fake.Answer(accept)}, false, false,
-			StatusAccepted, VerificationJudge, 1, 1, DecisionJudged, 0},
 		{"always schema-less, no repair", config.JudgeAlways, 0, 3, fake.Script{fake.Answer(invented)}, fake.Script{fake.Answer(accept)}, true, false,
 			StatusAccepted, VerificationJudge, 1, 1, DecisionJudged, 0},
-		{"never", config.JudgeNever, 0, 3, fake.Script{fake.Answer(valid)}, nil, false, false,
-			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 0},
 		{"never advisory", config.JudgeNever, 0, 3, fake.Script{fake.Answer(invented)}, nil, false, false,
 			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 1},
 		{"never schema-less", config.JudgeNever, 0, 3, fake.Script{fake.Answer(`{"anything": "Ada King"}`)}, nil, true, false,
 			StatusExtracted, VerificationNone, 1, 0, DecisionSkipped, 0},
-		{"never schema violations", config.JudgeNever, 0, 2, fake.Script{{Answer: invalid, Repeat: true}}, nil, false, false,
-			StatusRejected, VerificationNone, 2, 0, "", 0},
 		{"never failed extractor", config.JudgeNever, 0, 2, fake.Script{{Answer: notJSON, Repeat: true}}, nil, false, false,
 			StatusFailed, VerificationNone, 2, 0, "", 0},
 		{"auto grounded", config.JudgeAuto, 0, 3, fake.Script{fake.Answer(valid)}, nil, false, false,
 			StatusAccepted, VerificationGrounded, 1, 0, DecisionGrounded, 0},
-		{"auto sampled", config.JudgeAuto, 1, 3, fake.Script{fake.Answer(valid)}, fake.Script{fake.Answer(accept)}, false, false,
-			StatusAccepted, VerificationJudge, 1, 1, DecisionSampled, 0},
-		{"auto ungrounded after repair, advisory entries", config.JudgeAuto, 0, 3, fake.Script{{Answer: invented, Repeat: true}},
-			fake.Script{fake.Answer(accept)}, false, false, StatusAccepted, VerificationJudge, 2, 1, DecisionJudged, 1},
+		{"auto sampled, the judge disagrees", config.JudgeAuto, 1, 3, fake.Script{fake.Answer(valid), fake.Answer(valid)},
+			fake.Script{fake.Answer(reject), fake.Answer(accept)}, false, false, StatusAccepted, VerificationJudge, 2, 2, DecisionSampled, 0},
 		{"auto judge rejects then grounded answer to judge feedback", config.JudgeAuto, 0, 3,
 			fake.Script{fake.Answer(invented), fake.Answer(invented), fake.Answer(valid)},
 			fake.Script{fake.Answer(reject), fake.Answer(accept)}, false, false, StatusAccepted, VerificationJudge, 3, 2, DecisionJudged, 0},

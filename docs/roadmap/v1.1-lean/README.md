@@ -79,7 +79,7 @@ Release `v1.1.0` with `make release` when:
 | 03 | [One source for each rule](03-single-source/README.md) | 01 | done |
 | 04 | [Provider adapters](04-providers/README.md) | 01-03 | done |
 | 05 | [Long functions](05-long-functions/README.md) | 02, 03 | done |
-| 06 | [Tests and testdata](06-tests-and-testdata/README.md) | 00 | planned |
+| 06 | [Tests and testdata](06-tests-and-testdata/README.md) | 00 | in progress |
 | 07 | [Dependencies](07-dependencies-and-build/README.md) | 00 | planned (02 dropped) |
 | 08 | [Documentation and example clients](08-docs-and-clients/README.md) | 00; 08-01 last of all docs edits | planned |
 | 09 | [Deprecations (owner decisions)](09-deprecations/README.md) | 02, 04 | planned (03 dropped) |

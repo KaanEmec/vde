@@ -1,7 +1,5 @@
-# Judge policy scenarios (ADR 0009): the first YAML document is the fake provider script
-# (internal/provider/fake), the second the input and the expected outcome, read by
-# TestRun_judgePolicyScenarios in internal/extract. Every scenario runs with
-# testdata/scenarios/config/vde.yaml. A candidate's date 2026-04-18 and organiser
+# Judge policy scenarios (ADR 0009) in the format of testdata/scenarios: see TestScenarios
+# in cmd/vde/extract_test.go. A candidate's date 2026-04-18 and organiser
 # "Grand Gala Events" are invented: booking.txt prints neither.
 description: "always, annotated schema: the repair does not fix the invented values; the judge is asked and its accept stands (contract §5), with no grounding entry in the feedback"
 steps:
@@ -20,7 +18,7 @@ expect:
   status: accepted
   verification: judge
   attempts: 2
-  extractor_calls: 2
+  extractor_calls: {primary: 2}
   judge_calls: 1
   decision: judged
   feedback_sources: []

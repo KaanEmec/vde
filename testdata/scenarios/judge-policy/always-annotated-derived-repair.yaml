@@ -1,7 +1,5 @@
-# Judge policy scenarios (ADR 0009): the first YAML document is the fake provider script
-# (internal/provider/fake), the second the input and the expected outcome, read by
-# TestRun_judgePolicyScenarios in internal/extract. Every scenario runs with
-# testdata/scenarios/config/vde.yaml. The candidate's party role "booker" is a derivation:
+# Judge policy scenarios (ADR 0009) in the format of testdata/scenarios: see TestScenarios
+# in cmd/vde/extract_test.go. The candidate's party role "booker" is a derivation:
 # booking.txt prints "Booked by", not the word itself.
 description: "always, annotated schema: the same derived value is a critical miss, so the one repair is made before the judge is asked"
 steps:
@@ -19,7 +17,7 @@ expect:
   status: accepted
   verification: judge
   attempts: 2
-  extractor_calls: 2
+  extractor_calls: {primary: 2}
   judge_calls: 1
   decision: judged
   feedback_sources: []

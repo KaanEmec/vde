@@ -50,6 +50,8 @@ var (
 //	  max_attempts: 3            # optional
 //	  timeout: 1s                # optional job time limit
 //	  html: visible_text         # optional HTML policy
+//	  judge: auto                # optional judge policy (default roles.judge.policy)
+//	  sample_rate: 1             # optional, default config.DefaultSampleRate as in the CLI
 //	expect:
 //	  status: accepted           # accepted, rejected or failed
 //	  attempts: 1
@@ -61,6 +63,12 @@ var (
 //	  result: '{"a": 1}'         # optional: the final result, compared as JSON
 //	  document_parts: [text/plain]  # optional: media types of the document parts sent
 //	  same_text_as: examples/samples/booking.html  # optional: the text part ends with its text
+//	  verification: grounded     # optional
+//	  feedback_sources: [judge]  # optional: the sources of the final feedback
+//	  decision: judged           # optional: extract.Outcome's Decision, checked in process,
+//	  disagreements: 0           #   with Disagreements and JudgeCalls
+//
+// testdata/scenarios/judge-policy holds the judge policy scenarios in the same format.
 type scenario struct {
 	Input struct {
 		Document    string        `yaml:"document"`
@@ -70,6 +78,8 @@ type scenario struct {
 		MaxAttempts int           `yaml:"max_attempts"`
 		Timeout     time.Duration `yaml:"timeout"`
 		HTML        string        `yaml:"html"`
+		Judge       string        `yaml:"judge"`
+		SampleRate  *float64      `yaml:"sample_rate"`
 	} `yaml:"input"`
 	Expect struct {
 		Status          extract.Status     `yaml:"status"`
@@ -82,6 +92,10 @@ type scenario struct {
 		Result          string             `yaml:"result"`   // JSON, compared when present
 		DocumentParts   []string           `yaml:"document_parts"`
 		SameTextAs      string             `yaml:"same_text_as"`
+		Verification    string             `yaml:"verification"`
+		FeedbackSources []string           `yaml:"feedback_sources"`
+		Decision        *string            `yaml:"decision"`
+		Disagreements   int                `yaml:"disagreements"`
 	} `yaml:"expect"`
 }
 
@@ -107,29 +121,66 @@ func loadScenario(t *testing.T, path string) scenario {
 	return sc
 }
 
-// observedRun is what one run of a scenario produced.
+// observedRun is what one run of a scenario produced; outcome and calls only in process.
 type observedRun struct {
 	out            jobOutput
 	judgeCalls     int
 	extractorCalls map[string]int
+	outcome        extract.Outcome
+	calls          []fake.Call
 }
 
-// TestScenarios runs every testdata/scenarios file through extract.Run directly and
-// through the vde binary built by TestMain, and checks both against the scenario's
-// expectations and against each other.
+// offRoles spells out the scenario configuration's roles with the loop options
+// (escalation, second judge, feedback fallback) at their off values.
+const offRoles = `
+roles:
+  extractor: {group: extraction, escalation: []}
+  judge: {group: review, escalation: [], feedback_fallback: whole_result}
+  second_judge: {group: ""}
+`
+
+// TestScenarios runs every testdata/scenarios file, judge-policy/ included, through
+// extract.Run directly and through the vde binary built by TestMain, and checks both
+// against the scenario's expectations and against each other. A scenario under the
+// configured judge policy (always) also runs in process with the loop options spelled out
+// at their off values and with a representation without grounding text, as the v0.3
+// loop saw it: the outcome, every call and service_version are identical.
 func TestScenarios(t *testing.T) {
 	t.Parallel()
 	paths, err := filepath.Glob(filepath.Join(scenarioDir, "*.yaml"))
-	if err != nil || len(paths) == 0 {
-		t.Fatalf("no scenarios: %v", err)
+	policyPaths, err2 := filepath.Glob(filepath.Join(scenarioDir, "judge-policy", "*.yaml"))
+	if err != nil || err2 != nil || len(paths) == 0 || len(policyPaths) == 0 {
+		t.Fatalf("no scenarios: %v %v", err, err2)
 	}
-	for _, path := range paths {
-		name := strings.TrimSuffix(filepath.Base(path), ".yaml")
+	base := string(readFile(t, "testdata/scenarios/config/vde.yaml"))
+	off := strings.Replace(base, "roles:\n  extractor: {group: extraction}\n  judge: {group: review}\n", offRoles, 1)
+	if off == base {
+		t.Fatal("the scenario configuration's roles section changed; update offRoles")
+	}
+	offConfig := filepath.Join(t.TempDir(), "vde.yaml")
+	if err := os.WriteFile(offConfig, []byte(off), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range append(paths, policyPaths...) {
+		name, _ := filepath.Rel(scenarioDir, strings.TrimSuffix(path, ".yaml"))
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			sc := loadScenario(t, path)
-			direct := runScenarioDirect(t, path, sc)
+			direct := runScenarioDirect(t, path, scenarioConfig, sc, false)
 			checkScenario(t, "extract.Run", sc, direct)
+			checkDecision(t, sc, direct)
+			if sc.Input.Judge == "" {
+				for _, v := range []struct {
+					name, config string
+					ungroundable bool
+				}{{"with the options off", offConfig, false}, {"without grounding (v0.3)", scenarioConfig, true}} {
+					compareVariant(t, v.name, direct, runScenarioDirect(t, path, v.config, sc, v.ungroundable))
+				}
+			}
+			if reason := cliCannotRun(t, sc); reason != "" {
+				t.Logf("not run through vde extract: %s", reason)
+				return
+			}
 			cli := runScenarioCLI(t, path, sc)
 			checkScenario(t, "vde extract", sc, cli)
 			compareRuns(t, direct.out, cli.out)
@@ -139,6 +190,21 @@ func TestScenarios(t *testing.T) {
 	}
 }
 
+// cliCannotRun names why vde extract cannot reproduce a scenario's input, "" when it can:
+// it has no sample-rate flag, and it reads a PDF's text with its engine under the
+// judge policies that ground, where the scenario sees a PDF without one.
+func cliCannotRun(t *testing.T, sc scenario) string {
+	t.Helper()
+	if r := sc.Input.SampleRate; r != nil && extract.Sampled(readFile(t, sc.Input.Document), *r) !=
+		extract.Sampled(readFile(t, sc.Input.Document), config.DefaultSampleRate) {
+		return "a sample rate that samples differently from the default"
+	}
+	if sc.Input.Judge != "" && sc.Input.Judge != string(config.JudgeAlways) && strings.HasSuffix(sc.Input.Document, ".pdf") {
+		return "a PDF without a PDF engine"
+	}
+	return ""
+}
+
 func summary(out jobOutput) string {
 	if out.Error != nil {
 		return string(out.Status) + " (" + out.Error.Code + ")"
@@ -146,14 +212,16 @@ func summary(out jobOutput) string {
 	return string(out.Status)
 }
 
-// runScenarioDirect wires the engine as the command does, without the command: a fake
-// from the script behind every endpoint, then document.Select and extract.Run.
-func runScenarioDirect(t *testing.T, path string, sc scenario) observedRun {
+// runScenarioDirect wires the engine as the command does, without the command: the
+// configuration at cfgPath, a fake from the script behind every endpoint, then
+// document.Select and extract.Run. ungroundable drops the representation's grounding text.
+func runScenarioDirect(t *testing.T, path, cfgPath string, sc scenario, ungroundable bool) observedRun {
 	t.Helper()
-	cfg, _, err := loadConfigEnv(scenarioConfig, false, os.Getenv)
+	l, err := newLocalRun(cfgPath, sc.Input.Judge, true, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg := l.cfg
 	f, err := fake.Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -174,9 +242,12 @@ func runScenarioDirect(t *testing.T, path string, sc scenario) observedRun {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var schema *extract.Schema
+	if ungroundable {
+		rep.GroundText, rep.Groundable = "", false
+	}
+	files := jobFiles{extractor: string(readFile(t, "examples/samples/extractor.md")), judge: string(readFile(t, "examples/samples/judge.md"))}
 	if sc.Input.Schema != "" {
-		if schema, err = extract.CompileSchema(readFile(t, sc.Input.Schema)); err != nil {
+		if files.schema, err = extract.CompileSchema(readFile(t, sc.Input.Schema)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -188,14 +259,11 @@ func runScenarioDirect(t *testing.T, path string, sc scenario) observedRun {
 	if sc.Input.MaxAttempts > 0 {
 		maxAttempts = sc.Input.MaxAttempts
 	}
-	res := extract.Run(context.Background(), extract.Input{
-		Representation:        rep,
-		ExtractorInstructions: string(readFile(t, "examples/samples/extractor.md")),
-		JudgeInstructions:     string(readFile(t, "examples/samples/judge.md")),
-		Schema:                schema,
-		MaxAttempts:           maxAttempts,
-		Deadline:              time.Now().Add(timeout),
-	}, roles)
+	in := l.input(doc, rep, files, maxAttempts, timeout)
+	if sc.Input.SampleRate != nil {
+		in.SampleRate = *sc.Input.SampleRate
+	}
+	res := extract.Run(context.Background(), in, roles)
 
 	endpointOf := map[string]string{} // model -> endpoint; models are unique in the config
 	for name, e := range cfg.Endpoints {
@@ -206,25 +274,55 @@ func runScenarioDirect(t *testing.T, path string, sc scenario) observedRun {
 	run := observedRun{
 		out: jobOutput{
 			Status: res.Status, Result: res.Result, Feedback: res.Feedback, Attempts: res.Attempts,
-			ServiceVersion: extract.ServiceVersion(cfg, version.Version), JudgeConfidence: res.JudgeConfidence, Error: res.Error,
+			ServiceVersion: l.serviceVersion, JudgeConfidence: res.JudgeConfidence, Error: res.Error,
 			Verification: res.Verification,
 		},
 		extractorCalls: map[string]int{},
+		outcome:        res,
+		calls:          f.Calls(),
 	}
-	calls := f.Calls()
 	// The command's usage counts every call, failed ones (no tokens) included.
-	run.out.Usage = extract.Usage{InputTokens: res.Usage.InputTokens, OutputTokens: res.Usage.OutputTokens, Calls: len(calls)}
-	for _, c := range calls {
+	run.out.Usage = extract.Usage{InputTokens: res.Usage.InputTokens, OutputTokens: res.Usage.OutputTokens, Calls: len(run.calls)}
+	for _, c := range run.calls {
 		if roleOf(c.Request.System) == roleJudge {
 			run.judgeCalls++
 		} else {
 			run.extractorCalls[endpointOf[c.Request.Model]]++
 		}
 	}
-	if len(calls) > 0 {
-		checkDocumentParts(t, sc, calls[0], policy)
+	if len(run.calls) > 0 {
+		checkDocumentParts(t, sc, run.calls[0], policy)
 	}
 	return run
+}
+
+// checkDecision checks the outcome's metadata the command does not print.
+func checkDecision(t *testing.T, sc scenario, run observedRun) {
+	t.Helper()
+	e, out := sc.Expect, run.outcome
+	if e.Decision == nil {
+		return
+	}
+	if out.Decision != *e.Decision || out.Disagreements != e.Disagreements || out.JudgeCalls != run.judgeCalls {
+		t.Errorf("decision %q, disagreements %d, judge calls %d (counted %d); want %q, %d",
+			out.Decision, out.Disagreements, out.JudgeCalls, run.judgeCalls, *e.Decision, e.Disagreements)
+	}
+}
+
+// compareVariant checks that a variant run made the same calls to the same outcome.
+func compareVariant(t *testing.T, name string, want, got observedRun) {
+	t.Helper()
+	if !reflect.DeepEqual(want.outcome, got.outcome) || want.out.ServiceVersion != got.out.ServiceVersion {
+		t.Errorf("outcome %s = %+v (%s), want %+v (%s)", name, got.outcome, got.out.ServiceVersion, want.outcome, want.out.ServiceVersion)
+	}
+	if len(want.calls) != len(got.calls) {
+		t.Fatalf("calls: %d %s, %d otherwise", len(got.calls), name, len(want.calls))
+	}
+	for i := range want.calls {
+		if !reflect.DeepEqual(want.calls[i].Request, got.calls[i].Request) {
+			t.Errorf("call %d differs %s", i, name)
+		}
+	}
 }
 
 // checkDocumentParts checks the parts after the "Document:" separator of the first call.
@@ -296,6 +394,9 @@ func runScenarioCLI(t *testing.T, path string, sc scenario) observedRun {
 	if sc.Input.HTML != "" {
 		args = append(args, "--html", sc.Input.HTML)
 	}
+	if sc.Input.Judge != "" {
+		args = append(args, "--judge", sc.Input.Judge)
+	}
 	cmd := exec.Command(vdeBinary, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -312,7 +413,8 @@ func runScenarioCLI(t *testing.T, path string, sc scenario) observedRun {
 	if err := json.Unmarshal(stdout.Bytes(), &run.out); err != nil {
 		t.Fatalf("stdout is not a job JSON object: %v\nstderr:\n%s", err, &stderr)
 	}
-	wantCode := map[extract.Status]int{extract.StatusAccepted: 0, extract.StatusRejected: 2, extract.StatusFailed: 3}[run.out.Status]
+	wantCode := map[extract.Status]int{extract.StatusAccepted: exitOK, extract.StatusRejected: exitRejected,
+		extract.StatusFailed: exitFailed, extract.StatusExtracted: exitExtracted}[run.out.Status]
 	if code != wantCode {
 		t.Errorf("exit code = %d, want %d for %s", code, wantCode, run.out.Status)
 	}
@@ -370,6 +472,22 @@ func checkScenario(t *testing.T, via string, sc scenario, run observedRun) {
 	}
 	if e.Result != "" && !equalJSON(t, out.Result, json.RawMessage(e.Result)) {
 		t.Errorf("%s: result %s, want %s", via, out.Result, e.Result)
+	}
+	if e.Verification != "" && out.Verification != e.Verification {
+		t.Errorf("%s: verification %q, want %q", via, out.Verification, e.Verification)
+	}
+	if e.FeedbackSources != nil {
+		sources := []string{}
+		for _, f := range out.Feedback {
+			sources = append(sources, f.Source)
+		}
+		if !slices.Equal(sources, e.FeedbackSources) {
+			t.Errorf("%s: feedback sources %v, want %v (%+v)", via, sources, e.FeedbackSources, out.Feedback)
+		}
+	}
+	// The judge policy scenarios' invented organiser is never accepted on grounding.
+	if out.Verification == extract.VerificationGrounded && strings.Contains(string(out.Result), "Grand Gala Events") {
+		t.Errorf("%s: a candidate with invented values was accepted on grounding", via)
 	}
 }
 
