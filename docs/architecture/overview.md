@@ -279,12 +279,16 @@ Concrete choices that the ADRs left open, fixed so parallel work agrees:
 | --- | --- |
 | Module path | `github.com/kaanemec/vde` (open question 1 closed; rename is a one-line change) |
 | Go | `toolchain go1.26.9` in `go.mod` (images and release binaries build with it), `go 1.26` in `go.mod` (required by x/net); pure Go, `CGO_ENABLED=0` everywhere |
-| YAML | `gopkg.in/yaml.v3` with `KnownFields(true)` |
+| YAML | `go.yaml.in/yaml/v3` with `KnownFields(true)`: the YAML organisation's continuation of `gopkg.in/yaml.v3`, whose repository is archived (last release v3.0.1, 2022); same API, already required by go-pdfium and prometheus/common (v1.1 job 07-01) |
 | JSON Schema 2020-12 | `github.com/santhosh-tekuri/jsonschema/v6` |
 | SQLite | `modernc.org/sqlite` via `database/sql`, WAL, one writer |
-| IDs | `github.com/oklog/ulid/v2`, job ids `j_<ULID>`, tokens `vde_<prefix>_<random>` |
+| PostgreSQL | `github.com/jackc/pgx/v5` (its `stdlib` driver behind `database/sql`), the job store of a scaled deployment (ADR 0007) |
+| S3 and Bedrock | `github.com/aws/aws-sdk-go-v2` (`config`, `service/s3`, `service/bedrockruntime`) and `github.com/aws/smithy-go` for its API errors: the S3 blob store (ADR 0007) and the Bedrock adapter (v0.3 epic 02, ADR 0004) |
+| Vertex AI auth | `golang.org/x/oauth2` (`google` application default credentials; it brings `cloud.google.com/go/compute/metadata`), the Vertex adapter (v0.3 epic 02, ADR 0004) |
+| IDs | ULIDs from the standard library (`job.NewULID`: millisecond time, `crypto/rand`, monotonic within a millisecond; replaced `oklog/ulid` in v1.1 job 07-01), job ids `j_<ULID>`, request ids `r_<ULID>`, tokens `vde_<prefix>_<random>` |
 | Metrics | `github.com/prometheus/client_golang` (v0.2 epic 07) |
 | HTML to text | `golang.org/x/net/html`; charsets `golang.org/x/text` |
+| Images | `golang.org/x/image` (`webp` decoder, `draw` for scaling), image conversion (v0.3 epic 04, ADR 0006) |
 | PDF text and rendering | `github.com/klippa-app/go-pdfium` (MIT) on `github.com/tetratelabs/wazero` (Apache-2.0), pdfium embedded as WebAssembly (BSD-3-Clause); licenses in `NOTICE` (v0.4, ADR 0010) |
 | CLI | standard `flag` with a hand-written subcommand dispatcher, no framework |
 | Tests | standard `testing` only, table-driven, fake provider as the backbone; no testify |

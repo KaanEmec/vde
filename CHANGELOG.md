@@ -8,6 +8,11 @@ All notable changes to this project are recorded here, in the format of
 
 ### Changed
 
+- Dependencies: `github.com/oklog/ulid/v2` is replaced by a ULID generator on the standard
+  library (same 26-character format of job and request ids, monotonic within a
+  millisecond, `crypto/rand`); `gopkg.in/yaml.v3`, whose repository is archived, by its
+  continuation `go.yaml.in/yaml/v3` v3.0.5 (same API). The only behaviour difference: a
+  YAML file with an unhashable merge key is now a parse error instead of a crash.
 - `vde config check` no longer runs a second pass against the JSON Schema and no longer
   prints `error: schema: <key>: <message>` lines or "has N schema violation(s)": it
   validates exactly as `vde serve` does. `vde config schema` and the schema are unchanged.

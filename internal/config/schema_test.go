@@ -14,7 +14,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/santhosh-tekuri/jsonschema/v6"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // schemaFiles are every configuration file in the repository that must validate against

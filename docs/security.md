@@ -229,10 +229,10 @@ Every measurement is from a local run on an Apple M-series laptop.
 `govulncheck ./...` (2026-10-18): no vulnerability in a third-party module; the standard
 library findings are those of the toolchain row above. Licences of the direct
 dependencies, all permissive: Apache-2.0 for `aws-sdk-go-v2` (with `config`,
-`bedrockruntime`, `s3`), `smithy-go`, `oklog/ulid`, `prometheus/client_golang`,
+`bedrockruntime`, `s3`), `smithy-go`, `prometheus/client_golang`,
 `santhosh-tekuri/jsonschema` and `tetratelabs/wazero`; MIT for `jackc/pgx` and
 `klippa-app/go-pdfium`; BSD-3-Clause for `golang.org/x/image`, `x/net`, `x/oauth2`,
-`x/text` and `modernc.org/sqlite`; MIT and Apache-2.0 for `gopkg.in/yaml.v3`.
+`x/text` and `modernc.org/sqlite`; MIT and Apache-2.0 for `go.yaml.in/yaml/v3`.
 
 Image (`Dockerfile`): `gcr.io/distroless/static:nonroot` with no shell or package manager,
 user 65532, one static binary built with `CGO_ENABLED=0 -trimpath`, the licences in

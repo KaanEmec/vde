@@ -6,8 +6,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/kaanemec/vde/internal/config"
 )
 
@@ -86,7 +84,7 @@ var (
 )
 
 // NewID returns a new job id, j_<ULID>.
-func NewID() string { return "j_" + ulid.Make().String() }
+func NewID() string { return "j_" + NewULID() }
 
 // ErrorCode is the code of a job's error JSON, "" for none or a malformed one; the
 // message is never read.

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/kaanemec/vde/internal/job"
 )
 
 const (
@@ -70,7 +70,7 @@ func requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get(headerRequestID)
 		if !validRequestID(id) {
-			id = "r_" + ulid.Make().String()
+			id = "r_" + job.NewULID()
 		}
 		h := w.Header()
 		h.Set(headerRequestID, id)

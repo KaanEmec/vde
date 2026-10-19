@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/kaanemec/vde/internal/ground"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Comparison modes of a compare.yaml rule.
