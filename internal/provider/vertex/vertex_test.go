@@ -187,18 +187,6 @@ func TestComplete_claude(t *testing.T) {
 	}
 }
 
-func TestComplete_claudeOmitsZeroTemperature(t *testing.T) {
-	t.Parallel()
-	c, got := serve(t, 200, `{"content":[{"type":"text","text":"ok"}],"usage":{}}`, nil)
-	req := provider.Request{Model: "claude-example", MaxTokens: 4096, Parts: []provider.Part{{Text: "hi"}}}
-	if _, err := c.Complete(context.Background(), req); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(got.body), "temperature") || !strings.Contains(string(got.body), `"max_tokens":4096`) {
-		t.Errorf("body = %s", got.body)
-	}
-}
-
 func TestEndpoints(t *testing.T) {
 	t.Parallel()
 	regional := newClient(&config.Endpoint{Project: "p", Region: "europe-west4"}, okTokens)
@@ -246,38 +234,6 @@ func TestComplete_statusErrors(t *testing.T) {
 	}
 }
 
-func TestComplete_unusableAnswers(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name, model, reply string
-	}{
-		{"gemini prompt blocked", "gemini-x", `{"promptFeedback":{"blockReason":"SAFETY"},"candidates":[]}`},
-		{"gemini safety finish", "gemini-x", `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"SAFETY"}]}`},
-		{"gemini no candidates", "gemini-x", `{"candidates":[]}`},
-		{"gemini no text", "gemini-x", `{"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}`},
-		{"gemini malformed", "gemini-x", `{"candidates":[` + secretAns},
-		{"claude refusal", "claude-x", `{"stop_reason":"refusal","content":[{"type":"text","text":"` + secretAns + `"}]}`},
-		{"claude no text", "claude-x", `{"stop_reason":"end_turn","content":[]}`},
-		{"claude malformed", "claude-x", `{"content":` + secretAns},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			c, _ := serve(t, 200, tt.reply, nil)
-			_, err := c.Complete(context.Background(), provider.Request{Model: tt.model, Parts: []provider.Part{{Text: "x"}}})
-			if err == nil || provider.Classify(err) != provider.Permanent {
-				t.Fatalf("error = %v, want permanent", err)
-			}
-			if strings.Contains(err.Error(), secretAns) {
-				t.Errorf("error contains response content: %v", err)
-			}
-		})
-	}
-}
-
-// TestComplete_unusableAnswerStatus: each family reports a 2xx it cannot use as its
-// direct adapter does, Gemini with the status and Claude without; Gemini also refuses the
-// BLOCKLIST and SPII finish reasons.
 func TestComplete_unusableAnswerStatus(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

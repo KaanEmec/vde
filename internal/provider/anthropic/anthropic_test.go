@@ -255,6 +255,18 @@ func TestCompleteRequestDefaults(t *testing.T) {
 	}
 }
 
+func TestBodyVertexForm(t *testing.T) {
+	t.Parallel()
+	body, err := Body(provider.Request{Model: "claude-test", MaxTokens: 10, Parts: []provider.Part{{Text: "hi"}}}, "vertex-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"anthropic_version":"vertex-1","max_tokens":10,"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}`
+	if string(body) != want {
+		t.Errorf("body = %s, want %s", body, want)
+	}
+}
+
 func TestCompleteSuccess(t *testing.T) {
 	t.Parallel()
 	body := `{"model":"claude-test-20260101","stop_reason":"end_turn",

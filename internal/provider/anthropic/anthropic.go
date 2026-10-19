@@ -44,12 +44,14 @@ func New(ep *config.Endpoint) *Client {
 }
 
 // messagesRequest is the POST /v1/messages body. Only the fields vde uses are modelled:
-// no tools, streaming, metadata, caching or thinking.
+// no tools, streaming, metadata, caching or thinking. Vertex AI sets AnthropicVersion and
+// no Model.
 type messagesRequest struct {
-	Model     string        `json:"model"`
-	MaxTokens int           `json:"max_tokens"`
-	System    string        `json:"system,omitempty"`
-	Messages  []userMessage `json:"messages"`
+	AnthropicVersion string        `json:"anthropic_version,omitempty"`
+	Model            string        `json:"model,omitempty"`
+	MaxTokens        int           `json:"max_tokens"`
+	System           string        `json:"system,omitempty"`
+	Messages         []userMessage `json:"messages"`
 }
 
 type userMessage struct {
@@ -106,7 +108,7 @@ var errorTypes = map[string]bool{
 // Complete sends the request as one user message and returns the concatenated text blocks.
 // It sends no temperature: current Claude models reject non-default sampling parameters.
 func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
-	body, err := buildBody(req)
+	body, err := Body(req, "")
 	if err != nil {
 		return provider.Response{}, err
 	}
@@ -119,11 +121,13 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if err != nil {
 		return provider.Response{}, statusError(raw, err)
 	}
-	return parseResponse(raw)
+	return Parse(raw)
 }
 
-// buildBody maps the request to the Messages API body.
-func buildBody(req provider.Request) ([]byte, error) {
+// Body maps the request to the Messages API body. A non-empty vertexVersion gives the
+// Vertex AI form: that anthropic_version in the body and no model, which Vertex takes
+// from the URL.
+func Body(req provider.Request, vertexVersion string) ([]byte, error) {
 	if req.Model == "" {
 		return nil, &provider.Error{Message: "anthropic: request has no model"}
 	}
@@ -143,6 +147,9 @@ func buildBody(req provider.Request) ([]byte, error) {
 		MaxTokens: req.MaxTokens,
 		System:    req.System,
 		Messages:  []userMessage{{Role: "user", Content: blocks}},
+	}
+	if vertexVersion != "" {
+		r.AnthropicVersion, r.Model = vertexVersion, ""
 	}
 	body, err := json.Marshal(r)
 	if err != nil {
@@ -193,10 +200,10 @@ func statusError(raw []byte, err error) error {
 	return pe
 }
 
-// parseResponse reads a 2xx body. A refusal or an answer without text is a permanent
+// Parse reads a 2xx Messages API body. A refusal or an answer without text is a permanent
 // failure: asking again elsewhere would not change a content decision, and an empty
 // answer is not a usable extraction.
-func parseResponse(raw []byte) (provider.Response, error) {
+func Parse(raw []byte) (provider.Response, error) {
 	var mr messagesResponse
 	if json.Unmarshal(raw, &mr) != nil {
 		// Not wrapped: a syntax error can quote bytes of the response.

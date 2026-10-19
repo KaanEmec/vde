@@ -16,8 +16,7 @@ const (
 	// DefaultBaseURL is the Gemini API host used when the endpoint sets no base_url.
 	DefaultBaseURL = "https://generativelanguage.googleapis.com"
 
-	defaultMaxTokens = 4096
-	apiKeyHeader     = "x-goog-api-key"
+	apiKeyHeader = "x-goog-api-key"
 )
 
 // Client calls the Gemini generateContent API. It is safe for concurrent use.
@@ -88,7 +87,7 @@ type generateResponse struct {
 // Complete runs one generateContent call. Errors never contain request or response
 // content.
 func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
-	body, err := buildBody(req)
+	body, err := Body(req)
 	if err != nil {
 		return provider.Response{}, err
 	}
@@ -99,18 +98,12 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if err != nil {
 		return provider.Response{}, err
 	}
-	var gr generateResponse
-	if err := json.Unmarshal(raw, &gr); err != nil {
-		// The decode error is dropped: it can quote response bytes.
-		return provider.Response{}, &provider.Error{
-			Status:  status,
-			Message: "gemini: malformed response",
-		}
-	}
-	return toResponse(&gr, status)
+	return Parse(raw, status)
 }
 
-func buildBody(req provider.Request) ([]byte, error) {
+// Body maps the request to the generateContent body, the same on the Gemini API and on
+// Vertex AI.
+func Body(req provider.Request) ([]byte, error) {
 	gr := generateRequest{
 		GenerationConfig: generationConfig{MaxOutputTokens: req.MaxTokens},
 	}
@@ -143,7 +136,17 @@ func blobPart(b *provider.Blob) part {
 	}}
 }
 
-func toResponse(gr *generateResponse, status int) (provider.Response, error) {
+// Parse reads a 2xx generateContent body; its errors carry status. A blocked prompt or
+// answer, or an answer without text, is permanent.
+func Parse(raw []byte, status int) (provider.Response, error) {
+	var gr generateResponse
+	if err := json.Unmarshal(raw, &gr); err != nil {
+		// The decode error is dropped: it can quote response bytes.
+		return provider.Response{}, &provider.Error{
+			Status:  status,
+			Message: "gemini: malformed response",
+		}
+	}
 	if gr.PromptFeedback.BlockReason != "" {
 		return provider.Response{}, provider.Refused(status, "gemini: prompt blocked by the provider")
 	}

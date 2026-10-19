@@ -10,5 +10,5 @@ adapters stay at all is epic 09's question; this epic shrinks them whatever the 
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [Shared JSON transport](01-shared-json-transport.md) | done |
-| 02 | [Vertex reuses the Anthropic and Gemini wire code](02-vertex-reuses-wire.md) | planned |
+| 02 | [Vertex reuses the Anthropic and Gemini wire code](02-vertex-reuses-wire.md) | done |
 | 03 | [Shared adapter test helpers](03-provider-test-helpers.md) | planned |

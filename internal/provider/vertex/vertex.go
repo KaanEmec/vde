@@ -11,9 +11,17 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/provider/anthropic"
+	"github.com/kaanemec/vde/internal/provider/gemini"
 )
 
-const cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+const (
+	cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+
+	// anthropicVersion is the body field Vertex requires in place of the anthropic-version
+	// header and the model name (the model is in the URL).
+	anthropicVersion = "vertex-2023-10-16"
+)
 
 // Client calls Gemini and Anthropic models on Vertex AI. It is safe for concurrent use.
 type Client struct {
@@ -61,8 +69,8 @@ func hostPrefix(region string) string {
 }
 
 // Complete runs one call. Models named claude* go to the Anthropic publisher, gemini* to
-// the Google publisher; anything else is rejected. Errors never contain request or
-// response content.
+// the Google publisher, with the bodies and answers of the anthropic and gemini adapters;
+// anything else is rejected. Errors never contain request or response content.
 func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
 	if req.Model == "" {
 		return provider.Response{}, &provider.Error{Message: "vertex: request has no model"}
@@ -72,7 +80,7 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	}
 	switch {
 	case strings.HasPrefix(req.Model, "claude"):
-		body, err := buildClaudeBody(req)
+		body, err := anthropic.Body(req, anthropicVersion)
 		if err != nil {
 			return provider.Response{}, err
 		}
@@ -80,9 +88,9 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		if err != nil {
 			return provider.Response{}, err
 		}
-		return parseClaude(raw)
+		return anthropic.Parse(raw)
 	case strings.HasPrefix(req.Model, "gemini"):
-		body, err := buildGeminiBody(req)
+		body, err := gemini.Body(req)
 		if err != nil {
 			return provider.Response{}, err
 		}
@@ -90,7 +98,7 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		if err != nil {
 			return provider.Response{}, err
 		}
-		return parseGemini(raw, status)
+		return gemini.Parse(raw, status)
 	default:
 		return provider.Response{}, &provider.Error{Message: "vertex: model must be a gemini or claude model"}
 	}
