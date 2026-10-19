@@ -60,27 +60,6 @@ func cliAudit(store job.Store) *audit.Recorder {
 	return audit.New(store, audit.Options{}).WithActor(audit.ActorCLI)
 }
 
-// storeApplication is the store row of a configured application (defaults applied).
-func storeApplication(a config.Application) job.Application {
-	return job.Application{
-		ID:                 a.ID,
-		Name:               a.Name,
-		MaxAttempts:        a.MaxAttempts,
-		QuotaLimit:         a.Quota.Limit,
-		QuotaWindow:        a.Quota.Window,
-		RequestsPerMinute:  a.Rate.RequestsPerMinute,
-		SubmitsPerMinute:   a.Rate.SubmitsPerMinute,
-		MaxInProgress:      a.Rate.MaxInProgress,
-		RetentionDefault:   a.Retention.Default,
-		ForceNone:          a.Retention.ForceNone,
-		HTMLPolicy:         a.Documents.HTML,
-		JudgePolicy:        string(a.Judge.Policy),
-		JudgeAllowOverride: a.Judge.AllowOverride,
-		JudgeSampleRate:    a.Judge.SampleRate,
-		Enabled:            true,
-	}
-}
-
 // storedApplication is the configuration entry that a store row stands for, with the
 // fields that the service_version hashes.
 func storedApplication(a job.Application) config.Application {
@@ -105,7 +84,7 @@ func syncApplications(ctx context.Context, store job.Store, rec *audit.Recorder,
 		if err != nil && !errors.Is(err, job.ErrNotFound) {
 			return err
 		}
-		if err := store.UpsertApplication(ctx, storeApplication(a), now); err != nil {
+		if err := store.UpsertApplication(ctx, job.ApplicationOf(a), now); err != nil {
 			return err
 		}
 		if !prev.Enabled {
@@ -185,7 +164,7 @@ func listApplications(ctx context.Context, w io.Writer, store job.Store, now tim
 		}
 		active := 0
 		for _, t := range tokens {
-			if tokenStatus(t, now) == "active" {
+			if t.Status(now) == "active" {
 				active++
 			}
 		}

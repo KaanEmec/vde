@@ -186,7 +186,7 @@ func runTokenList(args []string, stdout, stderr io.Writer) int {
 	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSCOPES\tSTATUS\tEXPIRES\tLAST USED\tCREATED\tLABEL")
 	for _, t := range tokens {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", t.ID, strings.Join(t.Scopes, ","), tokenStatus(t, now),
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", t.ID, strings.Join(t.Scopes, ","), t.Status(now),
 			stamp(t.ExpiresAt), stamp(t.LastUsedAt), stamp(t.CreatedAt), dash(t.Label))
 	}
 	tw.Flush()
@@ -221,23 +221,17 @@ func runTokenRevoke(args []string, stdout, stderr io.Writer) int {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	t, err := store.GetTokenByID(ctx, id)
-	if errors.Is(err, job.ErrNotFound) {
+	t, revoked, err := auth.Revoke(ctx, store, id, time.Now())
+	switch {
+	case errors.Is(err, job.ErrNotFound):
 		fmt.Fprintf(stderr, "vde token revoke: no token %q\n", id)
 		return exitFailure
-	}
-	if err != nil {
+	case err != nil:
 		fmt.Fprintf(stderr, "vde token revoke: %v\n", err)
 		return exitFailure
-	}
-	if !t.RevokedAt.IsZero() {
+	case !revoked:
 		fmt.Fprintf(stdout, "token %s was already revoked at %s\n", t.ID, stamp(t.RevokedAt))
 		return exitOK
-	}
-	now := time.Now()
-	if err := store.RevokeToken(ctx, id, now); err != nil {
-		fmt.Fprintf(stderr, "vde token revoke: %v\n", err)
-		return exitFailure
 	}
 	if err := cliAudit(store).Record(ctx, "", t.ApplicationID, "", audit.TokenRevoked{TokenID: t.ID}); err != nil {
 		fmt.Fprintf(stderr, "vde token revoke: warning: audit event not written: %v\n", err)
@@ -248,16 +242,6 @@ func runTokenRevoke(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "token %s of %s revoked\n", t.ID, owner)
 	return exitOK
-}
-
-func tokenStatus(t job.Token, now time.Time) string {
-	switch {
-	case !t.RevokedAt.IsZero():
-		return "revoked"
-	case !now.Before(t.ExpiresAt):
-		return "expired"
-	}
-	return "active"
 }
 
 func stamp(t time.Time) string {

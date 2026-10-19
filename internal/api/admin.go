@@ -2,6 +2,7 @@ package api
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -34,7 +35,6 @@ const (
 	adminListMax     = 1000
 	adminAuditSince  = 24 * time.Hour // default window of GET /admin/v1/audit
 	adminBodyBytes   = 64 << 10
-	maxLabelChars    = 200 // auth.Create's limit
 )
 
 // appIDRe is the id of an application created over the admin API: it appears in URLs,
@@ -164,7 +164,8 @@ func appToResponse(a job.Application) appResponse {
 }
 
 // checkApp applies the YAML defaults to st and validates it like an applications[]
-// entry (config.CheckApplication), returning the row to store or the refusal.
+// entry (config.CheckApplication), returning the row to store (the caller sets Enabled)
+// or the refusal.
 func (s *server) checkApp(id string, st appSettings) (job.Application, error) {
 	c := config.Application{ID: id, Name: st.Name, MaxAttempts: st.MaxAttempts}
 	c.Quota.Limit, c.Quota.Window = st.Quota.Limit, st.Quota.Window
@@ -180,14 +181,7 @@ func (s *server) checkApp(id string, st appSettings) (job.Application, error) {
 			return job.Application{}, newError(codeBadRequest, msgAdminInvalidField, issue.Key)
 		}
 	}
-	return job.Application{
-		ID: id, Name: c.Name, MaxAttempts: c.MaxAttempts, QuotaLimit: c.Quota.Limit,
-		QuotaWindow: c.Quota.Window, RequestsPerMinute: c.Rate.RequestsPerMinute,
-		SubmitsPerMinute: c.Rate.SubmitsPerMinute, MaxInProgress: c.Rate.MaxInProgress,
-		RetentionDefault: c.Retention.Default, ForceNone: c.Retention.ForceNone,
-		HTMLPolicy: c.Documents.HTML, JudgePolicy: string(c.Judge.Policy),
-		JudgeAllowOverride: c.Judge.AllowOverride, JudgeSampleRate: c.Judge.SampleRate,
-	}, nil
+	return job.ApplicationOf(c), nil
 }
 
 func (s *server) adminListApps(w http.ResponseWriter, r *http.Request) {
@@ -288,16 +282,23 @@ func (s *server) writeApp(w http.ResponseWriter, r *http.Request, id string, sta
 
 // loadApp reads the application of the path's {id}; it reports false after answering.
 func (s *server) loadApp(w http.ResponseWriter, r *http.Request) (job.Application, bool) {
-	a, err := s.deps.Store.GetApplication(r.Context(), r.PathValue("id"))
+	return loadByID(s, w, r, s.deps.Store.GetApplication, newError(codeNotFound, msgAdminAppNotFound), "application not readable")
+}
+
+// loadByID reads the row of the path's {id} with get: notFound for job.ErrNotFound, 500
+// logged as what for another error. It reports false after answering.
+func loadByID[T any](s *server, w http.ResponseWriter, r *http.Request, get func(context.Context, string) (T, error),
+	notFound apiError, what string) (T, bool) {
+	v, err := get(r.Context(), r.PathValue("id"))
 	switch {
 	case errors.Is(err, job.ErrNotFound):
-		writeError(w, newError(codeNotFound, msgAdminAppNotFound))
-		return a, false
+		writeError(w, notFound)
+		return v, false
 	case err != nil:
-		s.jobError(w, r, job.Job{}, "application not readable", err)
-		return a, false
+		s.jobError(w, r, job.Job{}, what, err)
+		return v, false
 	}
-	return a, true
+	return v, true
 }
 
 // adminQuota is GET /admin/v1/applications/{id}/quota: GET /v1/quota for any
@@ -334,15 +335,8 @@ type tokenResponse struct {
 }
 
 func (s *server) tokenToResponse(t job.Token) tokenResponse {
-	status := "active"
-	switch {
-	case !t.RevokedAt.IsZero():
-		status = "revoked"
-	case !s.now().Before(t.ExpiresAt):
-		status = "expired"
-	}
 	return tokenResponse{
-		ID: t.ID, ApplicationID: t.ApplicationID, Scopes: t.Scopes, Label: t.Label, Status: status,
+		ID: t.ID, ApplicationID: t.ApplicationID, Scopes: t.Scopes, Label: t.Label, Status: t.Status(s.now()),
 		ExpiresAt: formatTime(t.ExpiresAt), RevokedAt: optionalTime(t.RevokedAt),
 		CreatedAt: formatTime(t.CreatedAt), LastUsedAt: optionalTime(t.LastUsedAt),
 	}
@@ -392,24 +386,19 @@ func (s *server) adminCreateToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "expires"))
 		return
 	}
-	maxTTL := s.deps.Config.Auth.MaxTokenTTL
-	// auth.Create checks the same; checked here first to name the field.
-	switch {
-	case !expires.After(now) || expires.Sub(now) > maxTTL:
-		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "expires"))
-		return
-	case len(body.Label) > maxLabelChars:
-		writeError(w, newError(codeBadRequest, msgAdminInvalidField, "label"))
-		return
-	case !a.Enabled:
-		writeError(w, newError(codeConflict, msgAdminAppDisabled))
-		return
-	}
 	ctx := r.Context()
 	token, row, err := auth.Create(ctx, s.deps.Store, auth.Request{
 		ApplicationID: a.ID, Scopes: scopes, ExpiresAt: expires, Label: body.Label,
-	}, maxTTL, now)
-	if err != nil {
+	}, s.deps.Config.Auth.MaxTokenTTL, now)
+	var field *auth.FieldError
+	switch {
+	case errors.As(err, &field) && field.Field == "application":
+		writeError(w, newError(codeConflict, msgAdminAppDisabled))
+		return
+	case errors.As(err, &field):
+		writeError(w, newError(codeBadRequest, msgAdminInvalidField, field.Field))
+		return
+	case err != nil:
 		s.jobError(w, r, job.Job{ApplicationID: a.ID}, "token not created", err)
 		return
 	}
@@ -424,20 +413,18 @@ func (s *server) adminCreateToken(w http.ResponseWriter, r *http.Request) {
 // application and admin tokens alike; revoking a revoked token is 204 again.
 func (s *server) adminRevokeToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	t, err := s.deps.Store.GetTokenByID(ctx, r.PathValue("id"))
+	t, revoked, err := auth.Revoke(ctx, s.deps.Store, r.PathValue("id"), s.now())
 	switch {
 	case errors.Is(err, job.ErrNotFound):
 		writeError(w, newError(codeNotFound, msgAdminTokenNotFound))
 		return
-	case err != nil:
+	case err != nil && t.ID == "":
 		s.jobError(w, r, job.Job{}, "token not readable", err)
 		return
-	}
-	if t.RevokedAt.IsZero() {
-		if err := s.deps.Store.RevokeToken(ctx, t.ID, s.now()); err != nil {
-			s.jobError(w, r, job.Job{ApplicationID: t.ApplicationID}, "token not revoked", err)
-			return
-		}
+	case err != nil:
+		s.jobError(w, r, job.Job{ApplicationID: t.ApplicationID}, "token not revoked", err)
+		return
+	case revoked:
 		s.recordAudit(ctx, t.ApplicationID, "", audit.TokenRevoked{TokenID: t.ID})
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -533,16 +520,7 @@ func (s *server) adminDeleteJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) loadAnyJob(w http.ResponseWriter, r *http.Request) (job.Job, bool) {
-	j, err := s.deps.Store.GetJobAny(r.Context(), r.PathValue("id"))
-	switch {
-	case errors.Is(err, job.ErrNotFound):
-		writeError(w, newError(codeNotFound, msgAdminJobNotFound))
-		return j, false
-	case err != nil:
-		s.jobError(w, r, job.Job{}, "job not readable", err)
-		return j, false
-	}
-	return j, true
+	return loadByID(s, w, r, s.deps.Store.GetJobAny, newError(codeNotFound, msgAdminJobNotFound), "job not readable")
 }
 
 // ---- audit

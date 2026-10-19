@@ -261,3 +261,28 @@ func TestNilRecorderDiscards(t *testing.T) {
 	rec.JobDeleted(t.Context(), job.Job{}, audit.DeletedByRequest)
 	rec.JobExpired(t.Context(), job.Job{})
 }
+
+func TestParseSince(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		in   string
+		want time.Time
+	}{
+		{"2026-10-01", time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		{"2026-10-15T08:30:00Z", time.Date(2026, 10, 15, 8, 30, 0, 0, time.UTC)},
+		{"7d", now.Add(-7 * 24 * time.Hour)},
+		{"24h", now.Add(-24 * time.Hour)},
+	}
+	for _, tt := range tests {
+		got, err := audit.ParseSince(tt.in, now)
+		if err != nil || !got.Equal(tt.want) {
+			t.Errorf("ParseSince(%q) = %s, %v; want %s", tt.in, got, err, tt.want)
+		}
+	}
+	for _, bad := range []string{"", "yesterday", "-1h", "0d", "d"} {
+		if _, err := audit.ParseSince(bad, now); err == nil {
+			t.Errorf("ParseSince(%q) accepted", bad)
+		}
+	}
+}

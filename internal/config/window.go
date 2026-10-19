@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -35,4 +36,28 @@ func ParseWindow(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("%q is not a positive duration", s)
 	}
 	return d, nil
+}
+
+// ParseTime reads a time as the operator commands and the admin API take it (token
+// expiry, audit window): an RFC 3339 time, a date (midnight UTC), or a positive number of
+// days (90d) or Go duration (2160h) from now, forward, or back when back is set. ok is
+// false for anything else.
+func ParseTime(s string, now time.Time, back bool) (t time.Time, ok bool) {
+	for _, layout := range []string{time.RFC3339, time.DateOnly} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	d, err := time.ParseDuration(s)
+	if days, isDays := strings.CutSuffix(s, "d"); isDays {
+		n, nErr := strconv.Atoi(days)
+		d, err = time.Duration(n)*24*time.Hour, nErr
+	}
+	if err != nil || d <= 0 {
+		return time.Time{}, false
+	}
+	if back {
+		d = -d
+	}
+	return now.Add(d), true
 }

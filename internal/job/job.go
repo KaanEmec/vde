@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+
+	"github.com/kaanemec/vde/internal/config"
 )
 
 // Status is a job's state (contract §5): queued → running → accepted | rejected | failed,
@@ -242,6 +244,28 @@ type Application struct {
 	UpdatedAt          time.Time
 }
 
+// ApplicationOf is the row of an applications[] entry (defaults applied), enabled; vde
+// serve mirrors the YAML with it and the admin API stores a checked body.
+func ApplicationOf(a config.Application) Application {
+	return Application{
+		ID:                 a.ID,
+		Name:               a.Name,
+		MaxAttempts:        a.MaxAttempts,
+		QuotaLimit:         a.Quota.Limit,
+		QuotaWindow:        a.Quota.Window,
+		RequestsPerMinute:  a.Rate.RequestsPerMinute,
+		SubmitsPerMinute:   a.Rate.SubmitsPerMinute,
+		MaxInProgress:      a.Rate.MaxInProgress,
+		RetentionDefault:   a.Retention.Default,
+		ForceNone:          a.Retention.ForceNone,
+		HTMLPolicy:         a.Documents.HTML,
+		JudgePolicy:        string(a.Judge.Policy),
+		JudgeAllowOverride: a.Judge.AllowOverride,
+		JudgeSampleRate:    a.Judge.SampleRate,
+		Enabled:            true,
+	}
+}
+
 // Token is one row of the tokens table. Only the hash of the secret is stored.
 type Token struct {
 	ID            string // the clear token id, also the display prefix
@@ -253,6 +277,18 @@ type Token struct {
 	RevokedAt     time.Time
 	CreatedAt     time.Time
 	LastUsedAt    time.Time
+}
+
+// Status is the token's state as the CLI and the admin API show it: active, revoked or
+// expired.
+func (t Token) Status(now time.Time) string {
+	switch {
+	case !t.RevokedAt.IsZero():
+		return "revoked"
+	case !now.Before(t.ExpiresAt):
+		return "expired"
+	}
+	return "active"
 }
 
 // AuditEvent is one append-only audit record. Details is JSON built from fixed structs,

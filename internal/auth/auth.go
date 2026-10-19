@@ -88,6 +88,23 @@ func Authenticate(ctx context.Context, r job.Store, token string, now time.Time)
 	return Principal{Application: app, Token: t}, nil
 }
 
+// Revoke revokes the token id as of now, for vde token revoke and the admin API alike. It
+// returns the row as read, and revoked false when the token was revoked already (the
+// row is unchanged then). When the row cannot be read t is zero; an unknown id is
+// job.ErrNotFound.
+func Revoke(ctx context.Context, s job.Store, id string, now time.Time) (t job.Token, revoked bool, err error) {
+	if t, err = s.GetTokenByID(ctx, id); err != nil {
+		return job.Token{}, false, err
+	}
+	if !t.RevokedAt.IsZero() {
+		return t, false, nil
+	}
+	if err := s.RevokeToken(ctx, t.ID, now); err != nil {
+		return t, false, err
+	}
+	return t, true, nil
+}
+
 // Request describes a token to issue. An admin token has no ApplicationID and the
 // single scope ScopeAdmin.
 type Request struct {
@@ -99,20 +116,30 @@ type Request struct {
 
 const maxLabelChars = 200
 
+// FieldError is a Request that Create refuses for one field, named as in the admin API's
+// body: "expires", "label" or "application" (disabled).
+type FieldError struct {
+	Field string
+	msg   string
+}
+
+func (e *FieldError) Error() string { return e.msg }
+
 // Create issues a token for an enabled application, or an admin token, and stores its
 // hash. It returns the token, to be shown once, and the stored row. Expiry is required,
 // in the future and at most maxTTL from now. The admin scope cannot be combined with
-// another scope or an application.
+// another scope or an application. A refused expiry, label or disabled application is a
+// *FieldError.
 func Create(ctx context.Context, s job.Store, req Request, maxTTL time.Duration, now time.Time) (string, job.Token, error) {
 	switch {
 	case len(req.Scopes) == 0:
 		return "", job.Token{}, errors.New("auth: at least one scope is required")
 	case !req.ExpiresAt.After(now):
-		return "", job.Token{}, errors.New("auth: the expiry must be in the future")
+		return "", job.Token{}, &FieldError{"expires", "auth: the expiry must be in the future"}
 	case req.ExpiresAt.Sub(now) > maxTTL:
-		return "", job.Token{}, fmt.Errorf("auth: the expiry is more than auth.max_token_ttl (%s) away", maxTTL)
+		return "", job.Token{}, &FieldError{"expires", fmt.Sprintf("auth: the expiry is more than auth.max_token_ttl (%s) away", maxTTL)}
 	case len(req.Label) > maxLabelChars:
-		return "", job.Token{}, fmt.Errorf("auth: the label is longer than %d characters", maxLabelChars)
+		return "", job.Token{}, &FieldError{"label", fmt.Sprintf("auth: the label is longer than %d characters", maxLabelChars)}
 	}
 	admin := slices.Contains(req.Scopes, ScopeAdmin)
 	switch {
@@ -136,7 +163,7 @@ func Create(ctx context.Context, s job.Store, req Request, maxTTL time.Duration,
 			return "", job.Token{}, err
 		}
 		if !app.Enabled {
-			return "", job.Token{}, fmt.Errorf("auth: application %q is disabled", req.ApplicationID)
+			return "", job.Token{}, &FieldError{"application", fmt.Sprintf("auth: application %q is disabled", req.ApplicationID)}
 		}
 	}
 	for range 3 { // an id collision (1 in 2^40 per existing token) gets a fresh token

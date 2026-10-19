@@ -8,10 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
 	"time"
 
+	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
 )
 
@@ -396,19 +395,8 @@ func (r *Recorder) JobExpired(ctx context.Context, j job.Job) {
 // accept it: an RFC 3339 time, a date (midnight UTC), or a positive duration back from
 // now (24h, 7d).
 func ParseSince(s string, now time.Time) (time.Time, error) {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
+	if t, ok := config.ParseTime(s, now, true); ok {
 		return t, nil
-	}
-	if t, err := time.Parse(time.DateOnly, s); err == nil {
-		return t, nil
-	}
-	if days, ok := strings.CutSuffix(s, "d"); ok {
-		if n, err := strconv.Atoi(days); err == nil && n > 0 {
-			return now.Add(-time.Duration(n) * 24 * time.Hour), nil
-		}
-	}
-	if d, err := time.ParseDuration(s); err == nil && d > 0 {
-		return now.Add(-d), nil
 	}
 	return time.Time{}, fmt.Errorf("since %q is not an RFC 3339 time, a date or a positive duration (24h, 7d)", s)
 }

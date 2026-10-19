@@ -8,9 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kaanemec/vde/internal/config"
 )
 
 // Token format: vde_<id>_<secret>. The id is 8 characters of lowercase base32, stored in
@@ -119,19 +120,8 @@ func Permits(scopes []string, need string) bool {
 // UTC), an RFC 3339 time, a number of days (90d) or a Go duration (2160h), the last two
 // counted from now.
 func ParseExpires(s string, now time.Time) (time.Time, error) {
-	if t, err := time.Parse(time.DateOnly, s); err == nil {
+	if t, ok := config.ParseTime(s, now, false); ok {
 		return t, nil
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
-	}
-	if days, ok := strings.CutSuffix(s, "d"); ok {
-		if n, err := strconv.Atoi(days); err == nil && n > 0 {
-			return now.Add(time.Duration(n) * 24 * time.Hour), nil
-		}
-	}
-	if d, err := time.ParseDuration(s); err == nil && d > 0 {
-		return now.Add(d), nil
 	}
 	return time.Time{}, fmt.Errorf("expiry %q is not a date (2027-10-16), an RFC 3339 time or a positive duration (90d, 2160h)", s)
 }
