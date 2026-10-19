@@ -91,7 +91,7 @@ vde eval --corpus my-corpus --url https://vde.example.com --token-env VDE_TOKEN
 | `--judge always\|never\|auto` | Run every case under this [judge policy](judge-policy.md) instead of `roles.judge.policy`; the report's `service_version` is that policy's. With `--url` the harness sends the `judge` part, which the application must allow (`applications[].judge.allow_override`); otherwise every case fails with a message naming `allow_override`. |
 | `--out dir` | Where the JSON report goes (default `eval-reports/`, ignored by git); `""` saves none. |
 | `--compare file` | An earlier report: prints the change of every summary number (the judge-policy totals included) and each case whose status, verification or verdict changed, for example `accepted/judge correct -> accepted/grounded correct`. |
-| `--provider-script file` | Replace every provider with a fake replaying the script, a fresh fake per case; `{{expected}}` in an answer becomes the case's `expected.json`. For testing the harness: `make eval` runs the whole corpus this way in CI, once per judge policy (`testdata/eval/fake-script.yaml` for `always` and `never`, `testdata/eval/fake-script-grounded.yaml` for `auto`). |
+| `--provider-script file` | Replace every provider with a fake replaying the script, a fresh fake per case; `{{expected}}` in an answer becomes the case's `expected.json`. For testing the harness: `make eval` runs the whole corpus this way in `make ci`, once per judge policy (`testdata/eval/fake-script.yaml` for `always` and `never`, `testdata/eval/fake-script-grounded.yaml` for `auto`). |
 
 Exit codes: 0 when every case ran, whatever the quality; 1 for a usage or configuration
 error or when a case could not be run at all (unreadable file, unsupported document,

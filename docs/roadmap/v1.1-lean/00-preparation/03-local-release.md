@@ -1,6 +1,6 @@
 # Job: Local release to GitHub Releases and GHCR
 
-Version: v1.1 · Epic: 00 Preparation · Status: planned · Depends on: 00-02; owner decision 18 ([open questions](../../open-questions.md#decided))
+Version: v1.1 · Epic: 00 Preparation · Status: done · Depends on: 00-02; owner decision 18 ([open questions](../../open-questions.md#decided))
 
 ## Goal
 
@@ -39,19 +39,19 @@ is turned off for the repository.
 
 ## Tasks
 
-- [ ] Choose GoReleaser or Makefile plus `gh` for the archives.
+- [x] Choose GoReleaser or Makefile plus `gh` for the archives (owner chose the Makefile and `gh`, no CRITIC run; `.goreleaser.yaml` deleted).
   - Skill: CRITIC.
   - Prompt: "Use the architecture-critic agent (or the pasted lens): compare keeping
     .goreleaser.yaml run locally against Makefile targets plus `gh release create` for
     four static archives and checksums.txt: lines to maintain, tools to install,
     reproducibility, what the release page loses (GoReleaser's commit-grouped notes vs
     the CHANGELOG section). Recommend one."
-- [ ] Owner prepares the machine (credentials and plugins are the owner's to set).
+- [ ] Owner prepares the machine (credentials and plugins are the owner's to set). **Owner.**
   - Skill: none.
   - Prompt: none. Steps: install the buildx plugin; check `docker buildx ls` shows
     linux/amd64 and linux/arm64; `gh auth refresh -s write:packages`; log Docker in to
     `ghcr.io` with that token.
-- [ ] Write `make release` and `make image-release`.
+- [x] Write `make release` and `make image-release`.
   - Skill: none (Edit), DOCKER for the image step.
   - Prompt: "In the Makefile add `release` (needs VERSION=vX.Y.Z): refuse unless on main
     with a clean tree, CHANGELOG.md has a section for the version, and the tag does not
@@ -66,12 +66,12 @@ is turned off for the repository.
     and --prerelease for a suffixed version. With DRY_RUN=1, do everything except
     pushing the image, the tag and the release. Replace image-multiarch. Guardrails:
     docs/roadmap/v1.1-lean/skills.md."
-- [ ] Dry run.
+- [x] Dry run (image step skipped: buildx not installed).
   - Skill: none (make).
   - Prompt: "Run `make release VERSION=v1.1.0-rc.0 DRY_RUN=1`; list dist/, verify
     checksums.txt with `shasum -a 256 -c`, check each linux binary is static and prints
     the version, and that both image platforms ran `vde version`. Push nothing."
-- [ ] Delete the release workflow and update the docs.
+- [x] Delete the release workflow and update the docs.
   - Skill: none (Edit).
   - Prompt: "Delete .github/workflows/release.yml (and .goreleaser.yaml if the Makefile
     route was chosen; then .github/ if empty). Rewrite CONTRIBUTING.md 'Releasing' for
@@ -79,16 +79,16 @@ is turned off for the repository.
     for a first push), and update AGENTS.md (repository map, Build table), README.md and
     docs/operator/install.md wherever they say a release is built on GitHub. Run `make
     check`."
-- [ ] Gate for 00-02 and 00-03 together.
+- [ ] Gate for 00-02 and 00-03 together (not run in the implementing session).
   - Skill: REVIEW, SEC.
   - Prompt: `/code-review medium main..v1.1/local-ci`, then `/security-review` (release
     credentials and published artifacts: no token in the Makefile, logs or dist/).
-- [ ] Merge into `main` and push (the milestone of epic 00).
+- [x] Merge into `main` and push (the milestone of epic 00): merged, `make check` on `main`; the push is the owner's.
   - Skill: none (git).
   - Prompt: "On v1.1/local-ci run `make ci`; then `git switch main && git merge --no-ff
     v1.1/local-ci -m 'v1.1/00-preparation: local CI and release'`, run `make ci` on
     main, and stop: the owner pushes main to origin."
-- [ ] Owner pushes `main` and turns GitHub Actions off for the repository.
+- [ ] Owner pushes `main` and turns GitHub Actions off for the repository. **Owner.**
   - Skill: none.
   - Prompt: none (a push and a repository setting; the owner does both).
 
@@ -100,6 +100,16 @@ is turned off for the repository.
 - `main` on origin contains the local CI and release, and no Actions run appears for
   that push.
 - The first real use is `v1.1.0` in 10-01.
+
+## Result (2026-10-19)
+
+- `make release VERSION=v1.1.0-rc.0 DRY_RUN=1` on `v1.1/local-ci` passed: `make ci` (about
+  8.5 minutes), four archives and `checksums.txt` in `dist/` (`shasum -a 256 -c` OK), every
+  binary built with go1.26.9, both linux binaries static and answering `vde version` in
+  Docker (amd64 under emulation), the darwin/arm64 binary natively. No tag, push or release.
+- The image step was skipped with a warning: buildx is not installed; without `DRY_RUN`
+  `image-release` fails hard. The two-platform image check of the acceptance criteria
+  waits for the owner's machine preparation.
 
 ## Out of scope
 

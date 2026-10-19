@@ -11,8 +11,8 @@ measured with that suite.
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [Install and check the skills](01-skill-setup.md) | planned |
-| 02 | [Local CI with `make ci`](02-local-ci.md) | planned |
-| 03 | [Local release to GitHub Releases and GHCR](03-local-release.md) | planned |
+| 02 | [Local CI with `make ci`](02-local-ci.md) | done |
+| 03 | [Local release to GitHub Releases and GHCR](03-local-release.md) | done |
 | 04 | [Baseline measurements and reference reports](04-baseline.md) | planned |
 
 Milestone: 02 and 03 are merged into `main` and pushed, and GitHub Actions is off,

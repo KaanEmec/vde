@@ -253,9 +253,9 @@ on every Go security release.
 | `FuzzOpen` | `internal/pdf` | The pdfium entry |
 
 Run one with `go test -run='^$' -fuzz='^FuzzReadSubmission$' -fuzztime=30s ./internal/api`
-(Go runs one fuzz target per invocation). The CI `fuzz` job runs each for 20 s; a failing
-input is uploaded as an artifact and belongs in the package's `testdata/fuzz/` as a
-regression seed. Each ran clean locally for 30 s (the three new ones) or 20 s.
+(Go runs one fuzz target per invocation). `make fuzz` (part of `make ci`) runs each for 20 s; a
+failing input is left in the package's `testdata/fuzz/` and stays there as a regression
+seed. Each ran clean locally for 30 s (the three new ones) or 20 s.
 
 ## Independent review (v1.0)
 

@@ -18,7 +18,7 @@ import (
 var s3BucketSeq atomic.Int64
 
 // newS3Test returns a store on a fresh bucket of the S3-compatible store at
-// VDE_TEST_S3_ENDPOINT (MinIO in CI), removed with its objects at cleanup, or skips the
+// VDE_TEST_S3_ENDPOINT (RustFS in `make storage`), removed with its objects at cleanup, or skips the
 // test. Credentials come from AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY;
 // VDE_TEST_S3_BUCKET is the bucket name prefix (default vde-test), VDE_TEST_S3_REGION
 // the region (default us-east-1) and VDE_TEST_S3_SSE the sse setting (default none:

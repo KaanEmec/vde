@@ -1,6 +1,6 @@
 # Job: Local CI with `make ci`
 
-Version: v1.1 · Epic: 00 Preparation · Status: planned · Depends on: 00-01; owner decision 18 ([open questions](../../open-questions.md#decided))
+Version: v1.1 · Epic: 00 Preparation · Status: done · Depends on: 00-01; owner decision 18 ([open questions](../../open-questions.md#decided))
 
 ## Goal
 
@@ -48,7 +48,7 @@ versions agree.
 
 ## Tasks
 
-- [ ] Write `make ci` and its targets (`fuzz`, `storage`, `deps`), replacing every
+- [x] Write `make ci` and its targets (`fuzz`, `storage`, `deps`), replacing every
       `ci.yml` job as in the table.
   - Skill: none (Edit; no vetted skill writes Makefiles), DOCKER for the containers.
   - Prompt: "In the Makefile, add `ci` that runs, in order and stopping at the first
@@ -61,29 +61,29 @@ versions agree.
     on failure). Add `deps` (`go list -m -u all`). Never build to bin/vde. Print a
     one-line summary per step with its duration. Guardrails:
     docs/roadmap/v1.1-lean/skills.md."
-- [ ] Prove parity, then delete the GitHub configuration.
+- [x] Prove parity, then delete the GitHub configuration.
   - Skill: none (make).
   - Prompt: "Run `make ci` from a clean checkout; confirm each ci.yml job has a step that
     ran and passed, and that TestSharedRateLimitPostgres and the worker scaling test ran
     (`-v` grep). Then delete .github/workflows/ci.yml and .github/dependabot.yml (and
     .github/ if empty after 00-03). Report durations."
-- [ ] Pre-push hook.
+- [x] Pre-push hook.
   - Skill: none (Edit).
   - Prompt: "Add .githooks/pre-push running `make check` (exit non-zero on failure) and
     a `hooks` Makefile target that runs `git config core.hooksPath .githooks`; document
     both in CONTRIBUTING.md."
-- [ ] Makefile tidy and toolchain alignment.
+- [x] Makefile tidy and toolchain alignment.
   - Skill: SIMPLIFY.
   - Prompt: "/simplify Makefile — drop `go vet` from lint (golangci-lint runs govet),
     keep `scenarios` as a one-line alias, and align the Go version in Dockerfile and
     docs/architecture/overview.md on the go.mod toolchain line. Guardrails: skills.md."
-- [ ] Dockerfile review.
+- [x] Dockerfile review.
   - Skill: DOCKER.
   - Prompt: "/multi-stage-dockerfile Review the existing Dockerfile and .dockerignore
     only for redundant stages, layers and stale comments (the header that omits api/);
     the image must stay static, CGO_ENABLED=0, non-root, with NOTICE and LICENSE. Report
     first, then apply only removals."
-- [ ] Docs: every mention of GitHub CI becomes `make ci`.
+- [x] Docs: every mention of GitHub CI becomes `make ci`.
   - Skill: none (Edit).
   - Prompt: "Replace references to GitHub Actions CI and ci.yml with `make ci` in
     AGENTS.md (repository map row `.github/workflows/`, Build table), CONTRIBUTING.md
@@ -91,7 +91,7 @@ versions agree.
     fuzz job'), docs/quality.md, docs/operator/evaluation.md,
     docs/conformance/travelinbox-v1.md. Done roadmap versions keep their history. Run
     `make check`."
-- [ ] Gate.
+- [ ] Gate (not run in the implementing session; review skills were out of its scope).
   - Skill: REVIEW.
   - Prompt: `/code-review medium <first>^..<last>`, then `make ci` once more.
 
@@ -100,6 +100,22 @@ versions agree.
 - `make ci` passes locally and covers every former `ci.yml` job plus the api and worker
   Postgres tests; `.github/workflows/ci.yml` and `.github/dependabot.yml` are gone; no
   document says a check runs on GitHub.
+
+## Result (2026-10-19)
+
+- `make ci` passed in about 8.5 minutes: tidy 0 s, lint 1 s, race suite go1.26.9 135 s and
+  local go1.27.1 135 s, vulncheck 3 s, fuzz 156 s, cross 4 s, conformance 31 s, eval 1 s,
+  storage 39 s. `-v` showed `TestSharedRateLimitPostgres`, `TestTwoPoolsProcessEachJobOnce`,
+  `TestKilledWorkerResumesElsewhere` and `TestServeOnPostgresAndS3` passing, none skipped.
+- The planned `-run 'Postgres|S3|Storage|Scaling|Shared' ./...` would miss the store-
+  parameterized job and blob tests and the worker scaling tests, so `make storage` runs
+  `./internal/job/... ./internal/blob/... ./internal/worker/...` in full and
+  `-run 'Postgres|S3|Shared'` on `cmd/vde` and `internal/api`.
+- `govulncheck` scans with the `go.mod` toolchain (what ships): go1.26.9 is clean, the
+  local go1.27.1 has nine standard-library findings fixed in go1.27.2.
+- `/simplify`, `/multi-stage-dockerfile` and `/code-review` were not run; the tidy, the
+  toolchain alignment (`GO_VERSION` build arg from `go.mod`) and the `.dockerignore`
+  header were done by hand.
 
 ## Out of scope
 
