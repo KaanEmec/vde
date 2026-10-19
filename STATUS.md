@@ -32,6 +32,7 @@ endpoint); the release workflow built the image and four archives.
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
 | [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
 | [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | in progress: epic 00 jobs 02 and 03 (local CI and release) merged into `main` 2026-10-19, not pushed | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
+| [v1.2 Extraction quality](docs/roadmap/v1.2-extraction-quality/README.md) | planned 2026-10-19 (roadmap only) | none | One epic, nine jobs: prompt order and wording, context line and page markers, email section labels, HTML data tables, analysis blocks for extractor and judge, native structured outputs, caller schema guide, multi-pass extraction after ADR 0011; each measured against the previous report |
 
 ## What is verified, and how
 
@@ -144,6 +145,10 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
 6. v1.1 Lean ([roadmap](docs/roadmap/v1.1-lean/README.md)): epic 00 first. Local CI and release (00-02, 00-03)
    are merged into `main`; owner: push `main`, turn GitHub Actions off, install buildx and
    give `gh` `write:packages` (00-03). Then 00-01 skills and 00-04 baseline, then the waves.
+7. v1.2 Extraction quality ([roadmap](docs/roadmap/v1.2-extraction-quality/README.md), planned
+   2026-10-19): starts after `v1.1.0`. Record the baseline report first (epic 01 README,
+   "Measuring"); every job then runs one real-model comparison on 3 to 5 documents (a
+   fixed core set of four) with the owner's key.
 
 ## How to resume
 
