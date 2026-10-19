@@ -14,7 +14,7 @@ import (
 
 var t0 = time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
 
-func openTest(t *testing.T) *SQLite {
+func openTest(t *testing.T) *DB {
 	t.Helper()
 	s, err := Open(filepath.Join(t.TempDir(), "nested", "vde.db"))
 	if err != nil {
@@ -28,14 +28,14 @@ func openTest(t *testing.T) *SQLite {
 // VDE_TEST_POSTGRES (a DSN of a throwaway database) and is skipped without it.
 var testDrivers = []struct {
 	name string
-	open func(t *testing.T) *sqlStore
+	open func(t *testing.T) *DB
 }{
-	{"sqlite", func(t *testing.T) *sqlStore { return &openTest(t).sqlStore }},
-	{"postgres", func(t *testing.T) *sqlStore { return &openTestPostgres(t).sqlStore }},
+	{"sqlite", func(t *testing.T) *DB { return openTest(t) }},
+	{"postgres", func(t *testing.T) *DB { return openTestPostgres(t) }},
 }
 
 // forEachDriver runs fn as a subtest per driver, each with a fresh, empty store.
-func forEachDriver(t *testing.T, fn func(t *testing.T, s *sqlStore)) {
+func forEachDriver(t *testing.T, fn func(t *testing.T, s *DB)) {
 	t.Helper()
 	for _, d := range testDrivers {
 		t.Run(d.name, func(t *testing.T) { fn(t, d.open(t)) })
@@ -115,7 +115,7 @@ func TestOpenPermissionsAndPragmas(t *testing.T) {
 }
 
 func TestApplications(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		a := testApp("travelinbox-dev")
 		a.ForceNone, a.HTMLPolicy = true, "visible_text"
@@ -167,7 +167,7 @@ func TestApplications(t *testing.T) {
 }
 
 func TestTokens(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		tok := Token{
@@ -246,7 +246,7 @@ func TestTokens(t *testing.T) {
 }
 
 func TestQuota(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		window := t0.Truncate(24 * time.Hour)
@@ -275,7 +275,7 @@ func TestQuota(t *testing.T) {
 }
 
 func TestAppendAudit(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		id1, err := s.AppendAudit(ctx, AuditEvent{At: t0, Kind: "token.created", ApplicationID: "app", Actor: "cli"})
 		if err != nil {
@@ -302,7 +302,7 @@ func TestAppendAudit(t *testing.T) {
 }
 
 func TestCreateAndGetJob(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		seedApp(t, s, testApp("other"))
@@ -371,7 +371,7 @@ func TestCreateAndGetJob(t *testing.T) {
 }
 
 func TestCreateJobRetention(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		forced := testApp("forced")
 		forced.ForceNone = true
 		noneDefault := testApp("none-default")
@@ -403,7 +403,7 @@ func TestCreateJobRetention(t *testing.T) {
 }
 
 func TestMarkContentDeletedAndDelete(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		j := createJob(t, s, newJob("app"))
@@ -447,7 +447,7 @@ func TestMarkContentDeletedAndDelete(t *testing.T) {
 }
 
 func TestListExpiredAndCountRunning(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		var ids []string
@@ -481,7 +481,7 @@ func TestListExpiredAndCountRunning(t *testing.T) {
 }
 
 func TestListContentExpiredAndRowFloor(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		short := testApp("short")
 		short.RetentionDefault = "2s"
@@ -608,7 +608,7 @@ func finishJob(t *testing.T, s Store, id string, status Status) {
 }
 
 func TestLeaseMaxInProgress(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("busy"))
 		seedApp(t, s, testApp("calm"))
@@ -641,7 +641,7 @@ func TestLeaseMaxInProgress(t *testing.T) {
 }
 
 func TestListStaleRunning(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		var ids []string
@@ -688,7 +688,7 @@ func TestListStaleRunning(t *testing.T) {
 }
 
 func TestDeleteQuotaBefore(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		for i := range 4 {
 			for _, app := range []string{"a", "b"} {
@@ -713,7 +713,7 @@ func TestDeleteQuotaBefore(t *testing.T) {
 }
 
 func TestDeleteTokensBefore(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		mk := func(id string, expires time.Time) {
@@ -751,7 +751,7 @@ func TestDeleteTokensBefore(t *testing.T) {
 }
 
 func TestListAndDeleteAudit(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		events := []AuditEvent{
 			{At: t0, Kind: "token.created", ApplicationID: "a", Actor: "cli", Details: json.RawMessage(`{"token_id":"x"}`)},
@@ -805,7 +805,7 @@ func TestListAndDeleteAudit(t *testing.T) {
 }
 
 func TestAdminApplications(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("yaml"))
 		dyn := testApp("dyn")
@@ -845,7 +845,7 @@ func TestAdminApplications(t *testing.T) {
 }
 
 func TestAdminTokenRows(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		admin := Token{ID: "admin001", Hash: []byte("h"), Scopes: []string{"admin"}, ExpiresAt: t0.Add(time.Hour), CreatedAt: t0}
@@ -874,7 +874,7 @@ func TestAdminTokenRows(t *testing.T) {
 }
 
 func TestAttachmentsColumn(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		j := newJob("app")
@@ -899,7 +899,7 @@ func TestAttachmentsColumn(t *testing.T) {
 }
 
 func TestCountInProgressAndListJobs(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("a"))
 		seedApp(t, s, testApp("b"))
@@ -949,7 +949,7 @@ func TestCountInProgressAndListJobs(t *testing.T) {
 // always; verification is "" until terminal, the outcome's when given, and derived from
 // the status when not.
 func TestJudgePolicyAndVerification(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		plain := createJob(t, s, newJob("app"))
@@ -1035,7 +1035,7 @@ func TestVerificationOfOlderRows(t *testing.T) {
 			if err := migrate(ctx, db, pg, 7); err != nil {
 				t.Fatal(err)
 			}
-			old := &sqlStore{db: db, pg: pg}
+			old := &DB{db: db, pg: pg}
 			if _, err := old.exec(ctx, `INSERT INTO applications (id, max_attempts, quota_limit, quota_window,
 				requests_per_minute, submits_per_minute, max_in_progress, retention_default, created_at, updated_at)
 				VALUES ('app', 3, 10, 'P1D', 10, 10, 10, '24h', 0, 0)`); err != nil {
@@ -1071,7 +1071,7 @@ func TestVerificationOfOlderRows(t *testing.T) {
 // TestApplicationJudgeColumns: the judge settings of an application round-trip through
 // upsert, create and update.
 func TestApplicationJudgeColumns(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		rate := 0.25
 		a := testApp("cfg")

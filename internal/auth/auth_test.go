@@ -15,7 +15,7 @@ var t0 = time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 
 const maxTTL = 730 * 24 * time.Hour
 
-func openStore(t *testing.T, apps ...string) *job.SQLite {
+func openStore(t *testing.T, apps ...string) *job.DB {
 	t.Helper()
 	s, err := job.Open(filepath.Join(t.TempDir(), "vde.db"))
 	if err != nil {
@@ -32,7 +32,7 @@ func openStore(t *testing.T, apps ...string) *job.SQLite {
 	return s
 }
 
-func create(t *testing.T, s *job.SQLite, app string, scopes []string, expires time.Time) (string, job.Token) {
+func create(t *testing.T, s *job.DB, app string, scopes []string, expires time.Time) (string, job.Token) {
 	t.Helper()
 	token, row, err := Create(context.Background(), s, Request{ApplicationID: app, Scopes: scopes, ExpiresAt: expires}, maxTTL, t0)
 	if err != nil {

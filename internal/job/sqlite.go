@@ -15,17 +15,10 @@ import (
 // beside the one writer.
 const maxOpenConns = 4
 
-// SQLite is the Store on one SQLite database file in WAL mode.
-type SQLite struct {
-	sqlStore
-}
-
-var _ Store = (*SQLite)(nil)
-
 // Open opens (creating it and its parent directories when missing) the database at
 // path, sets the pragmas and applies every pending migration. The file is made
 // readable by the owner only.
-func Open(path string) (*SQLite, error) {
+func Open(path string) (*DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("job: create database directory: %w", err)
 	}
@@ -42,7 +35,7 @@ func Open(path string) (*SQLite, error) {
 	}
 	db.SetMaxOpenConns(maxOpenConns)
 	db.SetMaxIdleConns(maxOpenConns)
-	s := &SQLite{sqlStore{db: db}}
+	s := &DB{db: db}
 	ctx := context.Background()
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
@@ -57,10 +50,4 @@ func Open(path string) (*SQLite, error) {
 		return nil, err
 	}
 	return s, nil
-}
-
-// TryLock is the no-op twin of Postgres.TryLock: one process owns a SQLite database, so
-// the lock is always granted.
-func (s *SQLite) TryLock(context.Context, int64) (release func(), ok bool, err error) {
-	return func() {}, true, nil
 }

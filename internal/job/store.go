@@ -26,21 +26,24 @@ const touchInterval = time.Minute
 // noLimit is the LIMIT of a listing asked for with limit <= 0; both dialects take it.
 const noLimit = math.MaxInt64
 
-// sqlStore is the Store on database/sql, shared by SQLite and Postgres. Statements are
-// written once with SQLite placeholders (? and ?N) and rewritten to $N for PostgreSQL;
-// the few that differ (JSON table functions, the lease's row lock) branch on pg.
-// Both keep times as Unix milliseconds and booleans as TRUE/FALSE, which SQLite stores
-// as 1 and 0.
-type sqlStore struct {
+// DB is the Store on one SQLite database file in WAL mode (Open) or on a PostgreSQL
+// database, 13 or later, for several replicas sharing one queue (OpenPostgres).
+// Statements are written once with SQLite placeholders (? and ?N) and rewritten to $N
+// for PostgreSQL; the few that differ (JSON table functions, the lease's row lock with
+// FOR UPDATE SKIP LOCKED, TryLock) branch on pg. Both keep times as Unix milliseconds
+// and booleans as TRUE/FALSE, which SQLite stores as 1 and 0. On PostgreSQL deleted
+// content stays in dead row versions until autovacuum reclaims them; there is no
+// checkpoint to force.
+type DB struct {
 	db *sql.DB
 	pg bool
 }
 
 // Close closes the database.
-func (s *sqlStore) Close() error { return s.db.Close() }
+func (s *DB) Close() error { return s.db.Close() }
 
 // SchemaVersion returns the highest applied migration.
-func (s *sqlStore) SchemaVersion(ctx context.Context) (int, error) {
+func (s *DB) SchemaVersion(ctx context.Context) (int, error) {
 	var v int
 	if err := s.queryRow(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&v); err != nil {
 		return 0, fmt.Errorf("job: schema version: %w", err)
@@ -49,22 +52,22 @@ func (s *sqlStore) SchemaVersion(ctx context.Context) (int, error) {
 }
 
 // q returns query in the store's dialect.
-func (s *sqlStore) q(query string) string {
+func (s *DB) q(query string) string {
 	if s.pg {
 		return rebind(query)
 	}
 	return query
 }
 
-func (s *sqlStore) exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+func (s *DB) exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return s.db.ExecContext(ctx, s.q(query), args...)
 }
 
-func (s *sqlStore) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+func (s *DB) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return s.db.QueryContext(ctx, s.q(query), args...)
 }
 
-func (s *sqlStore) queryRow(ctx context.Context, query string, args ...any) *sql.Row {
+func (s *DB) queryRow(ctx context.Context, query string, args ...any) *sql.Row {
 	return s.db.QueryRowContext(ctx, s.q(query), args...)
 }
 
@@ -200,7 +203,7 @@ func nullFloat(f *float64) any {
 }
 
 // UpsertApplication implements Store.
-func (s *sqlStore) UpsertApplication(ctx context.Context, a Application, now time.Time) error {
+func (s *DB) UpsertApplication(ctx context.Context, a Application, now time.Time) error {
 	_, err := s.exec(ctx, `
 		INSERT INTO applications (`+applicationColumns+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, 'config', ?, ?)
@@ -225,7 +228,7 @@ func (s *sqlStore) UpsertApplication(ctx context.Context, a Application, now tim
 }
 
 // DisableApplicationsNotIn implements Store.
-func (s *sqlStore) DisableApplicationsNotIn(ctx context.Context, ids []string, now time.Time) ([]string, error) {
+func (s *DB) DisableApplicationsNotIn(ctx context.Context, ids []string, now time.Time) ([]string, error) {
 	keep, err := json.Marshal(append([]string{}, ids...))
 	if err != nil {
 		return nil, fmt.Errorf("job: disable applications: %w", err)
@@ -260,7 +263,7 @@ func (s *sqlStore) DisableApplicationsNotIn(ctx context.Context, ids []string, n
 }
 
 // CreateApplication implements Store.
-func (s *sqlStore) CreateApplication(ctx context.Context, a Application, now time.Time) error {
+func (s *DB) CreateApplication(ctx context.Context, a Application, now time.Time) error {
 	_, err := s.exec(ctx, `
 		INSERT INTO applications (`+applicationColumns+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?)`,
@@ -278,7 +281,7 @@ func (s *sqlStore) CreateApplication(ctx context.Context, a Application, now tim
 }
 
 // UpdateApplication implements Store.
-func (s *sqlStore) UpdateApplication(ctx context.Context, a Application, now time.Time) error {
+func (s *DB) UpdateApplication(ctx context.Context, a Application, now time.Time) error {
 	res, err := s.exec(ctx, `
 		UPDATE applications SET name = ?, max_attempts = ?, quota_limit = ?, quota_window = ?,
 			requests_per_minute = ?, submits_per_minute = ?, max_in_progress = ?,
@@ -298,11 +301,11 @@ func (s *sqlStore) UpdateApplication(ctx context.Context, a Application, now tim
 }
 
 // GetApplication implements Store.
-func (s *sqlStore) GetApplication(ctx context.Context, id string) (Application, error) {
+func (s *DB) GetApplication(ctx context.Context, id string) (Application, error) {
 	return s.getApplication(ctx, s.db, id)
 }
 
-func (s *sqlStore) getApplication(ctx context.Context, q querier, id string) (Application, error) {
+func (s *DB) getApplication(ctx context.Context, q querier, id string) (Application, error) {
 	a, err := scanApplication(q.QueryRowContext(ctx, s.q(`SELECT `+applicationColumns+` FROM applications WHERE id = ?`), id))
 	if err != nil {
 		return Application{}, fmt.Errorf("job: get application: %w", notFound(err))
@@ -311,7 +314,7 @@ func (s *sqlStore) getApplication(ctx context.Context, q querier, id string) (Ap
 }
 
 // ListApplications implements Store.
-func (s *sqlStore) ListApplications(ctx context.Context) ([]Application, error) {
+func (s *DB) ListApplications(ctx context.Context) ([]Application, error) {
 	rows, err := s.query(ctx, `SELECT `+applicationColumns+` FROM applications ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("job: list applications: %w", err)
@@ -350,7 +353,7 @@ func scanToken(r scanner) (Token, error) {
 }
 
 // CreateToken implements Store.
-func (s *sqlStore) CreateToken(ctx context.Context, t Token) error {
+func (s *DB) CreateToken(ctx context.Context, t Token) error {
 	if t.ExpiresAt.IsZero() || t.CreatedAt.IsZero() || len(t.Hash) == 0 {
 		return errors.New("job: create token: hash, created_at and expires_at are required")
 	}
@@ -367,7 +370,7 @@ func (s *sqlStore) CreateToken(ctx context.Context, t Token) error {
 }
 
 // GetTokenByID implements Store.
-func (s *sqlStore) GetTokenByID(ctx context.Context, id string) (Token, error) {
+func (s *DB) GetTokenByID(ctx context.Context, id string) (Token, error) {
 	t, err := scanToken(s.queryRow(ctx, `SELECT `+tokenColumns+` FROM tokens WHERE id = ?`, id))
 	if err != nil {
 		return Token{}, fmt.Errorf("job: get token: %w", notFound(err))
@@ -376,7 +379,7 @@ func (s *sqlStore) GetTokenByID(ctx context.Context, id string) (Token, error) {
 }
 
 // ListTokens implements Store.
-func (s *sqlStore) ListTokens(ctx context.Context, applicationID string) ([]Token, error) {
+func (s *DB) ListTokens(ctx context.Context, applicationID string) ([]Token, error) {
 	rows, err := s.query(ctx,
 		`SELECT `+tokenColumns+` FROM tokens WHERE application_id IS NOT DISTINCT FROM ? ORDER BY created_at, id`, nullString(applicationID))
 	if err != nil {
@@ -398,7 +401,7 @@ func (s *sqlStore) ListTokens(ctx context.Context, applicationID string) ([]Toke
 }
 
 // RevokeToken implements Store.
-func (s *sqlStore) RevokeToken(ctx context.Context, id string, now time.Time) error {
+func (s *DB) RevokeToken(ctx context.Context, id string, now time.Time) error {
 	res, err := s.exec(ctx, `UPDATE tokens SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`,
 		now.UnixMilli(), id)
 	if err != nil {
@@ -411,7 +414,7 @@ func (s *sqlStore) RevokeToken(ctx context.Context, id string, now time.Time) er
 }
 
 // TouchTokenLastUsed implements Store.
-func (s *sqlStore) TouchTokenLastUsed(ctx context.Context, id string, now time.Time) error {
+func (s *DB) TouchTokenLastUsed(ctx context.Context, id string, now time.Time) error {
 	_, err := s.exec(ctx, `
 		UPDATE tokens SET last_used_at = ?
 		WHERE id = ? AND (last_used_at IS NULL OR last_used_at <= ?)`,
@@ -425,7 +428,7 @@ func (s *sqlStore) TouchTokenLastUsed(ctx context.Context, id string, now time.T
 // ---- quota and audit
 
 // IncrementQuota implements Store.
-func (s *sqlStore) IncrementQuota(ctx context.Context, applicationID string, windowStart time.Time, limit int) (int, error) {
+func (s *DB) IncrementQuota(ctx context.Context, applicationID string, windowStart time.Time, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, ErrQuotaExhausted
 	}
@@ -447,7 +450,7 @@ func (s *sqlStore) IncrementQuota(ctx context.Context, applicationID string, win
 
 // IncrementRate implements Store: the same capped UPSERT as IncrementQuota, on the
 // rate_windows table.
-func (s *sqlStore) IncrementRate(ctx context.Context, applicationID, kind string, windowStart time.Time, limit int) (int, error) {
+func (s *DB) IncrementRate(ctx context.Context, applicationID, kind string, windowStart time.Time, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, ErrRateLimited
 	}
@@ -468,7 +471,7 @@ func (s *sqlStore) IncrementRate(ctx context.Context, applicationID, kind string
 }
 
 // DeleteRateBefore implements Store.
-func (s *sqlStore) DeleteRateBefore(ctx context.Context, before time.Time) (int64, error) {
+func (s *DB) DeleteRateBefore(ctx context.Context, before time.Time) (int64, error) {
 	res, err := s.exec(ctx, `DELETE FROM rate_windows WHERE window_start < ?`, before.UnixMilli())
 	if err != nil {
 		return 0, fmt.Errorf("job: delete rate windows: %w", err)
@@ -477,7 +480,7 @@ func (s *sqlStore) DeleteRateBefore(ctx context.Context, before time.Time) (int6
 }
 
 // GetQuota implements Store.
-func (s *sqlStore) GetQuota(ctx context.Context, applicationID string, windowStart time.Time) (int, error) {
+func (s *DB) GetQuota(ctx context.Context, applicationID string, windowStart time.Time) (int, error) {
 	var count int
 	err := s.queryRow(ctx,
 		`SELECT count FROM quota_usage WHERE application_id = ? AND window_start = ?`,
@@ -492,7 +495,7 @@ func (s *sqlStore) GetQuota(ctx context.Context, applicationID string, windowSta
 }
 
 // AppendAudit implements Store.
-func (s *sqlStore) AppendAudit(ctx context.Context, e AuditEvent) (int64, error) {
+func (s *DB) AppendAudit(ctx context.Context, e AuditEvent) (int64, error) {
 	details := "{}"
 	if e.Details != nil {
 		if !json.Valid(e.Details) {
@@ -556,7 +559,7 @@ func scanJob(r scanner) (Job, error) {
 }
 
 // CreateJob implements Store.
-func (s *sqlStore) CreateJob(ctx context.Context, j *Job) error {
+func (s *DB) CreateJob(ctx context.Context, j *Job) error {
 	if j.ApplicationID == "" || j.ServiceVersion == "" || j.Representation == "" || j.MediaType == "" {
 		return errors.New("job: create job: application, service version, representation and media type are required")
 	}
@@ -619,7 +622,7 @@ func (s *sqlStore) CreateJob(ctx context.Context, j *Job) error {
 }
 
 // GetJob implements Store.
-func (s *sqlStore) GetJob(ctx context.Context, applicationID, id string) (Job, error) {
+func (s *DB) GetJob(ctx context.Context, applicationID, id string) (Job, error) {
 	j, err := scanJob(s.queryRow(ctx,
 		`SELECT `+jobColumns+` FROM jobs WHERE id = ? AND application_id = ?`, id, applicationID))
 	if err != nil {
@@ -629,7 +632,7 @@ func (s *sqlStore) GetJob(ctx context.Context, applicationID, id string) (Job, e
 }
 
 // GetJobAny implements Store.
-func (s *sqlStore) GetJobAny(ctx context.Context, id string) (Job, error) {
+func (s *DB) GetJobAny(ctx context.Context, id string) (Job, error) {
 	j, err := scanJob(s.queryRow(ctx, `SELECT `+jobColumns+` FROM jobs WHERE id = ?`, id))
 	if err != nil {
 		return Job{}, fmt.Errorf("job: get job: %w", notFound(err))
@@ -674,7 +677,7 @@ var (
 // two workers never lease the same job. On PostgreSQL, concurrent leases may each count
 // the running jobs before the other commits, so an application can briefly exceed its
 // max_in_progress by the number of replicas leasing at the same instant.
-func (s *sqlStore) LeaseNextQueued(ctx context.Context, workerID string, now, leaseUntil time.Time, maxInProgress map[string]int) (Job, error) {
+func (s *DB) LeaseNextQueued(ctx context.Context, workerID string, now, leaseUntil time.Time, maxInProgress map[string]int) (Job, error) {
 	if maxInProgress == nil {
 		maxInProgress = map[string]int{}
 	}
@@ -694,7 +697,7 @@ func (s *sqlStore) LeaseNextQueued(ctx context.Context, workerID string, now, le
 }
 
 // RenewLease implements Store.
-func (s *sqlStore) RenewLease(ctx context.Context, id, workerID string, leaseUntil time.Time) error {
+func (s *DB) RenewLease(ctx context.Context, id, workerID string, leaseUntil time.Time) error {
 	res, err := s.exec(ctx,
 		`UPDATE jobs SET lease_until = ? WHERE id = ? AND status = 'running' AND worker_id = ?`,
 		leaseUntil.UnixMilli(), id, workerID)
@@ -705,7 +708,7 @@ func (s *sqlStore) RenewLease(ctx context.Context, id, workerID string, leaseUnt
 }
 
 // RecordAttempt implements Store.
-func (s *sqlStore) RecordAttempt(ctx context.Context, id, workerID string, p Progress, leaseUntil time.Time) error {
+func (s *DB) RecordAttempt(ctx context.Context, id, workerID string, p Progress, leaseUntil time.Time) error {
 	res, err := s.exec(ctx, `
 		UPDATE jobs SET attempts = ?1, result = ?2, feedback = ?3, lease_until = ?4,
 			input_tokens = CASE WHEN input_tokens > ?7 THEN input_tokens ELSE ?7 END,
@@ -721,7 +724,7 @@ func (s *sqlStore) RecordAttempt(ctx context.Context, id, workerID string, p Pro
 }
 
 // Finish implements Store.
-func (s *sqlStore) Finish(ctx context.Context, id, workerID string, o Outcome, now time.Time) error {
+func (s *DB) Finish(ctx context.Context, id, workerID string, o Outcome, now time.Time) error {
 	if !o.Status.Terminal() {
 		return fmt.Errorf("job: finish: %w: %q", errNotTerminal, o.Status)
 	}
@@ -749,7 +752,7 @@ func (s *sqlStore) Finish(ctx context.Context, id, workerID string, o Outcome, n
 }
 
 // MarkContentDeleted implements Store.
-func (s *sqlStore) MarkContentDeleted(ctx context.Context, id string, what Content, now time.Time) error {
+func (s *DB) MarkContentDeleted(ctx context.Context, id string, what Content, now time.Time) error {
 	var res sql.Result
 	var err error
 	switch what {
@@ -790,7 +793,7 @@ func (s *sqlStore) MarkContentDeleted(ctx context.Context, id string, what Conte
 }
 
 // DeleteJob implements Store.
-func (s *sqlStore) DeleteJob(ctx context.Context, id string) error {
+func (s *DB) DeleteJob(ctx context.Context, id string) error {
 	res, err := s.exec(ctx, `DELETE FROM jobs WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("job: delete job: %w", err)
@@ -807,9 +810,9 @@ func (s *sqlStore) DeleteJob(ctx context.Context, id string) error {
 // pages, but the WAL keeps the earlier page images, content included, until a
 // checkpoint. Best effort: a failure, or readers that keep it from completing, is logged
 // at debug and never fails the caller; the next checkpoint catches up.
-func (s *sqlStore) checkpoint(ctx context.Context) {
+func (s *DB) checkpoint(ctx context.Context) {
 	if s.pg {
-		return // no WAL file to scrub; see Postgres
+		return // no WAL file to scrub; see DB
 	}
 	var busy, frames, done int
 	err := s.queryRow(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &frames, &done)
@@ -820,7 +823,7 @@ func (s *sqlStore) checkpoint(ctx context.Context) {
 }
 
 // FindByIdempotencyKey implements Store.
-func (s *sqlStore) FindByIdempotencyKey(ctx context.Context, applicationID, key string) (Job, error) {
+func (s *DB) FindByIdempotencyKey(ctx context.Context, applicationID, key string) (Job, error) {
 	j, err := scanJob(s.queryRow(ctx,
 		`SELECT `+jobColumns+` FROM jobs WHERE application_id = ? AND idempotency_key = ?`, applicationID, key))
 	if err != nil {
@@ -831,14 +834,14 @@ func (s *sqlStore) FindByIdempotencyKey(ctx context.Context, applicationID, key 
 
 // ListExpired implements Store. Both bounds are checked, so the expires_at index
 // serves the query.
-func (s *sqlStore) ListExpired(ctx context.Context, now time.Time, limit int) ([]Job, error) {
+func (s *DB) ListExpired(ctx context.Context, now time.Time, limit int) ([]Job, error) {
 	return s.queryJobs(ctx, "list expired",
 		`SELECT `+jobColumns+` FROM jobs WHERE expires_at <= ? AND created_at <= ? ORDER BY expires_at, id LIMIT ?`,
 		now.UnixMilli(), now.Add(-IdempotencyWindow).UnixMilli(), limit)
 }
 
 // ListContentExpired implements Store.
-func (s *sqlStore) ListContentExpired(ctx context.Context, now time.Time, limit int) ([]Job, error) {
+func (s *DB) ListContentExpired(ctx context.Context, now time.Time, limit int) ([]Job, error) {
 	return s.queryJobs(ctx, "list content expired", `
 		SELECT `+jobColumns+` FROM jobs
 		WHERE expires_at <= ? AND content_deleted_at IS NULL AND status IN ('accepted', 'rejected', 'failed', 'extracted')
@@ -847,7 +850,7 @@ func (s *sqlStore) ListContentExpired(ctx context.Context, now time.Time, limit 
 }
 
 // queryJobs runs a query over jobColumns and scans every row; what names it in errors.
-func (s *sqlStore) queryJobs(ctx context.Context, what, query string, args ...any) ([]Job, error) {
+func (s *DB) queryJobs(ctx context.Context, what, query string, args ...any) ([]Job, error) {
 	rows, err := s.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("job: %s: %w", what, err)
@@ -868,7 +871,7 @@ func (s *sqlStore) queryJobs(ctx context.Context, what, query string, args ...an
 }
 
 // CountRunning implements Store.
-func (s *sqlStore) CountRunning(ctx context.Context, applicationID string) (int, error) {
+func (s *DB) CountRunning(ctx context.Context, applicationID string) (int, error) {
 	var n int
 	err := s.queryRow(ctx,
 		`SELECT COUNT(*) FROM jobs WHERE application_id = ? AND status = 'running'`, applicationID).Scan(&n)
@@ -879,7 +882,7 @@ func (s *sqlStore) CountRunning(ctx context.Context, applicationID string) (int,
 }
 
 // CountInProgress implements Store.
-func (s *sqlStore) CountInProgress(ctx context.Context, applicationID string) (int, error) {
+func (s *DB) CountInProgress(ctx context.Context, applicationID string) (int, error) {
 	var n int
 	err := s.queryRow(ctx,
 		`SELECT COUNT(*) FROM jobs WHERE application_id = ? AND status IN ('queued', 'running')`, applicationID).Scan(&n)
@@ -890,7 +893,7 @@ func (s *sqlStore) CountInProgress(ctx context.Context, applicationID string) (i
 }
 
 // CountQueued implements Store. COUNT over the jobs_queue index (status, created_at).
-func (s *sqlStore) CountQueued(ctx context.Context) (int, error) {
+func (s *DB) CountQueued(ctx context.Context) (int, error) {
 	var n int
 	if err := s.queryRow(ctx, `SELECT COUNT(*) FROM jobs WHERE status = 'queued'`).Scan(&n); err != nil {
 		return 0, fmt.Errorf("job: count queued: %w", err)
@@ -899,7 +902,7 @@ func (s *sqlStore) CountQueued(ctx context.Context) (int, error) {
 }
 
 // OldestQueuedAt implements Store. MIN over the jobs_queue index (status, created_at).
-func (s *sqlStore) OldestQueuedAt(ctx context.Context) (time.Time, error) {
+func (s *DB) OldestQueuedAt(ctx context.Context) (time.Time, error) {
 	var oldest sql.NullInt64
 	if err := s.queryRow(ctx, `SELECT MIN(created_at) FROM jobs WHERE status = 'queued'`).Scan(&oldest); err != nil {
 		return time.Time{}, fmt.Errorf("job: oldest queued: %w", err)
@@ -908,7 +911,7 @@ func (s *sqlStore) OldestQueuedAt(ctx context.Context) (time.Time, error) {
 }
 
 // ListJobs implements Store.
-func (s *sqlStore) ListJobs(ctx context.Context, f JobFilter, limit int) ([]Job, error) {
+func (s *DB) ListJobs(ctx context.Context, f JobFilter, limit int) ([]Job, error) {
 	if limit <= 0 {
 		limit = noLimit
 	}
@@ -937,7 +940,7 @@ func (s *sqlStore) ListJobs(ctx context.Context, f JobFilter, limit int) ([]Job,
 
 // oneRow turns an update that matched no row into ErrNotFound (no such job) or
 // ErrConflict (the state machine or the lease refused it).
-func (s *sqlStore) oneRow(ctx context.Context, res sql.Result, id string) error {
+func (s *DB) oneRow(ctx context.Context, res sql.Result, id string) error {
 	n, err := affected(res)
 	if err != nil {
 		return err
@@ -957,7 +960,7 @@ func (s *sqlStore) oneRow(ctx context.Context, res sql.Result, id string) error 
 }
 
 // ListStaleRunning implements Store.
-func (s *sqlStore) ListStaleRunning(ctx context.Context, createdBefore time.Time, limit int) ([]Job, error) {
+func (s *DB) ListStaleRunning(ctx context.Context, createdBefore time.Time, limit int) ([]Job, error) {
 	rows, err := s.query(ctx,
 		`SELECT `+jobColumns+` FROM jobs WHERE status = 'running' AND created_at <= ? ORDER BY created_at, id LIMIT ?`,
 		createdBefore.UnixMilli(), limit)
@@ -980,7 +983,7 @@ func (s *sqlStore) ListStaleRunning(ctx context.Context, createdBefore time.Time
 }
 
 // DeleteQuotaBefore implements Store.
-func (s *sqlStore) DeleteQuotaBefore(ctx context.Context, applicationID string, before time.Time) (int64, error) {
+func (s *DB) DeleteQuotaBefore(ctx context.Context, applicationID string, before time.Time) (int64, error) {
 	res, err := s.exec(ctx,
 		`DELETE FROM quota_usage WHERE application_id = ? AND window_start < ?`, applicationID, before.UnixMilli())
 	if err != nil {
@@ -990,7 +993,7 @@ func (s *sqlStore) DeleteQuotaBefore(ctx context.Context, applicationID string, 
 }
 
 // DeleteTokensBefore implements Store.
-func (s *sqlStore) DeleteTokensBefore(ctx context.Context, before time.Time) (int64, error) {
+func (s *DB) DeleteTokensBefore(ctx context.Context, before time.Time) (int64, error) {
 	res, err := s.exec(ctx,
 		`DELETE FROM tokens WHERE expires_at < ?1 OR (revoked_at IS NOT NULL AND revoked_at < ?1)`, before.UnixMilli())
 	if err != nil {
@@ -1000,7 +1003,7 @@ func (s *sqlStore) DeleteTokensBefore(ctx context.Context, before time.Time) (in
 }
 
 // ListAudit implements Store.
-func (s *sqlStore) ListAudit(ctx context.Context, f AuditFilter, limit int) ([]AuditEvent, error) {
+func (s *DB) ListAudit(ctx context.Context, f AuditFilter, limit int) ([]AuditEvent, error) {
 	if limit <= 0 {
 		limit = noLimit
 	}
@@ -1031,7 +1034,7 @@ func (s *sqlStore) ListAudit(ctx context.Context, f AuditFilter, limit int) ([]A
 }
 
 // DeleteAuditBefore implements Store.
-func (s *sqlStore) DeleteAuditBefore(ctx context.Context, before time.Time) (int64, error) {
+func (s *DB) DeleteAuditBefore(ctx context.Context, before time.Time) (int64, error) {
 	res, err := s.exec(ctx, `DELETE FROM audit_events WHERE at < ?`, before.UnixMilli())
 	if err != nil {
 		return 0, fmt.Errorf("job: delete audit: %w", err)

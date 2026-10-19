@@ -9,7 +9,7 @@ import (
 // TestUsageColumns: RecordAttempt and Finish store the token usage, which never
 // decreases, and every read returns it.
 func TestUsageColumns(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		j := createJob(t, s, newJob("app"))
@@ -40,7 +40,7 @@ func TestUsageColumns(t *testing.T) {
 // TestGroundingRepairedColumn: RecordAttempt stores the grounding repair flag, a later
 // attempt without it never clears it, and a re-lease returns it (migration 0010).
 func TestGroundingRepairedColumn(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		j := createJob(t, s, newJob("app"))
@@ -63,7 +63,7 @@ func TestGroundingRepairedColumn(t *testing.T) {
 // TestOldestQueuedAt: the created_at of the oldest queued job, zero when none is queued;
 // running and terminal jobs do not count.
 func TestOldestQueuedAt(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		if got, err := s.OldestQueuedAt(ctx); err != nil || !got.IsZero() {
 			t.Fatalf("empty queue: %v, %v; want the zero time", got, err)
@@ -86,7 +86,7 @@ func TestOldestQueuedAt(t *testing.T) {
 // TestIncrementRate: a fixed-window counter per application, kind and window, capped at
 // the limit, and removed by DeleteRateBefore.
 func TestIncrementRate(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		w := t0.Truncate(time.Minute)
 		for i := 1; i <= 3; i++ {

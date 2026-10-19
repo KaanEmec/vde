@@ -80,7 +80,7 @@ type scaled struct {
 	blobs     *blob.FS
 	cfg       *config.Config
 	provider  *countingProvider
-	submitter *job.Postgres
+	submitter *job.DB
 }
 
 func newScaled(t *testing.T, block string) *scaled {
@@ -129,7 +129,7 @@ func newScaled(t *testing.T, block string) *scaled {
 }
 
 // open is one process's connection pool.
-func (s *scaled) open(t *testing.T) *job.Postgres {
+func (s *scaled) open(t *testing.T) *job.DB {
 	t.Helper()
 	store, err := job.OpenPostgres(t.Context(), s.dsn, 8)
 	if err != nil {

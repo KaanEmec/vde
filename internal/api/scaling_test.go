@@ -139,7 +139,7 @@ func checkSharedRate(t *testing.T, store job.Store, shared bool) {
 
 // openTestPostgres opens a store in a fresh schema of the VDE_TEST_POSTGRES database,
 // dropped at cleanup, or skips the test.
-func openTestPostgres(t *testing.T) *job.Postgres {
+func openTestPostgres(t *testing.T) *job.DB {
 	t.Helper()
 	base := os.Getenv("VDE_TEST_POSTGRES")
 	if base == "" {

@@ -33,8 +33,8 @@ const (
 	rateWindowsKept = 2 * time.Minute
 )
 
-// Locker serializes sweeps across processes sharing a database: *job.Postgres takes a
-// PostgreSQL advisory lock, *job.SQLite grants it at once (one process).
+// Locker serializes sweeps across processes sharing a database: *job.DB takes a
+// PostgreSQL advisory lock, *job.DB grants it at once (one process).
 type Locker interface {
 	// TryLock returns release and ok true when this process holds key, ok false at once
 	// when another one does.

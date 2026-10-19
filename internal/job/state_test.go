@@ -21,7 +21,7 @@ func TestStatusTerminal(t *testing.T) {
 }
 
 func TestHappyPath(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		j := createJob(t, s, newJob("app"))
@@ -71,7 +71,7 @@ func TestHappyPath(t *testing.T) {
 }
 
 func TestTerminalImmutable(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		j := createJob(t, s, newJob("app"))
@@ -108,7 +108,7 @@ func TestTerminalImmutable(t *testing.T) {
 // TestReleaseAfterCrash: a worker records one attempt, then disappears. Once its lease
 // passed, another worker leases the job again with the persisted attempts and candidate.
 func TestReleaseAfterCrash(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		j := createJob(t, s, newJob("app"))
@@ -172,7 +172,7 @@ func TestStateMachineProperty(t *testing.T) {
 	}
 }
 
-func testStateMachineProperty(t *testing.T, open func(*testing.T) *sqlStore, seeds, steps, jobs int, workers []string, statuses []Status) {
+func testStateMachineProperty(t *testing.T, open func(*testing.T) *DB, seeds, steps, jobs int, workers []string, statuses []Status) {
 	terminal := 0 // rows that reached a terminal status, so the property is not vacuous
 	for seed := range uint64(seeds) {
 		t.Run(fmt.Sprint(seed), func(t *testing.T) {
@@ -247,7 +247,7 @@ func testStateMachineProperty(t *testing.T, open func(*testing.T) *sqlStore, see
 // like the others: it keeps its verification, never changes again, and its content is
 // deleted like any terminal job's.
 func TestRunningToExtracted(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		j := newJob("app")

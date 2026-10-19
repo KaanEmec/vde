@@ -11,37 +11,19 @@ import (
 	"github.com/kaanemec/vde/internal/job"
 )
 
-// closingStore is an open job store of either driver.
-type closingStore interface {
-	job.Store
-	Close() error
-	SchemaVersion(ctx context.Context) (int, error)
-	// TryLock serializes the sweepers of several processes (sweeper.Locker): an advisory
-	// lock on PostgreSQL, always granted on SQLite.
-	TryLock(ctx context.Context, key int64) (release func(), ok bool, err error)
-}
-
 // openStore opens the job store of storage.driver and applies pending migrations:
 // SQLite at server.data_dir/vde.db (WAL mode lets a command write while serve runs) or
 // PostgreSQL at the DSN in storage.dsn_env. Every command that needs the store (serve,
 // app, token, audit, migrate) goes through it. Errors never carry the DSN's password.
-func openStore(ctx context.Context, cfg *config.Config) (closingStore, error) {
+func openStore(ctx context.Context, cfg *config.Config) (*job.DB, error) {
 	switch s := cfg.Storage; s.Driver {
 	case config.StoragePostgres:
 		if s.DSN() == "" {
 			return nil, fmt.Errorf("storage.dsn_env: environment variable %s is not set", s.DSNEnv)
 		}
-		pg, err := job.OpenPostgres(ctx, s.DSN(), s.MaxOpenConns)
-		if err != nil {
-			return nil, err // not a typed nil in the interface
-		}
-		return pg, nil
+		return job.OpenPostgres(ctx, s.DSN(), s.MaxOpenConns)
 	case config.StorageSQLite, "":
-		db, err := job.Open(cfg.Server.DatabasePath())
-		if err != nil {
-			return nil, err
-		}
-		return db, nil
+		return job.Open(cfg.Server.DatabasePath())
 	default:
 		return nil, fmt.Errorf("storage.driver: %q is not sqlite or postgres", s.Driver)
 	}

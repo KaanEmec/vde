@@ -33,12 +33,6 @@ type RefusedError struct {
 
 func (e *RefusedError) Error() string { return "auth: token refused: " + string(e.Reason) }
 
-// Reader is the part of the store Authenticate reads.
-type Reader interface {
-	GetTokenByID(ctx context.Context, id string) (job.Token, error)
-	GetApplication(ctx context.Context, id string) (job.Application, error)
-}
-
 // Principal is an authenticated caller. An admin token's principal has no application
 // (Application.ID is "").
 type Principal struct {
@@ -50,7 +44,7 @@ type Principal struct {
 // expiry and the application being enabled. A refusal is a *RefusedError; any other
 // error is the store failing. There is no cache: every request reads the store, so a
 // revocation from the CLI takes effect on the next request.
-func Authenticate(ctx context.Context, r Reader, token string, now time.Time) (Principal, error) {
+func Authenticate(ctx context.Context, r job.Store, token string, now time.Time) (Principal, error) {
 	if token == "" {
 		return Principal{}, &RefusedError{Reason: ReasonMissing}
 	}
@@ -94,12 +88,6 @@ func Authenticate(ctx context.Context, r Reader, token string, now time.Time) (P
 	return Principal{Application: app, Token: t}, nil
 }
 
-// Creator is the part of the store Create needs.
-type Creator interface {
-	GetApplication(ctx context.Context, id string) (job.Application, error)
-	CreateToken(ctx context.Context, t job.Token) error
-}
-
 // Request describes a token to issue. An admin token has no ApplicationID and the
 // single scope ScopeAdmin.
 type Request struct {
@@ -115,7 +103,7 @@ const maxLabelChars = 200
 // hash. It returns the token, to be shown once, and the stored row. Expiry is required,
 // in the future and at most maxTTL from now. The admin scope cannot be combined with
 // another scope or an application.
-func Create(ctx context.Context, s Creator, req Request, maxTTL time.Duration, now time.Time) (string, job.Token, error) {
+func Create(ctx context.Context, s job.Store, req Request, maxTTL time.Duration, now time.Time) (string, job.Token, error) {
 	switch {
 	case len(req.Scopes) == 0:
 		return "", job.Token{}, errors.New("auth: at least one scope is required")

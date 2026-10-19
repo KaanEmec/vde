@@ -90,7 +90,7 @@ func migrate(ctx context.Context, db *sql.DB, pg bool, upTo int) error {
 	}); err != nil {
 		return fmt.Errorf("job: migrations: %w", err)
 	}
-	s := &sqlStore{db: db, pg: pg}
+	s := &DB{db: db, pg: pg}
 	for _, m := range migrations {
 		if upTo >= 0 && m.version > upTo {
 			break
@@ -122,7 +122,7 @@ func inTx(ctx context.Context, db *sql.DB, pg bool, fn func(*sql.Tx) error) erro
 	return tx.Commit()
 }
 
-func (s *sqlStore) apply(ctx context.Context, tx *sql.Tx, m migration) error {
+func (s *DB) apply(ctx context.Context, tx *sql.Tx, m migration) error {
 	var applied int
 	if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`), m.version).Scan(&applied); err != nil {
 		return err

@@ -130,7 +130,7 @@ type submitRigOptions struct {
 type submitRig struct {
 	s          *server
 	h          http.Handler
-	db         *job.SQLite
+	db         *job.DB
 	blobsDir   string
 	cfg        *config.Config
 	clock      *submitClock

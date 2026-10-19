@@ -69,7 +69,7 @@ func (f *failingBlobs) heal() {
 
 type rig struct {
 	dir   string
-	store *job.SQLite
+	store *job.DB
 	blobs *blob.FS
 	fail  *failingBlobs
 	m     *metrics.Metrics

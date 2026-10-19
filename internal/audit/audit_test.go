@@ -18,7 +18,7 @@ import (
 
 var t0 = time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
 
-func openStore(t *testing.T) *job.SQLite {
+func openStore(t *testing.T) *job.DB {
 	t.Helper()
 	s, err := job.Open(filepath.Join(t.TempDir(), "vde.db"))
 	if err != nil {

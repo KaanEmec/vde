@@ -66,7 +66,7 @@ func tokenFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 }
 
 // openOperatorStore loads the configuration at path and opens its database.
-func openOperatorStore(path string) (closingStore, time.Duration, error) {
+func openOperatorStore(path string) (*job.DB, time.Duration, error) {
 	cfg, err := loadOperatorConfig(path)
 	if err != nil {
 		return nil, 0, err

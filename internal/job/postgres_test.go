@@ -55,7 +55,7 @@ func pgTestSchema(t *testing.T) (dsn, schema string) {
 }
 
 // openTestPostgres opens a store in a fresh schema.
-func openTestPostgres(t *testing.T) *Postgres {
+func openTestPostgres(t *testing.T) *DB {
 	t.Helper()
 	dsn, _ := pgTestSchema(t)
 	s, err := OpenPostgres(t.Context(), dsn, 8)
@@ -187,7 +187,7 @@ func TestConcurrentMigrate(t *testing.T) {
 // together take every job (FOR UPDATE SKIP LOCKED on PostgreSQL, the single writer on
 // SQLite).
 func TestConcurrentLeasing(t *testing.T) {
-	forEachDriver(t, func(t *testing.T, s *sqlStore) {
+	forEachDriver(t, func(t *testing.T, s *DB) {
 		ctx := t.Context()
 		seedApp(t, s, testApp("app"))
 		const jobs, workers = 40, 8

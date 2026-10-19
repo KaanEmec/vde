@@ -86,7 +86,7 @@ func (s *syncBuffer) String() string {
 }
 
 type rig struct {
-	store      *job.SQLite
+	store      *job.DB
 	blobs      *blob.FS
 	cfg        *config.Config
 	ext, judge *fake.Provider

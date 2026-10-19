@@ -24,20 +24,10 @@ const (
 	pgConnectTimeout     = 10 * time.Second
 )
 
-// Postgres is the Store on a PostgreSQL database (13 or later), for several replicas
-// sharing one queue. It runs the same statements as SQLite with $N placeholders; jobs
-// are leased with FOR UPDATE SKIP LOCKED. Deleted content stays in dead row versions
-// until autovacuum reclaims them; there is no checkpoint to force.
-type Postgres struct {
-	sqlStore
-}
-
-var _ Store = (*Postgres)(nil)
-
 // OpenPostgres connects to the database named by dsn (a postgres:// URL or key=value
 // string), sizes the pool (maxOpenConns <= 0 means DefaultPostgresConns) and applies
 // every pending migration. Errors never contain the DSN's password.
-func OpenPostgres(ctx context.Context, dsn string, maxOpenConns int) (*Postgres, error) {
+func OpenPostgres(ctx context.Context, dsn string, maxOpenConns int) (*DB, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("job: open postgres: %w", redactDSN(err, dsn))
@@ -59,7 +49,7 @@ func OpenPostgres(ctx context.Context, dsn string, maxOpenConns int) (*Postgres,
 		_ = db.Close()
 		return nil, redactDSN(err, dsn)
 	}
-	return &Postgres{sqlStore{db: db, pg: true}}, nil
+	return &DB{db: db, pg: true}, nil
 }
 
 var dsnPasswordRe = regexp.MustCompile(`password\s*=\s*('(?:[^'\\]|\\.)*'|\S+)`)
@@ -93,12 +83,17 @@ func redactDSN(err error, dsn string) error {
 	return errors.New(redacted)
 }
 
-// TryLock takes the session-level advisory lock key on a connection of its own and
-// returns the function that releases it, or ok false at once when another session holds
-// it (pg_try_advisory_lock never waits). A process that dies loses its session and so
-// the lock, so a crashed holder never blocks the others. SweepLock is the sweeper's key.
-func (p *Postgres) TryLock(ctx context.Context, key int64) (release func(), ok bool, err error) {
-	conn, err := p.db.Conn(ctx)
+// TryLock serializes the sweepers of several processes. On PostgreSQL it takes the
+// session-level advisory lock key on a connection of its own and returns the function
+// that releases it, or ok false at once when another session holds it
+// (pg_try_advisory_lock never waits). A process that dies loses its session and so the
+// lock, so a crashed holder never blocks the others. One process owns a SQLite
+// database, so there the lock is always granted. SweepLock is the sweeper's key.
+func (s *DB) TryLock(ctx context.Context, key int64) (release func(), ok bool, err error) {
+	if !s.pg {
+		return func() {}, true, nil
+	}
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("job: advisory lock: %w", err)
 	}
