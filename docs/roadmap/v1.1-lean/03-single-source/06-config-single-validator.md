@@ -87,3 +87,14 @@ id), fixed in its own commit before this one.
 
 `git diff --stat` (Go): production 5 files, +90 −260 (net −170); tests 5 files, +123 −81
 (net +42: the gap tests and the test-side schema compile).
+
+After review (`fix(lean): review of epic 03`): refusing the four gaps in `serve` broke
+files that 1.0 `serve` ran, and since `stringScalars` ran in `Parse`, also every command
+that only parses (healthcheck, migrate, token, app, audit). They are now warnings, as
+`debug.log_content` is: `Parse` decodes as 1.0 did (the scalar as written, `2026-10-16`
+included) and `Validate` reports `<key>: number|boolean|timestamp where a string is
+expected; quote it (refused in 2.0)`, following aliases and `<<` merge keys as the
+decoder reads them; a negative `limits.feedback_message_chars` (read as the default),
+`storage.max_open_conns` outside 0 to 1000 with `sqlite` (1.0's "ignored" warning
+restored) and an unknown `blobs.sse` with `fs` warn the same way. Each fails
+`config check --strict` (`TestFormerSchemaViolations`, `TestParse_nonStringScalars`).

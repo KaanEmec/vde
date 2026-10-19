@@ -242,21 +242,6 @@ func TestParse_errors(t *testing.T) {
 			want: []string{"line 2: limits.pages: cannot unmarshal"},
 		},
 		{
-			name: "number for a string",
-			yaml: "applications: [{id: inbox, name: 42}]\n",
-			want: []string{"line 1: applications[0].name: got number, want string"},
-		},
-		{
-			name: "boolean in a list of strings",
-			yaml: "endpoints:\n  a:\n    models:\n      m: {accepts: [text/plain, true]}\n",
-			want: []string{"line 4: endpoints.a.models.m.accepts[1]: got boolean, want string"},
-		},
-		{
-			name: "number for an inlined role key",
-			yaml: "roles:\n  judge: {group: 7}\n",
-			want: []string{"line 2: roles.judge.group: got number, want string"},
-		},
-		{
 			name: "all problems reported",
 			yaml: "nope: 1\nlimits:\n  pages: many\n  job_timeout: soon\ndebug: {log_contents: true}\n",
 			want: []string{
@@ -277,6 +262,97 @@ func TestParse_errors(t *testing.T) {
 			for _, w := range tt.want {
 				if !strings.Contains(err.Error(), w) {
 					t.Errorf("Parse() error = %q, want it to contain %q", err, w)
+				}
+			}
+		})
+	}
+}
+
+// TestParse_nonStringScalars: a number, boolean or timestamp where a string is expected
+// decodes as 1.0 decoded it (the scalar as written) and is a warning from Validate, through
+// aliases and << merge keys as the decoder reads them.
+func TestParse_nonStringScalars(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		yaml string
+		want []string // warnings, "key: message prefix"
+		read func(*Config) string
+		val  string // what read returns: 1.0's decoding
+	}{
+		{
+			name: "number for a string",
+			yaml: "applications: [{id: inbox, name: 42}]\n",
+			want: []string{"applications[0].name: number"},
+			read: func(c *Config) string { return c.Applications[0].Name }, val: "42",
+		},
+		{
+			name: "boolean in a list of strings",
+			yaml: "endpoints:\n  a:\n    models:\n      m: {accepts: [text/plain, true]}\n",
+			want: []string{"endpoints.a.models.m.accepts[1]: boolean"},
+			read: func(c *Config) string { return c.Endpoints["a"].Models["m"].Accepts[1] }, val: "true",
+		},
+		{
+			name: "number for an inlined role key",
+			yaml: "roles:\n  judge: {group: 7}\n",
+			want: []string{"roles.judge.group: number"},
+			read: func(c *Config) string { return c.Roles.Judge.Group }, val: "7",
+		},
+		{
+			name: "timestamp for a string",
+			yaml: "applications: [{id: inbox, name: 2026-10-16}]\n",
+			want: []string{"applications[0].name: timestamp"},
+			read: func(c *Config) string { return c.Applications[0].Name }, val: "2026-10-16",
+		},
+		{
+			name: "through an alias",
+			yaml: "server: {data_dir: &d 2026-10-16}\napplications: [{id: inbox, name: *d}]\n",
+			want: []string{"server.data_dir: timestamp", "applications[0].name: timestamp"},
+			read: func(c *Config) string { return c.Applications[0].Name }, val: "2026-10-16",
+		},
+		{
+			name: "through a merge key",
+			yaml: "applications:\n  - &a {id: inbox, name: 42}\n  - {<<: *a, id: other}\n",
+			want: []string{"applications[0].name: number", "applications[1].name: number"},
+			read: func(c *Config) string { return c.Applications[1].Name }, val: "42",
+		},
+		{
+			name: "a merged value the mapping overrides is not read",
+			yaml: "applications:\n  - &a {id: inbox, name: 42}\n  - {<<: *a, id: other, name: quoted}\n",
+			want: []string{"applications[0].name: number"},
+			read: func(c *Config) string { return c.Applications[1].Name }, val: "quoted",
+		},
+		{
+			name: "quoted and null are strings",
+			yaml: "applications: [{id: inbox, name: '42'}, {id: other, name: ~}]\n",
+			read: func(c *Config) string { return c.Applications[0].Name }, val: "42",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Parse([]byte(tt.yaml), env(nil))
+			if err != nil {
+				t.Fatalf("Parse() error = %v, want none (1.0 decoded this file)", err)
+			}
+			if got := tt.read(cfg); got != tt.val {
+				t.Errorf("decoded %q, want %q", got, tt.val)
+			}
+			var got []string
+			for _, i := range cfg.Validate() {
+				if strings.Contains(i.Message, "where a string is expected") {
+					if !i.Warning || !strings.HasSuffix(i.Message, "where a string is expected; quote it (refused in 2.0)") {
+						t.Errorf("issue %v, want a warning ending in the 2.0 notice", i)
+					}
+					got = append(got, i.Key+": "+i.Message)
+				}
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("warnings %q, want %q", got, tt.want)
+			}
+			for n, w := range tt.want {
+				if !strings.HasPrefix(got[n], w) {
+					t.Errorf("warning %q, want prefix %q", got[n], w)
 				}
 			}
 		})

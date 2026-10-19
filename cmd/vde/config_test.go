@@ -321,10 +321,18 @@ func TestRunConfigSchema(t *testing.T) {
 			},
 		},
 		{
-			name:       "a former schema-only violation is a parse error",
+			name:       "a former schema-only violation is a warning",
 			args:       []string{"config", "check", "--config", writeConfig(t, goodConfig+"applications: [{id: inbox, name: 42}]\n")},
+			wantCode:   exitOK,
+			wantStdout: []string{"configuration "},
+			wantStderr: []string{"warning: applications[0].name: number where a string is expected; quote it (refused in 2.0)"},
+		},
+		{
+			name: "and an error under strict",
+			args: []string{"config", "check", "--strict", "--config",
+				writeConfig(t, goodConfig+"applications: [{id: inbox, name: 2026-10-16}]\n")},
 			wantCode:   exitFailure,
-			wantStderr: []string{"applications[0].name: got number, want string"},
+			wantStderr: []string{"warning: applications[0].name: timestamp where a string is expected", "1 blocking problem(s)"},
 		},
 	}
 	for _, tt := range tests {

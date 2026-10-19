@@ -127,24 +127,27 @@ roles:
 // it is refused by Parse or Validate, so by config check and serve alike, at the key.
 func TestFormerSchemaViolations(t *testing.T) {
 	t.Parallel()
+	// warn: 1.0 serve ran the file, so it is a warning (an error under --strict) until 2.0.
 	for _, tc := range []struct {
 		name, extra, key string
+		warn             bool
 	}{
-		{"typo in a key", "server: {listne: ':8090'}", "server.listne"},
-		{"typo at the top level", "limit: {max_attempts: 3}", "limit"},
-		{"wrong enum value", "documents: {pdf: {mode: images}}", "documents.pdf.mode"},
-		{"wrong enum value in a list", "applications: [{id: a, judge: {policy: sometimes}}]", "applications[0].judge.policy"},
-		{"wrong type", "limits: {max_attempts: three}", "limits.max_attempts"},
-		{"number for a string", "applications: [{id: a, name: 42}]", "applications[0].name"},
-		{"bare number duration", "limits: {job_timeout: 300}", "limits.job_timeout"},
-		{"malformed duration", "worker: {lease: 2 minutes}", "worker.lease"},
-		{"out of range", "documents: {pdf: {dpi: 600}}", "documents.pdf.dpi"},
-		{"negative feedback cap", "limits: {feedback_message_chars: -1}", "limits.feedback_message_chars"},
-		{"pool out of range with sqlite", "storage: {max_open_conns: 1001}", "storage.max_open_conns"},
-		{"unknown sse with fs", "blobs: {sse: aws:kms}", "blobs.sse"},
-		{"missing required key", "applications: [{name: no id}]", "applications[0].id"},
-		{"numeric map key", "endpoints: {7: {provider: fake, models: {m: {accepts: [text/plain], extra: 1}}}}", "endpoints.7.models.m.extra"},
-		{"not a mapping", "- a", ""},
+		{"typo in a key", "server: {listne: ':8090'}", "server.listne", false},
+		{"typo at the top level", "limit: {max_attempts: 3}", "limit", false},
+		{"wrong enum value", "documents: {pdf: {mode: images}}", "documents.pdf.mode", false},
+		{"wrong enum value in a list", "applications: [{id: a, judge: {policy: sometimes}}]", "applications[0].judge.policy", false},
+		{"wrong type", "limits: {max_attempts: three}", "limits.max_attempts", false},
+		{"number for a string", "applications: [{id: a, name: 42}]", "applications[0].name", true},
+		{"bare number duration", "limits: {job_timeout: 300}", "limits.job_timeout", false},
+		{"malformed duration", "worker: {lease: 2 minutes}", "worker.lease", false},
+		{"out of range", "documents: {pdf: {dpi: 600}}", "documents.pdf.dpi", false},
+		{"timestamp for a string", "applications: [{id: a, name: 2026-10-16}]", "applications[0].name", true},
+		{"negative feedback cap", "limits: {feedback_message_chars: -1}", "limits.feedback_message_chars", true},
+		{"pool out of range with sqlite", "storage: {max_open_conns: 1001}", "storage.max_open_conns", true},
+		{"unknown sse with fs", "blobs: {sse: aws:kms}", "blobs.sse", true},
+		{"missing required key", "applications: [{name: no id}]", "applications[0].id", false},
+		{"numeric map key", "endpoints: {7: {provider: fake, models: {m: {accepts: [text/plain], extra: 1}}}}", "endpoints.7.models.m.extra", false},
+		{"not a mapping", "- a", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -157,21 +160,28 @@ func TestFormerSchemaViolations(t *testing.T) {
 			}
 			cfg, err := config.Parse([]byte(data), func(string) string { return "" })
 			if err != nil {
-				if !strings.Contains(err.Error(), tc.key) {
-					t.Errorf("Parse: %v, want it at %s", err, tc.key)
+				if tc.warn || !strings.Contains(err.Error(), tc.key) {
+					t.Errorf("Parse: %v, want %s at %s", err, map[bool]string{false: "it", true: "a warning from Validate"}[tc.warn], tc.key)
 				}
 				return
 			}
 			issues := cfg.Validate()
-			if issues.Err(false) == nil {
+			if tc.warn {
+				if err := issues.Err(false); err != nil {
+					t.Errorf("refused: %v, want it run as 1.0 ran it", err)
+				}
+				if issues.Err(true) == nil {
+					t.Errorf("accepted under strict; issues %v", issues)
+				}
+			} else if issues.Err(false) == nil {
 				t.Fatalf("accepted; issues %v", issues)
 			}
 			found := false
 			for _, i := range issues {
-				found = found || (!i.Warning && i.Key == tc.key)
+				found = found || (i.Warning == tc.warn && i.Key == tc.key)
 			}
 			if !found {
-				t.Errorf("issues %v, want an error at %s", issues, tc.key)
+				t.Errorf("issues %v, want a %s at %s", issues, map[bool]string{false: "error", true: "warning"}[tc.warn], tc.key)
 			}
 		})
 	}

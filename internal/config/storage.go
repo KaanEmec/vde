@@ -88,13 +88,13 @@ func (s *Storage) resolve(getenv func(string) string) {
 func (v *validator) storage(c *Config) {
 	s := c.Storage
 	conns := s.MaxOpenConns >= 0 && s.MaxOpenConns <= maxPostgresConns
-	if !conns {
-		v.errorf("storage.max_open_conns", "%d is not between 0 and %d", s.MaxOpenConns, maxPostgresConns)
-	}
 	switch s.Driver {
 	case StorageSQLite:
-		if conns && (s.DSNEnv != "" || s.MaxOpenConns != 0) {
+		if s.DSNEnv != "" || s.MaxOpenConns != 0 {
 			v.warnf("storage", "dsn_env and max_open_conns are ignored with driver sqlite")
+		}
+		if !conns {
+			v.warnf("storage.max_open_conns", "%d is not between 0 and %d (refused in 2.0)", s.MaxOpenConns, maxPostgresConns)
 		}
 	case StoragePostgres:
 		switch {
@@ -105,7 +105,10 @@ func (v *validator) storage(c *Config) {
 		case !strings.HasPrefix(s.dsn, "postgres://") && !strings.HasPrefix(s.dsn, "postgresql://") && !strings.Contains(s.dsn, "="):
 			v.errorf("storage.dsn_env", "environment variable %s is neither a postgres:// URL nor a key=value connection string", s.DSNEnv)
 		}
-		if conns && s.MaxOpenConns > 0 && s.MaxOpenConns < c.Worker.Size+2 {
+		switch {
+		case !conns:
+			v.errorf("storage.max_open_conns", "%d is not between 0 and %d", s.MaxOpenConns, maxPostgresConns)
+		case s.MaxOpenConns > 0 && s.MaxOpenConns < c.Worker.Size+2:
 			v.warnf("storage.max_open_conns", "%d connections for %d workers plus the API and the sweeper: "+
 				"requests will wait for a connection", s.MaxOpenConns, c.Worker.Size)
 		}
@@ -114,11 +117,12 @@ func (v *validator) storage(c *Config) {
 	}
 
 	b := c.Blobs
-	if !slices.Contains([]string{"", SSEAES256}, b.SSE) {
-		v.errorf("blobs.sse", "%q is not AES256 or empty", b.SSE)
-	}
+	sse := slices.Contains([]string{"", SSEAES256}, b.SSE)
 	switch b.Driver {
 	case BlobsFS:
+		if !sse {
+			v.warnf("blobs.sse", "%q is not AES256 or empty; ignored with driver fs (refused in 2.0)", b.SSE)
+		}
 		if b.Bucket != "" || b.Endpoint != "" || b.Region != "" || b.PathStyle {
 			v.warnf("blobs", "bucket, endpoint, region and path_style are ignored with driver fs")
 		}
@@ -141,6 +145,9 @@ func (v *validator) storage(c *Config) {
 			case u.Scheme == "http" && !isLoopback(u.Hostname()):
 				v.warnf("blobs.endpoint", "%q is plain HTTP on a non-loopback host: documents cross the network unencrypted", b.Endpoint)
 			}
+		}
+		if !sse {
+			v.errorf("blobs.sse", "%q is not AES256 or empty", b.SSE)
 		}
 	default:
 		v.errorf("blobs.driver", "%q is not fs or s3", b.Driver)

@@ -45,7 +45,7 @@ func (is Issues) Err(strict bool) error {
 // Validate checks the configuration against every rule and returns all findings. It makes
 // no network calls.
 func (c *Config) Validate() Issues {
-	var v validator
+	v := validator{issues: slices.Clone(c.typeIssues)}
 	v.server(c)
 	v.endpoints(c)
 	v.groups(c)
@@ -463,7 +463,7 @@ func (v *validator) limits(c *Config) {
 		v.errorf("limits.judge_reparse_tries", "must not be negative")
 	}
 	if l.FeedbackMessageChars < 0 {
-		v.errorf("limits.feedback_message_chars", "must not be negative (0 means the default)")
+		v.warnf("limits.feedback_message_chars", "%d is negative: the default is used (refused in 2.0)", l.FeedbackMessageChars)
 	}
 	if l.MaxQueuedJobs < 0 {
 		v.errorf("limits.max_queued_jobs", "must not be negative (0 means no ceiling)")

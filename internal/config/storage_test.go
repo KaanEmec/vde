@@ -55,6 +55,7 @@ func TestStorageValidate(t *testing.T) {
 		wantKey     string // "" means no issue at all
 		wantMessage string
 		wantWarning bool
+		alsoWarned  string // the key of a second, expected warning, which comes first
 	}{
 		{name: "postgres and s3", edit: pg},
 		{name: "minio endpoint", edit: func(c *Config) {
@@ -75,7 +76,10 @@ func TestStorageValidate(t *testing.T) {
 		{name: "pool smaller than the workers", edit: func(c *Config) { pg(c); c.Storage.MaxOpenConns = 2 },
 			wantKey: "storage.max_open_conns", wantMessage: "requests will wait", wantWarning: true},
 		{name: "pool out of range with sqlite", edit: func(c *Config) { c.Storage.MaxOpenConns = 1001 },
-			wantKey: "storage.max_open_conns", wantMessage: "is not between 0 and 1000"},
+			wantKey: "storage.max_open_conns", wantMessage: "is not between 0 and 1000 (refused in 2.0)", wantWarning: true,
+			alsoWarned: "storage"},
+		{name: "sqlite with a pool size", edit: func(c *Config) { c.Storage.MaxOpenConns = 5 },
+			wantKey: "storage", wantMessage: "ignored with driver sqlite", wantWarning: true},
 		{name: "sqlite with a dsn", edit: func(c *Config) { c.Storage.DSNEnv = "VDE_DATABASE_URL" },
 			wantKey: "storage", wantMessage: "ignored with driver sqlite", wantWarning: true},
 		{name: "unknown blob driver", edit: func(c *Config) { c.Blobs.Driver = "gcs" },
@@ -95,7 +99,7 @@ func TestStorageValidate(t *testing.T) {
 		{name: "unknown sse", edit: func(c *Config) { s3(c); c.Blobs.SSE = "aws:kms" },
 			wantKey: "blobs.sse", wantMessage: `"aws:kms" is not AES256 or empty`},
 		{name: "unknown sse with fs", edit: func(c *Config) { c.Blobs.SSE = "aws:kms" },
-			wantKey: "blobs.sse", wantMessage: `"aws:kms" is not AES256 or empty`},
+			wantKey: "blobs.sse", wantMessage: "ignored with driver fs (refused in 2.0)", wantWarning: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -108,6 +112,12 @@ func TestStorageValidate(t *testing.T) {
 					t.Fatalf("issues = %v, want none", issues)
 				}
 				return
+			}
+			if tt.alsoWarned != "" {
+				if len(issues) == 0 || issues[0].Key != tt.alsoWarned || !issues[0].Warning {
+					t.Fatalf("issues = %v, want first a warning on %s", issues, tt.alsoWarned)
+				}
+				issues = issues[1:]
 			}
 			if len(issues) != 1 {
 				t.Fatalf("issues = %v, want exactly one on %s", issues, tt.wantKey)

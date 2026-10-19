@@ -176,6 +176,8 @@ A `400` from `/healthz` itself means the HTTPS rule: behind `trusted_proxy`, sen
 `vde serve` refuses to start on errors and prints warnings. Decoding problems come first
 and carry the line: `config: line 12: endpoints.x.timeout: ...`. Unknown keys are errors
 (`unknown key`), and a bare number where a duration is expected is rejected (write `90s`).
+A number, boolean or date where a string is expected is read as written, as 1.0 did, with
+a warning (below).
 
 ### Errors
 
@@ -231,6 +233,10 @@ Warnings do not block start (unless `--strict`); each deserves a decision.
 | `limits.document_bytes`, `page_bytes`, `pages`, `request_bytes` | `N is below the contract minimum of M` | Callers may legitimately send more than you allow. |
 | `applications[i].max_attempts` | `N is above limits.max_attempts M; each attempt costs model calls` | |
 | `metrics.listen` | `... is not a loopback address and metrics.token_env is not set` | Anyone who reaches the port can read the metrics. |
+| any string key | `number where a string is expected; quote it (refused in 2.0)` (or `boolean`, `timestamp`) | YAML reads `42`, `true` and `2026-10-16` as other types; the value is used as written. Quote it. |
+| `limits.feedback_message_chars` | `N is negative: the default is used (refused in 2.0)` | Remove the key or set `0`. |
+| `storage.max_open_conns` | `N is not between 0 and 1000 (refused in 2.0)` | With `sqlite` the key is ignored; remove it. |
+| `blobs.sse` | `"x" is not AES256 or empty; ignored with driver fs (refused in 2.0)` | Remove the key. |
 
 At start `vde serve` also logs `no applications are configured: every /v1 request is
 refused` when `applications` is empty (not a `config check` finding).

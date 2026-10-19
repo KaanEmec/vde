@@ -28,7 +28,11 @@ accepted values, ranges and the form of durations for editors; `vde` itself does
 validate against it. `vde config check`, `serve` and `extract` run the same validation,
 which covers everything the schema refuses plus the rules across keys (a group's model
 declared on its endpoint, `failover.max_total_time` below `limits.job_timeout`, a named
-variable being set). A key with no value (`server:`) counts as absent.
+variable being set). A few values the schema refuses ran under 1.0 `serve` and are
+warnings until 2.0 refuses them: a number, boolean or date where a string is expected
+(`name: 42` is read as `"42"`; quote it), a negative `limits.feedback_message_chars`,
+`storage.max_open_conns` outside 0 to 1000 with `sqlite`, and an unknown `blobs.sse` with
+`fs`. A key with no value (`server:`) counts as absent.
 
 **Changes within 1.x.** The keys of 1.0 are the keys of every 1.x release. A new key
 arrives with a default that reproduces the previous behaviour. If a key ever has to be
@@ -91,7 +95,7 @@ needs no rewrite: no key changed on the way to 1.0, so there is no migration com
 | `limits.max_attempts` | int | `3` | Default attempt limit per application; a request can only lower it. At least 1. |
 | `limits.job_timeout` | duration | `5m` | Deadline per job, counted from its creation, so time spent queued counts; positive and at most `8m`. Expiry fails the job with `timeout`. |
 | `limits.judge_reparse_tries` | int | `1` | Extra judge calls when its verdict cannot be parsed; `0` or more. When all fail the job ends `judge_failed`. |
-| `limits.feedback_message_chars` | int | `4000` (when `0` or omitted) | Characters kept per feedback message, the last replaced by an ellipsis; the contract asks for at least 2,000. Must not be negative. |
+| `limits.feedback_message_chars` | int | `4000` (when `0` or omitted) | Characters kept per feedback message, the last replaced by an ellipsis; the contract asks for at least 2,000. A negative value is read as the default, with a warning (refused in 2.0). |
 | `limits.document_bytes` | int | `26214400` (25 MiB) | Largest document; over it `413`. Positive; below the contract minimum is a warning. |
 | `limits.page_bytes` | int | `10485760` (10 MiB) | Largest page image; below the contract minimum is a warning. |
 | `limits.pages` | int | `20` | Most page images per job; below the contract minimum is a warning; at most `999` (stored page names have three digits). |
@@ -225,13 +229,13 @@ the bucket lifecycle rule: [storage](storage.md). Every command that opens the s
 | --- | --- | --- | --- |
 | `storage.driver` | string | `sqlite` | `sqlite` (`server.data_dir/vde.db`, one `vde serve` process) or `postgres` (PostgreSQL 13 or later, any number of replicas). Anything else is an error. |
 | `storage.dsn_env` | string | `VDE_DATABASE_URL` with `postgres` | Name of the environment variable holding the PostgreSQL connection string, a `postgres://` URL or a `key=value` string. Must be set with `postgres`. The DSN carries the password: it is never in the file, never printed by `config check` and redacted from errors. Ignored (a warning) with `sqlite`. |
-| `storage.max_open_conns` | int | `16` (when `0`) | PostgreSQL connection pool size, 0 to 1000; half of it is kept idle, connections are recycled after 30 minutes. Fewer than `worker.size` + 2 is a warning. Ignored with `sqlite`, but still 0 to 1000. |
+| `storage.max_open_conns` | int | `16` (when `0`) | PostgreSQL connection pool size, 0 to 1000; half of it is kept idle, connections are recycled after 30 minutes. Fewer than `worker.size` + 2 is a warning. Ignored (a warning) with `sqlite`, where a value outside 0 to 1000 adds a second warning (refused in 2.0). |
 | `blobs.driver` | string | `fs` | `fs` (files under `server.data_dir/blobs`) or `s3` (an S3-compatible bucket: AWS S3, MinIO, Cloudflare R2, Backblaze B2). `fs` with `storage.driver: postgres` is a warning, since replicas on other hosts cannot read each other's documents. |
 | `blobs.bucket` | string | required with `s3` | Bucket name (3 to 63 lowercase letters, digits, dots, hyphens). Must exist: `serve` checks it at start. Objects are `jobs/<job id>/document` and `jobs/<job id>/page-NN`. |
 | `blobs.region` | string | required with `s3` | The bucket's region (`eu-central-1`; `auto` for R2; any value for MinIO). It decides where documents are stored: see [privacy](privacy.md#data-residency). |
 | `blobs.endpoint` | string | empty (AWS S3) | S3 API URL of a non-AWS store, `https://host[:port]` without a path. Plain `http://` on a non-loopback host is a warning. |
 | `blobs.path_style` | bool | `false` | Address the bucket in the URL path instead of the host name; MinIO and most self-hosted stores need `true`. |
-| `blobs.sse` | string | `AES256` | Server-side encryption header on every upload: `AES256` (SSE-S3) or `""` for none (MinIO without a KMS refuses SSE-S3). |
+| `blobs.sse` | string | `AES256` | Server-side encryption header on every upload: `AES256` (SSE-S3) or `""` for none (MinIO without a KMS refuses SSE-S3); anything else is an error with `s3`. Ignored with `fs`, where another value is a warning (refused in 2.0). |
 
 S3 credentials come from the AWS default chain, never from the file: `AWS_ACCESS_KEY_ID` and
 `AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN`), a profile in `~/.aws` (`AWS_PROFILE`),

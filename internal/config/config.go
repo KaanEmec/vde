@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -41,6 +42,8 @@ type Config struct {
 	Blobs   Blobs   `yaml:"blobs"`
 	// Sync bounds POST /v1/extract (delivery.go).
 	Sync Sync `yaml:"sync"`
+
+	typeIssues Issues // set by Parse, reported by Validate (stringScalars)
 }
 
 // Server configures the HTTP listener (used from v0.2).
@@ -394,7 +397,8 @@ func defaults() *Config {
 
 // Parse decodes a configuration, rejecting unknown keys, applies defaults and resolves
 // each endpoint's key through getenv. Every decoding problem is reported, each prefixed
-// with its line and key path. Parse does not validate semantics; call Validate.
+// with its line and key path. Parse does not validate semantics; call Validate, which
+// also reports the warnings found while decoding.
 func Parse(data []byte, getenv func(string) string) (*Config, error) {
 	cfg := defaults()
 	dec := yaml.NewDecoder(bytes.NewReader(data))
@@ -407,9 +411,7 @@ func Parse(data []byte, getenv func(string) string) (*Config, error) {
 	}
 	var root yaml.Node
 	_ = yaml.Unmarshal(data, &root) // cannot fail: Decode got past the syntax
-	if err := stringScalars(&root, reflect.TypeFor[Config](), ""); err != nil {
-		return nil, err
-	}
+	cfg.typeIssues = stringScalars(&root, reflect.TypeFor[Config](), "")
 	cfg.applyDefaults()
 	for _, e := range cfg.Endpoints {
 		if e != nil && e.APIKeyEnv != "" {
@@ -530,52 +532,95 @@ func decodeError(data []byte, err error) error {
 	return errors.Join(errs...)
 }
 
-// stringScalars refuses a scalar of another YAML type where the configuration holds a
-// string: yaml.v3 would read name: 42 as "42". t is the type n decodes into, path its key.
-func stringScalars(n *yaml.Node, t reflect.Type, path string) error {
+// stringScalars warns about a scalar of another YAML type where the configuration holds
+// a string: yaml.v3 reads name: 42 as "42" and date: 2026-10-16 as "2026-10-16", the
+// scalar as written, and 1.0 ran such files, so they decode as before and Validate
+// reports a warning until 2.0 refuses them. t is the type n decodes into, path its key.
+//
+// The walk follows what the decoder reads: an alias is checked as the node it names
+// (Decode has already refused recursive and excessive aliases), and a << merge key's
+// mapping, or each mapping of its list, is checked as part of the mapping it merges into,
+// except the keys that mapping sets itself. A key that an earlier mapping of the same
+// merge list shadows is still checked; the warning is then about a value not used.
+func stringScalars(n *yaml.Node, t reflect.Type, path string) Issues {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
+	var issues Issues
 	switch n.Kind {
 	case yaml.DocumentNode:
 		for _, c := range n.Content {
-			if err := stringScalars(c, t, path); err != nil {
-				return err
-			}
+			issues = append(issues, stringScalars(c, t, path)...)
+		}
+	case yaml.AliasNode:
+		if n.Alias != nil {
+			issues = stringScalars(n.Alias, t, path)
 		}
 	case yaml.ScalarNode:
 		if tag := n.ShortTag(); t.Kind() == reflect.String && tag != "!!str" && tag != "!!null" {
-			got := map[string]string{"!!int": "number", "!!float": "number", "!!bool": "boolean"}[tag]
-			return fmt.Errorf("config: line %d: %s: got %s, want string", n.Line, path, cmp.Or(got, strings.TrimPrefix(tag, "!!")))
+			kind := map[string]string{"!!int": "number", "!!float": "number", "!!bool": "boolean"}[tag]
+			issues = Issues{{Key: path, Warning: true, Message: cmp.Or(kind, strings.TrimPrefix(tag, "!!")) +
+				" where a string is expected; quote it (refused in 2.0)"}}
 		}
 	case yaml.SequenceNode:
 		if t.Kind() != reflect.Slice {
 			return nil
 		}
 		for i, c := range n.Content {
-			if err := stringScalars(c, t.Elem(), path+"["+strconv.Itoa(i)+"]"); err != nil {
-				return err
-			}
+			issues = append(issues, stringScalars(c, t.Elem(), path+"["+strconv.Itoa(i)+"]")...)
 		}
 	case yaml.MappingNode:
-		for i := 0; i+1 < len(n.Content); i += 2 {
-			key := n.Content[i].Value
-			var ft reflect.Type
-			switch t.Kind() {
-			case reflect.Map:
-				ft = t.Elem()
-			case reflect.Struct:
-				ft = yamlField(t, key)
-			}
-			if ft == nil {
-				continue
-			}
-			if err := stringScalars(n.Content[i+1], ft, strings.TrimPrefix(path+"."+key, ".")); err != nil {
-				return err
-			}
+		issues = mappingStringScalars(n, t, path, nil)
+	}
+	return issues
+}
+
+// mappingStringScalars is stringScalars for the mapping n, skipping the keys in skip
+// (those set by the mapping a << merge key merges n into).
+func mappingStringScalars(n *yaml.Node, t reflect.Type, path string, skip map[string]bool) Issues {
+	own := map[string]bool{}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if k := n.Content[i]; k.ShortTag() != "!!merge" {
+			own[k.Value] = true
 		}
 	}
-	return nil
+	maps.Copy(own, skip)
+	var issues Issues
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		k, v := n.Content[i], n.Content[i+1]
+		if k.ShortTag() == "!!merge" {
+			if v.Kind == yaml.AliasNode && v.Alias != nil {
+				v = v.Alias
+			}
+			sources := []*yaml.Node{v}
+			if v.Kind == yaml.SequenceNode {
+				sources = v.Content
+			}
+			for _, s := range sources {
+				if s.Kind == yaml.AliasNode && s.Alias != nil {
+					s = s.Alias
+				}
+				if s.Kind == yaml.MappingNode {
+					issues = append(issues, mappingStringScalars(s, t, path, own)...)
+				}
+			}
+			continue
+		}
+		if skip[k.Value] {
+			continue
+		}
+		var ft reflect.Type
+		switch t.Kind() {
+		case reflect.Map:
+			ft = t.Elem()
+		case reflect.Struct:
+			ft = yamlField(t, k.Value)
+		}
+		if ft != nil {
+			issues = append(issues, stringScalars(v, ft, strings.TrimPrefix(path+"."+k.Value, "."))...)
+		}
+	}
+	return issues
 }
 
 // yamlField returns the type of the field of struct t that decodes the key, inlined
