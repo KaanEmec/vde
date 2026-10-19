@@ -13,9 +13,6 @@ import (
 	"github.com/kaanemec/vde/internal/job"
 )
 
-// Audit event kinds written by the HTTP layer.
-const auditAuthFailed = string(audit.AuthFailedKind)
-
 // lastUsedInterval bounds how often a token's last_used_at is written, so polls do not
 // write on every request.
 const lastUsedInterval = time.Minute
@@ -27,12 +24,6 @@ type principalKey struct{}
 func ApplicationFrom(ctx context.Context) (job.Application, bool) {
 	p, ok := ctx.Value(principalKey{}).(auth.Principal)
 	return p.Application, ok
-}
-
-// ScopesFrom returns the scopes of the request's token, nil when unauthenticated.
-func ScopesFrom(ctx context.Context) []string {
-	p, _ := ctx.Value(principalKey{}).(auth.Principal)
-	return p.Token.Scopes
 }
 
 // authenticate is the per-route authentication step: it resolves the bearer token
@@ -84,7 +75,7 @@ func (s *server) authenticate(need string, next http.Handler) http.Handler {
 			// Every authenticated /v1 response carries the quota headers (contract §8),
 			// a scope refusal too; an admin token has no application and gets none.
 			if p.Application.ID != "" && need != auth.ScopeAdmin {
-				if _, ok := s.quotaHeaders(w, r, p.Application); !ok {
+				if !s.quotaHeaders(w, r, p.Application) {
 					return
 				}
 			}

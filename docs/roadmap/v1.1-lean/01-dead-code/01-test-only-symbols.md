@@ -1,6 +1,6 @@
 # Job: Test-only and unused symbols
 
-Version: v1.1 · Epic: 01 Dead code · Status: planned · Depends on: 00-04
+Version: v1.1 · Epic: 01 Dead code · Status: done (Gate task left to the orchestrator) · Depends on: 00-04
 
 ## Goal
 
@@ -36,39 +36,50 @@ variant in tests, or kept with a reason. Audit findings (line numbers at `78b648
 
 ## Tasks
 
-- [ ] Refresh the inventory and confirm each row with references.
+- [x] Refresh the inventory and confirm each row with references.
   - Skill: EVID.
   - Prompt: "Run `deadcode ./cmd/...`, `deadcode -test ./...` and
     `golangci-lint run --no-config --default=none --enable=unused,unparam ./...`. For each
     symbol in the table of docs/roadmap/v1.1-lean/01-dead-code/01-test-only-symbols.md, run
     `gopls references` and grep `docs/` and `*.md` for its name. Report a table: symbol,
     production refs, test refs, doc refs, still valid yes/no. Change nothing."
-- [ ] Plan the order (one commit per package group: cmd/vde, api+auth, extract+document+pdf,
+- [x] Plan the order (one commit per package group: cmd/vde, api+auth, extract+document+pdf,
       ground+fake, config+logging).
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: remove or move the test-only and unused symbols
     in the table of docs/roadmap/v1.1-lean/01-dead-code/01-test-only-symbols.md, using the
     reference report above. Group steps by package; for renames use gopls rename. No
     worktrees or PRs; commits follow AGENTS.md. Guardrails: skills.md."
-- [ ] Execute the plan, one step at a time.
+- [x] Execute the plan, one step at a time.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Execute mode: step <n> of the approved plan. Run `make
     check` after the step. Guardrails: skills.md."
-- [ ] Single `document.Select` (the largest step: about 25 test call sites).
+- [x] Single `document.Select` (the largest step: about 25 test call sites).
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Execute mode: replace document.Select, SelectWith and
     SelectContext with one `Select(ctx, doc, extractor, judge, html, images, pdf
     PDFPolicy)`; update every caller and test with gopls; update the example in
     internal/extract/doc.go. Run `make check` and `make scenarios`. Guardrails: skills.md."
-- [ ] Remove the stale roadmap references in comments touched above.
+- [x] Remove the stale roadmap references in comments touched above.
   - Skill: PRTK (`comment-analyzer`).
   - Prompt: "Use the comment-analyzer agent on the diff of this job: report comments that
     name roadmap epics or jobs, describe removed code, or are now false. Go project; follow
     AGENTS.md. Guardrails: skills.md." Then fix the findings by hand.
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW, PRTK.
   - Prompt: `/code-review high <first>^..<last>`, then
     `/pr-review-toolkit:review-pr comments errors`.
+
+Kept after this job, with the reason (`deadcode ./cmd/...` lists only these):
+
+- `audit.Decode`, `audit.deref`: strict decoding oracle for tests in five packages (03-05).
+- `webhook.Verify`: the tests' oracle for `Sign`; comment corrected.
+- `fake.Answer`, `fake.Fail`, `fake.AlwaysRetryable`, `fake.AlwaysPermanent`: used across packages.
+- `document.MediaTypes` (not in the audit table): `cmd/vde`'s `TestMediaTypesByExtension`
+  checks every accepted type against the extension map, across packages.
+- `ground.Kind.String`: removed with `Kind` in 01-03. `logging.ContentLogger.Log`: removed in 01-02.
+- `ground.Rule.String` (not in the audit table) was removed; `TestParseRule` names the values.
+- `config.Load` was removed (`cmd/vde` keeps `loadConfigEnv`, which takes `getenv`).
 
 ## Acceptance criteria
 
@@ -84,3 +95,5 @@ variant in tests, or kept with a reason. Audit findings (line numbers at `78b648
   rows stored before v0.4: deployments of v0.3.0 may still hold such rows.
 - Unexporting identifiers that are used only in their own package (`job.SourceAdmin`,
   `config.SSEAES256`, ...): cosmetic.
+
+Result: production code 26 files changed, 71 insertions(+), 205 deletions(-); tests 18 files, +85 −115.

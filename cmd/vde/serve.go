@@ -58,7 +58,7 @@ Flags:
 `
 
 // Server timeouts. A request may upload up to limits.document_bytes plus pages, so the
-// whole request read is bounded at 60 s (job 01) and the response write after it.
+// whole request read is bounded at 60 s and the response write after it.
 const (
 	readHeaderTimeout = 10 * time.Second
 	readTimeout       = 60 * time.Second
@@ -92,7 +92,7 @@ func runServe(args []string, _, stderr io.Writer) int {
 		return exitUsage
 	}
 
-	cfg, issues, err := loadConfig(*path, false)
+	cfg, issues, err := loadConfigEnv(*path, false, os.Getenv)
 	for _, i := range issues {
 		fmt.Fprintln(stderr, i)
 	}
@@ -148,12 +148,6 @@ func checkListen(s config.Server) error {
 		return nil
 	}
 	return fmt.Errorf("server.listen %q is not a loopback address: set server.tls, or server.trusted_proxy when a reverse proxy terminates TLS", s.Listen)
-}
-
-// serve is serveAs with every role in the process (--role all).
-func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, logger *slog.Logger,
-	build func(*config.Endpoint) (provider.Provider, error)) error {
-	return serveAs(ctx, api.RoleAll, cfg, ln, adminLn, logger, build)
 }
 
 // serveAs opens the store, mirrors the configured applications into it, starts the worker
@@ -244,7 +238,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		if policy == "" {
 			policy = cfg.JudgePolicyOf(app)
 		}
-		return extract.ApplicationServiceVersionFor(cfg, app, policy, version.Version)
+		return extract.ApplicationServiceVersion(cfg, app, policy, version.Version)
 	}
 	inputsAtTerminal := map[string]bool{}
 	for _, a := range cfg.Applications {

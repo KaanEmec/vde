@@ -174,34 +174,23 @@ func documentLimit(l config.Limits) int64 {
 }
 
 // fetchPending fetches the document url of a JSON submission, if it has one, into
-// sub.document. createJob calls it after the submission limits, so a refused or
-// rate-limited caller makes the service fetch nothing.
+// sub.document under documents.fetch (fetch.go). createJob calls it after the submission
+// limits, so a refused or rate-limited caller makes the service fetch nothing; decoding
+// already refused a url when fetching is disabled.
 func (s *server) fetchPending(r *http.Request, sub *submission, limits config.Limits) (apiError, bool) {
 	if sub.documentURL == "" {
 		return newError(codeInternal, msgInternal), true
 	}
-	data, e, ok := s.fetchDocument(r, sub.documentURL, documentLimit(limits))
-	if !ok {
-		return e, false
+	data, err := s.fetch.get(r.Context(), sub.documentURL, documentLimit(limits))
+	switch {
+	case errors.Is(err, errFetchRefused):
+		return newError(codeBadRequest, msgFetchRefused), false
+	case errors.Is(err, errFetchTooLarge):
+		return newError(codePayloadTooLarge, msgFetchedTooLarge), false
+	case err != nil:
+		return newError(codeBadRequest, msgFetchFailed), false
 	}
 	sub.document = newPart(sub.document.mediaType, sub.document.filename, data)
 	sub.documentURL = ""
-	return e, true
-}
-
-// fetchDocument fetches a document url under documents.fetch (fetch.go).
-func (s *server) fetchDocument(r *http.Request, rawURL string, docLimit int64) ([]byte, apiError, bool) {
-	if s.fetch == nil {
-		return nil, newError(codeBadRequest, msgFetchDisabled), false
-	}
-	data, err := s.fetch.get(r.Context(), rawURL, docLimit)
-	switch {
-	case errors.Is(err, errFetchRefused):
-		return nil, newError(codeBadRequest, msgFetchRefused), false
-	case errors.Is(err, errFetchTooLarge):
-		return nil, newError(codePayloadTooLarge, msgFetchedTooLarge), false
-	case err != nil:
-		return nil, newError(codeBadRequest, msgFetchFailed), false
-	}
-	return data, newError(codeInternal, msgInternal), true
+	return newError(codeInternal, msgInternal), true
 }

@@ -196,7 +196,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	// Idempotency-Key: a replay creates nothing and must answer 202 (contract §4) even
 	// with the queue full, so a keyed request is read in full under its slot first and
 	// meets the ceiling only once the lookup found the key unused.
-	if key == "" && !s.queueRoom(w, r, refuse) {
+	if key == "" && !s.queueRoom(r, refuse) {
 		return nil, true
 	}
 	var sub *submission
@@ -237,7 +237,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 			s.answerReplay(w, r, *existing, sub.hash())
 			return nil, true
 		}
-		if !s.queueRoom(w, r, refuse) {
+		if !s.queueRoom(r, refuse) {
 			return nil, true
 		}
 	}
@@ -322,7 +322,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 
 // queueRoom applies limits.max_queued_jobs: it reports false after refusing with 503
 // when the ceiling is reached or the queue cannot be counted.
-func (s *server) queueRoom(w http.ResponseWriter, r *http.Request, refuse func(apiError)) bool {
+func (s *server) queueRoom(r *http.Request, refuse func(apiError)) bool {
 	limit := s.deps.Config.Limits.MaxQueuedJobs
 	if limit <= 0 {
 		return true
@@ -376,13 +376,6 @@ func (p *submitSlots) take(app string) (release func(), ok bool) {
 			delete(p.byApp, app)
 		}
 	}, true
-}
-
-// held is the number of slots held now.
-func (p *submitSlots) held() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.used
 }
 
 // queuedCount is the number of queued jobs of all applications, read from the store at
@@ -682,7 +675,7 @@ func selectRepresentation(ctx context.Context, cfg *config.Config, app job.Appli
 	// read the representation.
 	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
 	pdfPolicy := document.NewPDFPolicy(cfg.Documents.PDF, cfg.PDFModeOf(app.ID), engine)
-	return document.SelectContext(ctx, doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
+	return document.Select(ctx, doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), pdfPolicy)
 }
 
 // refuseDocument answers a refused document (*document.Error) with its contract code

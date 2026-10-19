@@ -111,7 +111,7 @@ func TestSelect(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			r, err := Select(doc, capsFor(t, tt.extractor...), capsFor(t, tt.judge...), tt.policy)
+			r, err := Select(t.Context(), doc, capsFor(t, tt.extractor...), capsFor(t, tt.judge...), tt.policy, ImagePolicy{}, PDFPolicy{})
 			if tt.wantErr {
 				if !errors.Is(err, ErrUnsupportedDocument) {
 					t.Fatalf("error = %v, want unsupported_document", err)
@@ -174,7 +174,7 @@ func TestSelectSamePartsForBothRoles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := Select(doc, caps, caps, VisibleText)
+		r, err := Select(t.Context(), doc, caps, caps, VisibleText, ImagePolicy{}, PDFPolicy{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -193,7 +193,7 @@ func TestSelectSamePartsForBothRoles(t *testing.T) {
 				t.Errorf("%s: part %d differs between roles", in.MediaType, i)
 			}
 		}
-		again, err := Select(doc, caps, caps, VisibleText)
+		again, err := Select(t.Context(), doc, caps, caps, VisibleText, ImagePolicy{}, PDFPolicy{})
 		if err != nil || !reflect.DeepEqual(again, r) {
 			t.Errorf("%s: Select is not deterministic", in.MediaType)
 		}
@@ -234,7 +234,7 @@ func TestHTMLPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Select(doc, nil, nil, "bogus"); err == nil {
+	if _, err := Select(t.Context(), doc, nil, nil, "bogus", ImagePolicy{}, PDFPolicy{}); err == nil {
 		t.Error("Select accepted an unknown policy")
 	}
 }

@@ -125,8 +125,8 @@ above a minute.
 
 A role recovers by itself: a down mark lasts 30 seconds, doubling to at most 5 minutes, and
 the pair is still tried after the healthy ones. Reasons never name providers or documents.
-Point the orchestrator at it, not the public internet. Behind `trusted_proxy`, a direct probe
-needs the header `X-Forwarded-Proto: https`; `vde healthcheck` sends it. The container image
+Point the orchestrator at it, not the public internet. `GET /healthz` is exempt from the HTTPS rule, so
+a direct probe needs no `X-Forwarded-Proto` header behind `trusted_proxy`. The container image
 runs `vde healthcheck` every 30 seconds. `/healthz` checks that the service can accept jobs;
 it does not make a model call, so a wrong provider key does not show here (see
 [troubleshooting](troubleshooting.md#provider-failures)).

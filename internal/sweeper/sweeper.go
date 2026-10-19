@@ -40,7 +40,7 @@ type Locker interface {
 	TryLock(ctx context.Context, key int64) (release func(), ok bool, err error)
 }
 
-// Observer receives the sweeper's metric (epic 07).
+// Observer receives the sweeper's metric.
 type Observer interface {
 	// AddSwept counts n expired jobs: their content, blobs included, deleted at
 	// expires_at (or their row removed, for a job whose content the sweeper had not

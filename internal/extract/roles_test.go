@@ -124,7 +124,7 @@ func TestRoleCapabilities(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				rep, err := document.Select(doc, ext, jdg, document.RawHTML)
+				rep, err := document.Select(t.Context(), doc, ext, jdg, document.RawHTML, document.ImagePolicy{}, document.PDFPolicy{})
 				want, fails := tt.pdfKind, tt.pdfFails
 				if pages {
 					want, fails = tt.pagesKind, tt.pagesKind < 0

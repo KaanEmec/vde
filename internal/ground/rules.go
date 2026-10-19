@@ -28,14 +28,6 @@ const Annotation = "x-vde-grounding"
 
 var ruleNames = [...]string{RuleNone: "", RuleCheck: "check", RuleDerived: "derived", RuleSkip: "skip", RuleCritical: "critical"}
 
-// String returns the annotation value of r ("" for RuleNone).
-func (r Rule) String() string {
-	if int(r) < len(ruleNames) {
-		return ruleNames[r]
-	}
-	return "rule(" + strconv.Itoa(int(r)) + ")"
-}
-
 // ErrUnknownRule is returned for an x-vde-grounding value that is not check, derived,
 // skip or critical.
 var ErrUnknownRule = errors.New("ground: unknown " + Annotation + " value")

@@ -108,9 +108,7 @@ func ParseScopes(list string) ([]string, error) {
 // alone: admin tokens are refused on /v1).
 func Permits(scopes []string, need string) bool {
 	switch need {
-	case "":
-		return slices.Contains(scopes, ScopeJobsRead) || slices.Contains(scopes, ScopeJobs)
-	case ScopeJobsRead:
+	case "", ScopeJobsRead:
 		return slices.Contains(scopes, ScopeJobsRead) || slices.Contains(scopes, ScopeJobs)
 	default:
 		return slices.Contains(scopes, need)

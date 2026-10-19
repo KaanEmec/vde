@@ -18,7 +18,7 @@ import (
 	"github.com/kaanemec/vde/internal/job"
 )
 
-// The admin API (epic 11, api/admin-openapi.yaml): run-time management of applications,
+// The admin API (api/admin-openapi.yaml): run-time management of applications,
 // tokens and jobs on its own listener, reached only with admin tokens. It calls the store
 // methods the CLI calls (auth.Create, RevokeToken, ListTokens, ListAudit, …). Changes are
 // audited with the fixed kinds (token.created, token.revoked, app.enabled, app.disabled,

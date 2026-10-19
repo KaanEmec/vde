@@ -106,7 +106,7 @@ type errorDetail struct {
 }
 
 // writeError writes e in the contract §9 shape. It keeps headers already set (the quota
-// headers of epic 05, X-Service-Version), adds Retry-After when e has one, and takes
+// headers, X-Service-Version), adds Retry-After when e has one, and takes
 // request_id from the X-Request-Id response header set by the request id middleware.
 func writeError(w http.ResponseWriter, _ *http.Request, e apiError) {
 	h := w.Header()

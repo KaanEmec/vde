@@ -9,19 +9,15 @@ import (
 
 func TestParseRule(t *testing.T) {
 	t.Parallel()
-	for _, r := range []Rule{RuleCheck, RuleDerived, RuleSkip, RuleCritical} {
-		got, err := ParseRule(r.String())
-		if err != nil || got != r {
-			t.Errorf("ParseRule(%q) = %v, %v, want %v", r.String(), got, err, r)
+	for s, want := range map[string]Rule{"check": RuleCheck, "derived": RuleDerived, "skip": RuleSkip, "critical": RuleCritical} {
+		if got, err := ParseRule(s); err != nil || got != want {
+			t.Errorf("ParseRule(%q) = %v, %v, want %v", s, got, err, want)
 		}
 	}
 	for _, s := range []string{"", "maybe", "Critical"} {
 		if _, err := ParseRule(s); !errors.Is(err, ErrUnknownRule) {
 			t.Errorf("ParseRule(%q) error = %v, want ErrUnknownRule", s, err)
 		}
-	}
-	if got := Rule(42).String(); got != "rule(42)" {
-		t.Errorf("Rule(42).String() = %q", got)
 	}
 }
 

@@ -31,7 +31,7 @@ const (
 	finishTimeout       = 10 * time.Second
 )
 
-// Observer receives job metrics (epic 07). Labels must come from configuration ids.
+// Observer receives job metrics. Labels must come from configuration ids.
 type Observer interface {
 	// JobStarted is called when a worker leased a job.
 	JobStarted(applicationID string)
@@ -77,7 +77,7 @@ type Options struct {
 	OnFinish func(job.Job)
 	// PDF prepares PDFs that no group reads natively (text layer or rendered pages, ADR
 	// 0010) and reads the grounding text of the others under judge policy never and
-	// auto; nil keeps the v0.3 selection. It must be the engine submit selected with,
+	// auto; nil does neither (such PDFs need caller pages). It must be the engine submit selected with,
 	// so the worker re-selects the same representation.
 	PDF document.PDFEngine
 }
@@ -385,7 +385,7 @@ func (p *Pool) input(ctx context.Context, app config.Application, j job.Job) (in
 	// The same selection as at submit: the image policy, and the PDF policy with the
 	// process's engine (a PDF chosen as text at submit is read as text again).
 	pdfPolicy := document.NewPDFPolicy(p.cfg.Documents.PDF, app.Documents.PDF.Mode, p.opts.PDF)
-	rep, err := document.SelectContext(ctx, doc, p.extractorCaps, p.judgeCaps, policy, document.NewImagePolicy(p.cfg.Documents.Images), pdfPolicy)
+	rep, err := document.Select(ctx, doc, p.extractorCaps, p.judgeCaps, policy, document.NewImagePolicy(p.cfg.Documents.Images), pdfPolicy)
 	if err != nil {
 		return in, "representation", err
 	}

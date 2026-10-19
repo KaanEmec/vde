@@ -223,11 +223,11 @@ func TestEmailMatchesHTMLBody(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		fromEmail, err := Select(emailDoc, caps, caps, policy)
+		fromEmail, err := Select(t.Context(), emailDoc, caps, caps, policy, ImagePolicy{}, PDFPolicy{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		fromHTML, err := Select(htmlDoc, caps, caps, policy)
+		fromHTML, err := Select(t.Context(), htmlDoc, caps, caps, policy, ImagePolicy{}, PDFPolicy{})
 		if err != nil {
 			t.Fatal(err)
 		}

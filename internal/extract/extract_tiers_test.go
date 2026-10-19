@@ -550,7 +550,7 @@ func scenarioRunInput(t *testing.T, root, path string, cfg *config.Config) scena
 		policy = document.HTMLPolicy(sc.Input.HTML)
 	}
 	ext, jdg := RoleCapabilities(cfg)
-	rep, err := document.SelectWith(doc, ext, jdg, policy, document.NewImagePolicy(cfg.Documents.Images))
+	rep, err := document.Select(t.Context(), doc, ext, jdg, policy, document.NewImagePolicy(cfg.Documents.Images), document.PDFPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}

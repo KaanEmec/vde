@@ -31,10 +31,7 @@ func lines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 
 func TestAllowedKeys(t *testing.T) {
 	t.Parallel()
-	got := AllowedKeys()
-	if !slices.IsSorted(got) {
-		t.Error("AllowedKeys is not sorted")
-	}
+	got := allowed
 	// The keys the code logs with today and the keys the contract's job file lists.
 	for _, want := range []string{
 		"job_id", "app_id", "application_id", "request_id", "status", "attempts", "endpoint",
@@ -44,7 +41,7 @@ func TestAllowedKeys(t *testing.T) {
 		"trusted_proxy", "drain_timeout", "msg", "time", "level",
 	} {
 		if !slices.Contains(got, want) {
-			t.Errorf("AllowedKeys lacks %q", want)
+			t.Errorf("allowed lacks %q", want)
 		}
 	}
 	// Content-bearing names must never be added.
@@ -54,12 +51,8 @@ func TestAllowedKeys(t *testing.T) {
 		"filename", "token", "authorization", "api_key",
 	} {
 		if slices.Contains(got, bad) {
-			t.Errorf("AllowedKeys contains content or secret key %q", bad)
+			t.Errorf("allowed contains content or secret key %q", bad)
 		}
-	}
-	got[0] = "mutated"
-	if slices.Contains(AllowedKeys(), "mutated") {
-		t.Error("AllowedKeys returns the internal slice")
 	}
 }
 

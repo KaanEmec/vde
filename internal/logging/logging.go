@@ -3,7 +3,6 @@ package logging
 import (
 	"io"
 	"log/slog"
-	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -48,14 +47,6 @@ var allowed = []string{
 	slog.TimeKey, slog.LevelKey, slog.MessageKey, slog.SourceKey,
 }
 
-// AllowedKeys returns the attribute keys the redacting handler lets through, sorted.
-// The result is a copy.
-func AllowedKeys() []string {
-	keys := slices.Clone(allowed)
-	slices.Sort(keys)
-	return keys
-}
-
 var allowSet = func() map[string]struct{} {
 	m := make(map[string]struct{}, len(allowed))
 	for _, k := range allowed {
@@ -65,7 +56,7 @@ var allowSet = func() map[string]struct{} {
 }()
 
 // New returns a logger writing to w at level and format ("json" or "text"; anything
-// else is JSON). Every attribute whose key is not in AllowedKeys is dropped, and string
+// else is JSON). Every attribute whose key is not in allowed is dropped, and string
 // values longer than MaxValueLen runes are cut.
 func New(w io.Writer, level slog.Level, format string) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: level, ReplaceAttr: redact}

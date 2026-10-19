@@ -50,7 +50,7 @@ var semverRe = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // policy is not always (natively sent PDFs are then opened for grounding). It excludes
 // secrets, listen addresses, data paths and application settings.
 //
-// For an application (v0.2) use ApplicationServiceVersion, so each application's jobs
+// For an application use ApplicationServiceVersion, so each application's jobs
 // carry the hash of the configuration that runs them.
 func ServiceVersion(cfg *config.Config, buildVersion string) string {
 	return serviceVersion(cfg, config.DefaultSampleRate, buildVersion)
@@ -65,16 +65,11 @@ func serviceVersion(cfg *config.Config, sampleRate float64, buildVersion string)
 	return "vde-" + semver + "+" + hex.EncodeToString(sum[:4])
 }
 
-// ApplicationServiceVersion is ServiceVersion with the application's attempt limit, HTML
-// policy, PDF mode and effective judge policy (with its sample rate) in place of the
-// global ones (zero values keep the global ones).
-func ApplicationServiceVersion(cfg *config.Config, app config.Application, buildVersion string) string {
-	return ApplicationServiceVersionFor(cfg, app, cfg.JudgePolicyOf(app), buildVersion)
-}
-
-// ApplicationServiceVersionFor is ApplicationServiceVersion for a job run under policy,
-// which a request may choose when the application allows override.
-func ApplicationServiceVersionFor(cfg *config.Config, app config.Application, policy config.JudgePolicy, buildVersion string) string {
+// ApplicationServiceVersion is ServiceVersion with the application's attempt limit,
+// HTML policy, PDF mode and sample rate in place of the global ones (zero values keep the
+// global ones), for a job run under policy: the application's effective one
+// (cfg.JudgePolicyOf), or the one a request chose when the application allows override.
+func ApplicationServiceVersion(cfg *config.Config, app config.Application, policy config.JudgePolicy, buildVersion string) string {
 	c := *cfg
 	if app.MaxAttempts > 0 {
 		c.Limits.MaxAttempts = app.MaxAttempts
@@ -87,21 +82,6 @@ func ApplicationServiceVersionFor(cfg *config.Config, app config.Application, po
 	}
 	c.Roles.Judge.Policy = policy
 	return serviceVersion(&c, app.Judge.Rate(), buildVersion)
-}
-
-// ApplicationServiceVersions returns the service_version of every judge policy the
-// application's jobs can run under: its effective policy alone, or all three when it
-// allows override.
-func ApplicationServiceVersions(cfg *config.Config, app config.Application, buildVersion string) map[config.JudgePolicy]string {
-	policies := []config.JudgePolicy{cfg.JudgePolicyOf(app)}
-	if app.Judge.AllowOverride {
-		policies = config.JudgePolicies
-	}
-	out := make(map[config.JudgePolicy]string, len(policies))
-	for _, p := range policies {
-		out[p] = ApplicationServiceVersionFor(cfg, app, p, buildVersion)
-	}
-	return out
 }
 
 type versionedConfig struct {

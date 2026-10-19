@@ -19,9 +19,9 @@ func TestHelpers(t *testing.T) {
 		script fake.Script
 		want   []string
 	}{
-		{"accept first try", fake.AcceptFirstTry("c"), []string{"c", fake.AcceptVerdict, "error permanent 0"}},
-		{"schema invalid then valid", fake.SchemaInvalidThenValid("bad", "good"), []string{"bad", "good", fake.AcceptVerdict}},
-		{"reject then accept", fake.RejectThenAccept("c1", "c2"), []string{"c1", fake.RejectVerdict, "c2", fake.AcceptVerdict}},
+		{"accept first try", fake.Script{fake.Answer("c"), fake.Answer(fake.AcceptVerdict)}, []string{"c", fake.AcceptVerdict, "error permanent 0"}},
+		{"schema invalid then valid", fake.Script{fake.Answer("bad"), fake.Answer("good"), fake.Answer(fake.AcceptVerdict)}, []string{"bad", "good", fake.AcceptVerdict}},
+		{"reject then accept", fake.Script{fake.Answer("c1"), fake.Answer(fake.RejectVerdict), fake.Answer("c2"), fake.Answer(fake.AcceptVerdict)}, []string{"c1", fake.RejectVerdict, "c2", fake.AcceptVerdict}},
 		{"always retryable", fake.AlwaysRetryable(503), []string{"error retryable 503", "error retryable 503"}},
 		{"always permanent", fake.AlwaysPermanent(403), []string{"error permanent 403", "error permanent 403"}},
 	}

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
@@ -177,7 +178,7 @@ func TestAuthenticateRefusals(t *testing.T) {
 			ev := store.last()
 			var details map[string]string
 			_ = json.Unmarshal(ev.Details, &details)
-			if ev.Kind != auditAuthFailed || details["reason"] != string(tt.reason) || ev.ApplicationID != tt.wantApp || len(details) != 1 {
+			if ev.Kind != string(audit.AuthFailedKind) || details["reason"] != string(tt.reason) || ev.ApplicationID != tt.wantApp || len(details) != 1 {
 				t.Errorf("audit = %+v %s, want auth.failed reason %s application %q", ev, ev.Details, tt.reason, tt.wantApp)
 			}
 		})
@@ -308,7 +309,8 @@ func TestAuthenticateContext(t *testing.T) {
 	s.mux = http.NewServeMux()
 	s.mux.Handle("GET /v1/jobs/{id}", s.authenticate(auth.ScopeJobsRead, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		gotApp, _ = ApplicationFrom(r.Context())
-		gotScopes = ScopesFrom(r.Context())
+		p, _ := r.Context().Value(principalKey{}).(auth.Principal)
+		gotScopes = p.Token.Scopes
 	})))
 	token := issueToken(t, store, testApp, []string{auth.ScopeJobsRead, auth.ScopeJobs}, testNow.Add(time.Hour))
 	id, _, _ := auth.Parse(token)

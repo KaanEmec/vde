@@ -3,9 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"reflect"
@@ -40,17 +38,6 @@ func loadExample(t *testing.T) *Config {
 		t.Fatalf("Parse(example) error: %v", err)
 	}
 	return cfg
-}
-
-func TestLoad(t *testing.T) {
-	t.Parallel()
-	if _, err := Load("testdata/example.yaml"); err != nil {
-		t.Errorf("Load(example) error: %v", err)
-	}
-	_, err := Load("testdata/does-not-exist.yaml")
-	if !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("Load(missing) error = %v, want fs.ErrNotExist", err)
-	}
 }
 
 func TestParse_example(t *testing.T) {

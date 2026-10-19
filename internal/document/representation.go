@@ -123,14 +123,10 @@ func (r Representation) Label() string {
 //     supplied and a pair accepts their types;
 //  3. the judge group must read the same choice, else the next option is tried.
 //
-// When nothing fits both roles it returns ErrUnsupportedDocument. Select neither
-// converts images nor reads PDFs itself; see SelectWith.
-func Select(doc *Document, extractor, judge []config.Capability, policy HTMLPolicy) (Representation, error) {
-	return SelectWith(doc, extractor, judge, policy, ImagePolicy{})
-}
-
-// SelectWith is Select with an image policy. Images are converted here, once, and the
-// converted bytes are the Parts both roles read:
+// When nothing fits both roles it returns ErrUnsupportedDocument.
+//
+// Images are converted here under images, once, and the converted bytes are the Parts
+// both roles read:
 //
 //   - an image that needs downscaling or EXIF rotation is offered converted, then as
 //     given, so a group that only reads the original type still works;
@@ -138,27 +134,20 @@ func Select(doc *Document, extractor, judge []config.Capability, policy HTMLPoli
 //     image/webp (or whose roles disagree on it) reads the JPEG or PNG conversion;
 //   - page images follow the same rules, converted or as given as a whole.
 //
-// Representation.MediaTypes reports the types after conversion. A disabled policy
+// Representation.MediaTypes reports the types after conversion. A disabled image policy
 // leaves every image as given.
 //
-// An optional PDFPolicy with an engine (ADR 0010) lets the service prepare a PDF that
-// neither a native reader nor the caller's pages serve: under auto, its text layer when
-// every page has at least MinTextChars characters, else its pages rendered at DPI (then
-// through the image policy); text and pages force one; native keeps ADR 0006's refusal.
-// A PDF with more than MaxPages pages is refused then. Without a PDF policy, or with a
-// nil engine, PDFs are selected as before. Only the first PDFPolicy is used.
+// A PDF policy with an engine (ADR 0010) lets the service prepare a PDF that neither a
+// native reader nor the caller's pages serve: under auto, its text layer when every page
+// has at least MinTextChars characters, else its pages rendered at DPI (then through the
+// image policy); text and pages force one; native keeps ADR 0006's refusal. A PDF with
+// more than MaxPages pages is refused then. With a zero PDFPolicy (no engine) such a PDF
+// needs caller pages.
 //
-// SelectWith runs the PDF engine without a deadline of its own (each engine call is
-// bounded by the engine's timeout); SelectContext takes the request's or job's context.
-func SelectWith(doc *Document, extractor, judge []config.Capability, policy HTMLPolicy, images ImagePolicy, pdfs ...PDFPolicy) (Representation, error) {
-	return SelectContext(context.Background(), doc, extractor, judge, policy, images, pdfs...)
-}
-
-// SelectContext is SelectWith under ctx: a PDF the service prepares is opened, read and
-// rendered under it, so cancellation (shutdown, a gone client) and a job's deadline
-// stop the engine. An engine with no instance free reports pdf.ErrBusy (wrapped, not a
-// refusal): try again later.
-func SelectContext(ctx context.Context, doc *Document, extractor, judge []config.Capability, policy HTMLPolicy, images ImagePolicy, pdfs ...PDFPolicy) (Representation, error) {
+// A PDF the service prepares is opened, read and rendered under ctx, so cancellation
+// (shutdown, a gone client) and a job's deadline stop the engine. An engine with no
+// instance free reports pdf.ErrBusy (wrapped, not a refusal): try again later.
+func Select(ctx context.Context, doc *Document, extractor, judge []config.Capability, policy HTMLPolicy, images ImagePolicy, pdf PDFPolicy) (Representation, error) {
 	policy, err := policy.resolve()
 	if err != nil {
 		return Representation{}, err
@@ -173,8 +162,8 @@ func SelectContext(ctx context.Context, doc *Document, extractor, judge []config
 		}
 		return build(doc, c, policy)
 	}
-	if len(pdfs) > 0 && doc.Category == CategoryPDF && pdfs[0].active() {
-		return selectPDF(ctx, doc, extractor, judge, images, pdfs[0])
+	if doc.Category == CategoryPDF && pdf.active() {
+		return selectPDF(ctx, doc, extractor, judge, images, pdf)
 	}
 	return Representation{}, refuse(CodeUnsupportedDocument,
 		"no representation of %s is readable by both the extractor and the judge group", doc.BaseType())

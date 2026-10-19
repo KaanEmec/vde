@@ -14,7 +14,7 @@
 // and per job:
 //
 //	schema, err := extract.CompileSchema(schemaBytes) // errors.Is(err, extract.ErrInvalidSchema)
-//	rep, err := document.SelectWith(doc, extractorCaps, judgeCaps, htmlPolicy, imagePolicy)
+//	rep, err := document.Select(ctx, doc, extractorCaps, judgeCaps, htmlPolicy, imagePolicy, pdfPolicy)
 //	out := extract.Run(ctx, extract.Input{
 //		Representation:        rep,
 //		ExtractorInstructions: extractorInstructions,

@@ -80,7 +80,7 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
-	cfg, issues, err := loadConfig(*path, *strict)
+	cfg, issues, err := loadConfigEnv(*path, *strict, os.Getenv)
 	for _, i := range issues {
 		fmt.Fprintln(stderr, i)
 	}
@@ -89,7 +89,7 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 	}
 	// The schema's violations come after Validate's, whether or not Validate passed. A
-	// file that cannot be read or is not YAML fails loadConfig already.
+	// file that cannot be read or is not YAML fails loadConfigEnv already.
 	violations, serr := schemaViolations(*path)
 	for _, v := range violations {
 		fmt.Fprintf(stderr, "error: schema: %s: %s\n", v.Key, v.Message)
@@ -115,14 +115,9 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
-// loadConfig loads and validates the configuration. Every command that needs a
-// configuration (config check, serve, extract) goes through it and refuses to run when it
-// returns an error.
-func loadConfig(path string, strict bool) (*config.Config, config.Issues, error) {
-	return loadConfigEnv(path, strict, os.Getenv)
-}
-
-// loadConfigEnv is loadConfig with the endpoint keys resolved through getenv.
+// loadConfigEnv loads and validates the configuration, resolving the endpoint keys
+// through getenv. Every command that needs a configuration (config check, serve, extract,
+// eval) goes through it and refuses to run when it returns an error.
 func loadConfigEnv(path string, strict bool, getenv func(string) string) (*config.Config, config.Issues, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

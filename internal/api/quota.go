@@ -85,17 +85,17 @@ func (s *server) setQuotaHeaders(h http.Header, app job.Application, q quotaStat
 // quotaHeaders is the first half of the limit step: it puts the quota headers on the
 // response before the handler runs, so errors carry them too. It reports false after
 // answering 500 when the quota cannot be read.
-func (s *server) quotaHeaders(w http.ResponseWriter, r *http.Request, app job.Application) (quotaState, bool) {
+func (s *server) quotaHeaders(w http.ResponseWriter, r *http.Request, app job.Application) bool {
 	q, err := s.currentQuota(r.Context(), app)
 	if err != nil {
 		s.log.LogAttrs(r.Context(), slog.LevelError, "quota not readable",
 			slog.String("request_id", requestIDFrom(r.Context())), slog.String("error", err.Error()))
 		closeIfBodyPending(w, r)
 		writeError(w, r, newError(codeInternal, msgInternal))
-		return q, false
+		return false
 	}
 	s.setQuotaHeaders(w.Header(), app, q)
-	return q, true
+	return true
 }
 
 // untilReset is the Retry-After of a spent quota: whole seconds to the reset, at least 1.

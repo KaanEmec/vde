@@ -81,16 +81,16 @@ func TestApplicationServiceVersion(t *testing.T) {
 	cfg := parseVersionConfig(t, nil)
 	global := ServiceVersion(cfg, "v0.2.0")
 	app := cfg.Applications[0] // max_attempts defaults to limits.max_attempts
-	if got := ApplicationServiceVersion(cfg, app, "v0.2.0"); got != global {
+	if got := ApplicationServiceVersion(cfg, app, cfg.JudgePolicyOf(app), "v0.2.0"); got != global {
 		t.Errorf("default application = %q, want the global %q", got, global)
 	}
 	app.MaxAttempts = 5
-	five := ApplicationServiceVersion(cfg, app, "v0.2.0")
+	five := ApplicationServiceVersion(cfg, app, cfg.JudgePolicyOf(app), "v0.2.0")
 	if five == global {
 		t.Error("an application attempt limit of 5 did not change service_version")
 	}
 	app.MaxAttempts, app.Documents.HTML = 3, "visible_text"
-	if got := ApplicationServiceVersion(cfg, app, "v0.2.0"); got == global || got == five {
+	if got := ApplicationServiceVersion(cfg, app, cfg.JudgePolicyOf(app), "v0.2.0"); got == global || got == five {
 		t.Errorf("an application HTML policy did not change service_version: %q", got)
 	}
 	if cfg.Limits.MaxAttempts != 3 || cfg.Documents.HTML != "raw_html" {
@@ -247,17 +247,17 @@ func TestApplicationServiceVersion_judge(t *testing.T) {
 	cfg := parseVersionConfig(t, nil)
 	global := ServiceVersion(cfg, "v0.4.0")
 	app := cfg.Applications[0]
-	if got := ApplicationServiceVersion(cfg, app, "v0.4.0"); got != global {
+	if got := ApplicationServiceVersion(cfg, app, cfg.JudgePolicyOf(app), "v0.4.0"); got != global {
 		t.Errorf("default application = %q, want the global %q", got, global)
 	}
 	explicit := app
 	explicit.Judge.Policy = config.JudgeAlways
-	if got := ApplicationServiceVersion(cfg, explicit, "v0.4.0"); got != global {
+	if got := ApplicationServiceVersion(cfg, explicit, cfg.JudgePolicyOf(explicit), "v0.4.0"); got != global {
 		t.Errorf("explicit always = %q, want the global %q", got, global)
 	}
 	rate := 0.2
 	explicit.Judge.SampleRate = &rate
-	if got := ApplicationServiceVersion(cfg, explicit, "v0.4.0"); got != global {
+	if got := ApplicationServiceVersion(cfg, explicit, cfg.JudgePolicyOf(explicit), "v0.4.0"); got != global {
 		t.Errorf("a sample rate under always = %q, want the global %q", got, global)
 	}
 
@@ -275,7 +275,7 @@ func TestApplicationServiceVersion_judge(t *testing.T) {
 	} {
 		a := app
 		tt.app(&a)
-		got := ApplicationServiceVersion(cfg, a, "v0.4.0")
+		got := ApplicationServiceVersion(cfg, a, cfg.JudgePolicyOf(a), "v0.4.0")
 		if prev, dup := seen[got]; dup {
 			t.Errorf("%s has the service_version of %s: %q", tt.name, prev, got)
 		}
@@ -285,45 +285,14 @@ func TestApplicationServiceVersion_judge(t *testing.T) {
 	// The role's policy is the application's default.
 	never := *cfg
 	never.Roles.Judge.Policy = config.JudgeNever
-	viaRole := ApplicationServiceVersion(&never, app, "v0.4.0")
+	viaRole := ApplicationServiceVersion(&never, app, (&never).JudgePolicyOf(app), "v0.4.0")
 	own := app
 	own.Judge.Policy = config.JudgeNever
-	if viaRole != ApplicationServiceVersion(cfg, own, "v0.4.0") || viaRole == global {
+	if viaRole != ApplicationServiceVersion(cfg, own, cfg.JudgePolicyOf(own), "v0.4.0") || viaRole == global {
 		t.Errorf("roles.judge.policy never = %q, want the application never version", viaRole)
 	}
 	if cfg.Roles.Judge.Policy != config.JudgeAlways {
 		t.Error("ApplicationServiceVersion changed the configuration")
-	}
-}
-
-func TestApplicationServiceVersions(t *testing.T) {
-	cfg := parseVersionConfig(t, nil)
-	app := cfg.Applications[0]
-	one := ApplicationServiceVersions(cfg, app, "v0.4.0")
-	if len(one) != 1 || one[config.JudgeAlways] != ApplicationServiceVersion(cfg, app, "v0.4.0") {
-		t.Errorf("without allow_override = %v, want only always", one)
-	}
-	app.Judge = config.AppJudge{Policy: config.JudgeAuto}
-	if got := ApplicationServiceVersions(cfg, app, "v0.4.0"); len(got) != 1 || got[config.JudgeAuto] == "" {
-		t.Errorf("auto without allow_override = %v, want only auto", got)
-	}
-	app.Judge.AllowOverride = true
-	all := ApplicationServiceVersions(cfg, app, "v0.4.0")
-	if len(all) != 3 {
-		t.Fatalf("with allow_override = %v, want three", all)
-	}
-	distinct := map[string]bool{}
-	for p, v := range all {
-		distinct[v] = true
-		if v != ApplicationServiceVersionFor(cfg, app, p, "v0.4.0") {
-			t.Errorf("%s: %q, want ApplicationServiceVersionFor's", p, v)
-		}
-	}
-	if len(distinct) != 3 {
-		t.Errorf("versions %v are not distinct", all)
-	}
-	if all[config.JudgeAlways] != ServiceVersion(cfg, "v0.4.0") {
-		t.Errorf("always under override = %q, want the global version", all[config.JudgeAlways])
 	}
 }
 
@@ -430,7 +399,7 @@ func TestServiceVersion_pdfPolicy(t *testing.T) {
 	}
 	app := cfg.Applications[0]
 	app.Documents.PDF.Mode = config.PDFModePages
-	if ApplicationServiceVersion(cfg, app, "v0.4.0") == global {
+	if ApplicationServiceVersion(cfg, app, cfg.JudgePolicyOf(app), "v0.4.0") == global {
 		t.Error("an application PDF mode did not change its service_version")
 	}
 }

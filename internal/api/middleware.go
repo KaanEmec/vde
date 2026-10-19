@@ -25,7 +25,7 @@ const (
 
 // wrap applies the middleware chain, outermost first: panic recovery, request id,
 // HTTPS enforcement, access log. The per-route steps, authentication (auth.go) and rate
-// limit and quota (epic 05), run inside the mux (routes). The admin listener is reached
+// limit and quota (ratelimit.go, quota.go), run inside the mux (routes). The admin listener is reached
 // directly, never through the reverse proxy, so server.trusted_proxy does not apply to it.
 func (s *server) wrap(h http.Handler) http.Handler {
 	var srv config.Server
@@ -185,7 +185,7 @@ func (s *server) limit(next http.Handler) http.Handler {
 			writeError(w, r, newError(codeInternal, msgInternal))
 			return
 		}
-		if _, ok := s.quotaHeaders(w, r, app); !ok {
+		if !s.quotaHeaders(w, r, app) {
 			return
 		}
 		if wait, ok := s.takeRate(r.Context(), app.ID, bucketRequests, app.RequestsPerMinute, s.now()); !ok {

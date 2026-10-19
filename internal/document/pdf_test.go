@@ -71,7 +71,7 @@ func stubPolicy(mode string, e PDFEngine) PDFPolicy {
 	return PDFPolicy{Mode: mode, DPI: 150, MaxPages: 20, MinTextChars: 200, Engine: e}
 }
 
-func TestSelectWith_pdfPolicy(t *testing.T) {
+func TestSelect_pdfPolicy(t *testing.T) {
 	t.Parallel()
 	var (
 		pdfNative = []string{"application/pdf", "image/png", "image/jpeg", "text/plain"}
@@ -167,7 +167,7 @@ func TestSelectWith_pdfPolicy(t *testing.T) {
 				engine = nil
 			}
 			ext, jdg := capsFor(t, tt.extractor), capsFor(t, tt.judge)
-			rep, err := SelectWith(doc, ext, jdg, "", tt.images, stubPolicy(tt.mode, engine))
+			rep, err := Select(t.Context(), doc, ext, jdg, "", tt.images, stubPolicy(tt.mode, engine))
 			if got := stub.opens.Load(); got != tt.wantOpens {
 				t.Errorf("engine opened %d times, want %d", got, tt.wantOpens)
 			}
@@ -184,7 +184,7 @@ func TestSelectWith_pdfPolicy(t *testing.T) {
 				}
 				return
 			case err != nil:
-				t.Fatalf("SelectWith: %v", err)
+				t.Fatalf("Select: %v", err)
 			}
 			if rep.Kind != tt.wantKind || rep.Source != tt.wantSource || !reflect.DeepEqual(rep.MediaTypes, tt.wantTypes) {
 				t.Errorf("got %s/%s %v, want %s/%s %v", rep.Kind, rep.Source, rep.MediaTypes, tt.wantKind, tt.wantSource, tt.wantTypes)
@@ -195,7 +195,7 @@ func TestSelectWith_pdfPolicy(t *testing.T) {
 			if rep.Source == SourceRendered && len(rep.Parts) != len(tt.texts) {
 				t.Errorf("%d rendered parts for %d pages", len(rep.Parts), len(tt.texts))
 			}
-			again, err := SelectWith(doc, ext, jdg, "", tt.images, stubPolicy(tt.mode, engine))
+			again, err := Select(t.Context(), doc, ext, jdg, "", tt.images, stubPolicy(tt.mode, engine))
 			if err != nil || !reflect.DeepEqual(rep, again) {
 				t.Errorf("selecting twice differs (err %v)", err)
 			}
@@ -203,7 +203,7 @@ func TestSelectWith_pdfPolicy(t *testing.T) {
 	}
 }
 
-func TestSelectWith_pdfTextParts(t *testing.T) {
+func TestSelect_pdfTextParts(t *testing.T) {
 	t.Parallel()
 	doc, err := New(Input{MediaType: "application/pdf", Data: pdfData}, config.Limits{})
 	if err != nil {
@@ -211,7 +211,7 @@ func TestSelectWith_pdfTextParts(t *testing.T) {
 	}
 	stub := &stubPDF{texts: []string{"  first page\r\n", "second page "}}
 	caps := capsFor(t, []string{"text/plain"})
-	rep, err := SelectWith(doc, caps, caps, "", ImagePolicy{}, stubPolicy("text", stub))
+	rep, err := Select(t.Context(), doc, caps, caps, "", ImagePolicy{}, stubPolicy("text", stub))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestGroundingText(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rep, err := Select(doc, text, text, tt.policy)
+			rep, err := Select(t.Context(), doc, text, text, tt.policy, ImagePolicy{}, PDFPolicy{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -329,7 +329,7 @@ func TestGroundingText_pdfSentAsGiven(t *testing.T) {
 			}
 			stub := &stubPDF{texts: tt.texts}
 			p := stubPolicy("auto", stub)
-			rep, err := SelectWith(doc, tt.caps, tt.caps, "", ImagePolicy{}, p)
+			rep, err := Select(t.Context(), doc, tt.caps, tt.caps, "", ImagePolicy{}, p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -362,7 +362,7 @@ func engineForTest(t *testing.T) PDFEngine {
 	return PDFEngineOf(e)
 }
 
-func TestSelectWith_bookingPDF(t *testing.T) {
+func TestSelect_bookingPDF(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile(filepath.Join("..", "..", "examples", "samples", "booking.pdf"))
 	if err != nil {
@@ -388,9 +388,9 @@ func TestSelectWith_bookingPDF(t *testing.T) {
 	} {
 		t.Run(tt.mode, func(t *testing.T) {
 			p := PDFPolicy{Mode: tt.mode, DPI: 150, MaxPages: 20, MinTextChars: 200, Engine: engine}
-			rep, err := SelectWith(doc, tt.caps, tt.caps, "", ImagePolicy{}, p)
+			rep, err := Select(t.Context(), doc, tt.caps, tt.caps, "", ImagePolicy{}, p)
 			if err != nil {
-				t.Fatalf("SelectWith: %v", err)
+				t.Fatalf("Select: %v", err)
 			}
 			if rep.Label() != tt.label {
 				t.Errorf("Label = %q, want %q", rep.Label(), tt.label)
@@ -409,7 +409,7 @@ func TestSelectWith_bookingPDF(t *testing.T) {
 	}
 }
 
-func TestSelectWith_imageOnlyPDF(t *testing.T) {
+func TestSelect_imageOnlyPDF(t *testing.T) {
 	t.Parallel()
 	doc, err := New(Input{MediaType: "application/pdf", Data: pdftest.Build(pdftest.Page{Image: true})}, config.Limits{})
 	if err != nil {
@@ -417,11 +417,11 @@ func TestSelectWith_imageOnlyPDF(t *testing.T) {
 	}
 	p := PDFPolicy{Mode: "auto", DPI: 72, MaxPages: 20, MinTextChars: 200, Engine: engineForTest(t)}
 	textOnly := capsFor(t, []string{"text/plain"})
-	if _, err := SelectWith(doc, textOnly, textOnly, "", ImagePolicy{}, p); !errors.Is(err, ErrUnsupportedDocument) {
+	if _, err := Select(t.Context(), doc, textOnly, textOnly, "", ImagePolicy{}, p); !errors.Is(err, ErrUnsupportedDocument) {
 		t.Errorf("text-only groups: error = %v, want unsupported_document", err)
 	}
 	vision := capsFor(t, []string{"image/png"})
-	rep, err := SelectWith(doc, vision, vision, "", ImagePolicy{}, p)
+	rep, err := Select(t.Context(), doc, vision, vision, "", ImagePolicy{}, p)
 	if err != nil {
 		t.Fatalf("vision groups: %v", err)
 	}
@@ -453,11 +453,11 @@ func TestPDFEngineBusy(t *testing.T) {
 		t.Fatal(err)
 	}
 	busy := stubPolicy("auto", &stubPDF{openErr: fmt.Errorf("%w: no instance free", pdf.ErrBusy)})
-	_, err = SelectContext(t.Context(), doc, vision, vision, "", ImagePolicy{}, busy)
+	_, err = Select(t.Context(), doc, vision, vision, "", ImagePolicy{}, busy)
 	if !errors.Is(err, pdf.ErrBusy) || errors.Is(err, ErrUnsupportedDocument) {
-		t.Errorf("SelectContext = %v, want pdf.ErrBusy and no refusal", err)
+		t.Errorf("Select = %v, want pdf.ErrBusy and no refusal", err)
 	}
-	rep, err := SelectWith(doc, pdfNative, pdfNative, "", ImagePolicy{}, busy)
+	rep, err := Select(t.Context(), doc, pdfNative, pdfNative, "", ImagePolicy{}, busy)
 	if err != nil {
 		t.Fatal(err)
 	}

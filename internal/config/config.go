@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -389,16 +388,6 @@ func defaults() *Config {
 		Storage:   defaultStorage(),
 		Blobs:     defaultBlobs(),
 	}
-}
-
-// Load reads the file at path and parses it with secrets taken from the process
-// environment. See Parse.
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("config: %w", err)
-	}
-	return Parse(data, os.Getenv)
 }
 
 // Parse decodes a configuration, rejecting unknown keys, applies defaults and resolves

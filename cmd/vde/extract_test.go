@@ -147,10 +147,10 @@ func summary(out jobOutput) string {
 }
 
 // runScenarioDirect wires the engine as the command does, without the command: a fake
-// from the script behind every endpoint, then document.SelectWith and extract.Run.
+// from the script behind every endpoint, then document.Select and extract.Run.
 func runScenarioDirect(t *testing.T, path string, sc scenario) observedRun {
 	t.Helper()
-	cfg, _, err := loadConfig(scenarioConfig, false)
+	cfg, _, err := loadConfigEnv(scenarioConfig, false, os.Getenv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func runScenarioDirect(t *testing.T, path string, sc scenario) observedRun {
 	// Every group that may serve a role (escalation, second judge, feedback group) must
 	// read the representation.
 	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
-	rep, err := document.SelectWith(doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images))
+	rep, err := document.Select(t.Context(), doc, extractorCaps, judgeCaps, policy, document.NewImagePolicy(cfg.Documents.Images), document.PDFPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}

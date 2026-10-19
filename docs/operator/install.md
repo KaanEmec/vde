@@ -153,9 +153,8 @@ Set `server.trusted_proxy: true`, and:
   seconds: nginx needs `client_max_body_size 128m;` and a matching `proxy_read_timeout`.
 - Do not forward `/metrics`. The service answers `404` to a metrics request that carries a
   forwarding header; see [operations](operations.md#metrics).
-- `/healthz` is under the same HTTPS rule: a health probe sent straight to the service must
-  carry `X-Forwarded-Proto: https`, or it gets `400`. `vde healthcheck` adds the header
-  itself.
+- `GET /healthz` is exempt from the HTTPS rule, so a health probe sent straight to the
+  service needs no `X-Forwarded-Proto` header.
 
 The compose example has a commented Caddy service and a
 [`Caddyfile`](../../examples/compose/Caddyfile) that does all of this.

@@ -80,9 +80,6 @@ func checkHealth(s config.Server, timeout time.Duration) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if s.TrustedProxy {
-		req.Header.Set("X-Forwarded-Proto", "https") // the proxy mode has no loopback exemption
-	}
 	client := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{

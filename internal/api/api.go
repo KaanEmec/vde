@@ -23,7 +23,7 @@ type HealthChecker interface {
 	Healthy() bool
 }
 
-// Process roles of vde serve --role (v0.3 epic 07): which parts of the service one process
+// Process roles of vde serve --role: which parts of the service one process
 // runs. Several processes share the queue through the database.
 const (
 	RoleAll    = "all"    // the API, the worker pool and the sweeper (the default)
@@ -31,9 +31,7 @@ const (
 	RoleWorker = "worker" // the worker pool and the sweeper; HTTP serves /healthz and /metrics only
 )
 
-// Deps is what the handlers need. Later epics add their fields here: the blob store
-// (epic 03), the quota and rate limiter (epic 05) and the worker's submit side (epics 03
-// and 04).
+// Deps is what the handlers need.
 type Deps struct {
 	Config *config.Config // validated; the handlers never change it
 	// Store holds applications, tokens, jobs and the audit trail. Every /v1 request
@@ -41,7 +39,7 @@ type Deps struct {
 	Store job.Store
 	// ServiceVersion is sent as X-Service-Version on every /v1/jobs response
 	// (contract §11). AppServiceVersion, when set, gives it per application and judge
-	// policy for authenticated requests and new jobs (extract.ApplicationServiceVersionFor
+	// policy for authenticated requests and new jobs (extract.ApplicationServiceVersion
 	// over the application's stored row, so admin API changes count at once); "" falls
 	// back to ServiceVersion. Authenticated requests carry the version of the
 	// application's own policy; a submission's response, that of the job's policy.
@@ -52,7 +50,7 @@ type Deps struct {
 	// Extractor and Judge are the role groups checked by /healthz. They may be the
 	// same group.
 	Extractor, Judge HealthChecker
-	// Blobs stores document and page bytes (epic 04 submit and delete); nil disables
+	// Blobs stores document and page bytes (submit and delete); nil disables
 	// job submission with 503.
 	Blobs blob.Store
 	// Wake is called after a job is created so the worker pool leases it at once; nil is
@@ -66,8 +64,8 @@ type Deps struct {
 	// to poll the store (sync.go).
 	Completions *worker.Notifier
 	// PDF prepares PDFs that no group reads natively (ADR 0010): at submit it opens them
-	// to count pages and measure the text layer. nil keeps the v0.3 selection (such PDFs
-	// need caller pages). It must be the workers' engine configuration.
+	// to count pages and measure the text layer. nil leaves such PDFs needing caller
+	// pages. It must be the workers' engine configuration.
 	PDF document.PDFEngine
 	// Role is the process role, RoleAll when "". With RoleAPI, /healthz reports the
 	// queue age instead of the role groups (no provider is called here); with RoleWorker

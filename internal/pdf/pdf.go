@@ -157,9 +157,6 @@ func (e *Engine) CacheErr() error {
 	return e.cacheErr
 }
 
-// Workers is the configured number of instances.
-func (e *Engine) Workers() int { return e.cfg.Workers }
-
 // Compiled reports whether wazero compiles WebAssembly to native code on this platform.
 // Elsewhere it interprets, about 60 times slower.
 func Compiled() bool {

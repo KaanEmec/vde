@@ -1687,3 +1687,10 @@ type failingQueued struct{ job.Store }
 func (failingQueued) CountQueued(context.Context) (int, error) {
 	return 0, errors.New("database is locked")
 }
+
+// held is the number of slots held now.
+func (p *submitSlots) held() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.used
+}

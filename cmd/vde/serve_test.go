@@ -13,8 +13,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaanemec/vde/internal/api"
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/provider"
 )
+
+// serve is serveAs with every role in the process (--role all).
+func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, logger *slog.Logger,
+	build func(*config.Endpoint) (provider.Provider, error)) error {
+	return serveAs(ctx, api.RoleAll, cfg, ln, adminLn, logger, build)
+}
 
 func TestCheckListen(t *testing.T) {
 	t.Parallel()

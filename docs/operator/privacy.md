@@ -27,8 +27,8 @@ Routine logs go to stderr as JSON (`logging.format: json`, the default) or text,
 The vocabulary is enforced, not just followed: the logger drops any attribute whose key
 is not on this list, and cuts string values longer than 256 characters (stack traces
 4,096). A future coding mistake, such as logging a request body under a new key, produces
-no output rather than a leak. The list is `logging.AllowedKeys` in
-`internal/logging`; a test pins it.
+no output rather than a leak. The list is `allowed` in
+`internal/logging/logging.go`; a test pins it.
 
 ## What is never logged
 

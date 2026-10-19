@@ -43,7 +43,7 @@ func TestUserDocs(t *testing.T) {
 				return
 			}
 			text := capsFor(t, []string{"text/plain", "image/png", "image/jpeg"})
-			if rep, err := Select(doc, text, text, RawHTML); err == nil {
+			if rep, err := Select(t.Context(), doc, text, text, RawHTML, ImagePolicy{}, PDFPolicy{}); err == nil {
 				t.Logf("representation=%s groundable=%v ground_text_bytes=%d", rep.Label(), rep.Groundable, len(rep.GroundText))
 			}
 			if doc.Category != CategoryEmail {
@@ -90,7 +90,7 @@ func userPDF(t *testing.T, doc *Document) {
 	}{{"text-only", []string{"text/plain"}}, {"image-only", []string{"image/png", "image/jpeg"}}} {
 		caps := capsFor(t, g.accepts)
 		start := time.Now()
-		rep, err := SelectWith(doc, caps, caps, "", ImagePolicy{}, p)
+		rep, err := Select(t.Context(), doc, caps, caps, "", ImagePolicy{}, p)
 		if err != nil {
 			t.Logf("group=%s refused: %v (%s)", g.name, err, time.Since(start))
 			continue

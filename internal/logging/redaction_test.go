@@ -115,7 +115,7 @@ func TestNoSentinelInLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err := document.Select(doc, cfg.Capabilities("extraction"), cfg.Capabilities("review"), document.VisibleText)
+	rep, err := document.Select(t.Context(), doc, cfg.Capabilities("extraction"), cfg.Capabilities("review"), document.VisibleText, document.ImagePolicy{}, document.PDFPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}

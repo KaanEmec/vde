@@ -141,3 +141,11 @@ func BenchmarkNewText(b *testing.B) {
 		NewText(text)
 	}
 }
+
+// Contains reports whether the string value is grounded in the text: as an ISO date,
+// datetime or time (dates.go), as a phrase on word boundaries, as reordered words within
+// a short window, or as a number (numbers.go).
+func (t *Text) Contains(value string) bool {
+	_, ok := t.match(value)
+	return ok
+}

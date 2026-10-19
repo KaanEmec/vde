@@ -42,7 +42,7 @@ const (
 // When enabled, an image that is larger than MaxDimension on its longer side is scaled
 // down, a JPEG with an EXIF orientation is rotated upright, and either is re-encoded as
 // ConvertTo. A PNG or JPEG that needs neither is never re-encoded. WebP is decoded and
-// converted to ConvertTo when no endpoint of a group reads WebP (see SelectWith).
+// converted to ConvertTo when no endpoint of a group reads WebP (see Select).
 // HEIC has no pure-Go decoder (ADR 0001, no cgo), so it is passed through, and only
 // endpoints that declare image/heic read it.
 type ImagePolicy struct {

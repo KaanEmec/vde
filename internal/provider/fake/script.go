@@ -13,30 +13,11 @@ import (
 	"github.com/kaanemec/vde/internal/provider"
 )
 
-// Judge verdicts used by the script helpers (contract §7).
+// Judge verdicts for scripts (contract §7).
 const (
 	AcceptVerdict = `{"verdict": "accept", "feedback": {}}`
 	RejectVerdict = `{"verdict": "reject", "feedback": {"": "the candidate does not match the document"}}`
 )
-
-// The helpers below build ordered scripts for one fake serving both roles, which the
-// sequential extraction loop calls extractor first, then judge.
-
-// AcceptFirstTry: the extractor answers candidate and the judge accepts it.
-func AcceptFirstTry(candidate string) Script {
-	return Script{Answer(candidate), Answer(AcceptVerdict)}
-}
-
-// SchemaInvalidThenValid: the extractor answers invalid (no judge call follows), then
-// valid, which the judge accepts.
-func SchemaInvalidThenValid(invalid, valid string) Script {
-	return Script{Answer(invalid), Answer(valid), Answer(AcceptVerdict)}
-}
-
-// RejectThenAccept: the judge rejects first and accepts second.
-func RejectThenAccept(first, second string) Script {
-	return Script{Answer(first), Answer(RejectVerdict), Answer(second), Answer(AcceptVerdict)}
-}
 
 // AlwaysRetryable fails every call retryably with status.
 func AlwaysRetryable(status int) Script {

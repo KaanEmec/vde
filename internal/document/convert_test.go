@@ -335,7 +335,7 @@ func TestSelectConvertsWebP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			rep, err := SelectWith(doc, capsFor(t, tt.extractor), capsFor(t, tt.judge), "", tt.policy)
+			rep, err := Select(t.Context(), doc, capsFor(t, tt.extractor), capsFor(t, tt.judge), "", tt.policy, PDFPolicy{})
 			if tt.wantErr {
 				if !errors.Is(err, ErrUnsupportedDocument) {
 					t.Fatalf("err = %v, want unsupported document", err)
@@ -375,7 +375,7 @@ func TestSelectImageDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err := SelectWith(doc, capsFor(t, vision), capsFor(t, vision), "", enabled(40))
+	rep, err := Select(t.Context(), doc, capsFor(t, vision), capsFor(t, vision), "", enabled(40), PDFPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,13 +387,13 @@ func TestSelectImageDocuments(t *testing.T) {
 	}
 
 	// The same bytes serve both roles: Parts is one slice, built once.
-	again, err := SelectWith(doc, capsFor(t, vision), capsFor(t, vision), "", enabled(40))
+	again, err := Select(t.Context(), doc, capsFor(t, vision), capsFor(t, vision), "", enabled(40), PDFPolicy{})
 	if err != nil || !bytes.Equal(again.Parts[0].Image.Data, rep.Parts[0].Image.Data) {
 		t.Error("conversion is not deterministic")
 	}
 
 	// A group that reads only PNG still gets the original oversize PNG, as before.
-	rep, err = SelectWith(doc, capsFor(t, []string{"image/png"}), capsFor(t, []string{"image/png"}), "", enabled(40))
+	rep, err = Select(t.Context(), doc, capsFor(t, []string{"image/png"}), capsFor(t, []string{"image/png"}), "", enabled(40), PDFPolicy{})
 	if err != nil || rep.MediaTypes[0] != "image/png" || !bytes.Equal(rep.Parts[0].Image.Data, big) {
 		t.Errorf("PNG-only fallback = %v, %v", rep.MediaTypes, err)
 	}
@@ -404,12 +404,12 @@ func TestSelectImageDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err = SelectWith(doc, capsFor(t, vision), capsFor(t, vision), "", enabled(100))
+	rep, err = Select(t.Context(), doc, capsFor(t, vision), capsFor(t, vision), "", enabled(100), PDFPolicy{})
 	if err != nil || rep.MediaTypes[0] != "image/png" || !bytes.Equal(rep.Parts[0].Image.Data, small) {
 		t.Errorf("small PNG = %v, %v", rep.MediaTypes, err)
 	}
 	// Select (no image policy) is the old behaviour.
-	rep, err = Select(doc, capsFor(t, jpegOnly), capsFor(t, jpegOnly), "")
+	rep, err = Select(t.Context(), doc, capsFor(t, jpegOnly), capsFor(t, jpegOnly), "", ImagePolicy{}, PDFPolicy{})
 	if !errors.Is(err, ErrUnsupportedDocument) {
 		t.Errorf("Select with a JPEG-only group = %v, %v", rep.MediaTypes, err)
 	}
@@ -431,7 +431,7 @@ func TestSelectConvertsPages(t *testing.T) {
 	}
 	// The PDF is not readable, so the pages are: the oversize one is downscaled, the
 	// small one stays as it is.
-	rep, err := SelectWith(doc, capsFor(t, vision), capsFor(t, vision), "", enabled(40))
+	rep, err := Select(t.Context(), doc, capsFor(t, vision), capsFor(t, vision), "", enabled(40), PDFPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +452,7 @@ func TestSelectConvertsPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err = SelectWith(pngPages, capsFor(t, pngOnly), capsFor(t, pngOnly), "", enabled(40))
+	rep, err = Select(t.Context(), pngPages, capsFor(t, pngOnly), capsFor(t, pngOnly), "", enabled(40), PDFPolicy{})
 	if err != nil || rep.Kind != Pages || rep.MediaTypes[0] != "image/png" || !bytes.Equal(rep.Parts[0].Image.Data, big) {
 		t.Fatalf("PNG-only pages: %v %v, %v", rep.Kind, rep.MediaTypes, err)
 	}

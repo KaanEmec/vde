@@ -246,8 +246,8 @@ func Sign(secret []byte, t time.Time, body []byte) string {
 var ErrBadSignature = errors.New("webhook: signature missing, malformed, stale or wrong")
 
 // Verify checks a signature header against body, refusing a timestamp more than
-// tolerance away from now (replay protection). Receivers written in Go can use it; the
-// guide shows the same check in prose.
+// tolerance away from now (replay protection). It is the tests' oracle for Sign; the
+// guide shows receivers the same check in prose.
 func Verify(secret []byte, header string, body []byte, now time.Time, tolerance time.Duration) error {
 	var ts, sig string
 	for field := range bytes.SplitSeq([]byte(header), []byte(",")) {
