@@ -1,7 +1,6 @@
-package sweeper_test
+package worker_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,29 +20,10 @@ import (
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/metrics"
-	"github.com/kaanemec/vde/internal/sweeper"
+	"github.com/kaanemec/vde/internal/worker"
 )
 
 var t0 = time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
-
-const sentinel = "SENTINEL"
-
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
 
 // failingBlobs refuses to delete the blobs of the jobs in fail.
 type failingBlobs struct {
@@ -68,7 +48,7 @@ func (f *failingBlobs) heal() {
 	clear(f.fail)
 }
 
-type rig struct {
+type sweepRig struct {
 	dir   string
 	store *job.DB
 	blobs *blob.FS
@@ -76,10 +56,10 @@ type rig struct {
 	m     *metrics.Metrics
 	logs  *syncBuffer
 	cfg   *config.Config // the defaults; tests change fields
-	opts  sweeper.Options
+	opts  worker.SweepOptions
 }
 
-func newRig(t *testing.T) *rig {
+func newSweepRig(t *testing.T) *sweepRig {
 	t.Helper()
 	dir := t.TempDir()
 	store, err := job.Open(filepath.Join(dir, "vde.db"))
@@ -99,14 +79,14 @@ func newRig(t *testing.T) *rig {
 			t.Fatal(err)
 		}
 	}
-	r := &rig{dir: dir, store: store, blobs: blobs, fail: &failingBlobs{Store: blobs, fail: map[string]bool{}},
+	r := &sweepRig{dir: dir, store: store, blobs: blobs, fail: &failingBlobs{Store: blobs, fail: map[string]bool{}},
 		m: metrics.New(false), logs: &syncBuffer{}}
 	cfg, err := config.Parse([]byte("{}"), func(string) string { return "" })
 	if err != nil {
 		t.Fatal(err)
 	}
 	r.cfg = cfg
-	r.opts = sweeper.Options{
+	r.opts = worker.SweepOptions{
 		Metrics: r.m,
 		Logger:  slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Audit:   audit.New(store, audit.Options{Clock: func() time.Time { return t0 }}),
@@ -120,16 +100,18 @@ func newRig(t *testing.T) *rig {
 }
 
 // scrape returns the rig's metrics in the Prometheus text format.
-func (r *rig) scrape() string {
+func (r *sweepRig) scrape() string {
 	w := httptest.NewRecorder()
 	r.m.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return w.Body.String()
 }
 
-func (r *rig) sweeper() *sweeper.Sweeper { return sweeper.New(r.store, r.fail, r.cfg, r.opts) }
+func (r *sweepRig) sweeper() *worker.Sweeper {
+	return worker.NewSweeper(r.store, r.fail, r.cfg, r.opts)
+}
 
 // submit stores a job with a document blob and two pages, created at created.
-func (r *rig) submit(t *testing.T, app string, retention job.Retention, created time.Time) job.Job {
+func (r *sweepRig) submit(t *testing.T, app string, retention job.Retention, created time.Time) job.Job {
 	t.Helper()
 	j := &job.Job{
 		ID: job.NewID(), ApplicationID: app, ServiceVersion: "vde-test", Representation: "pages",
@@ -147,12 +129,12 @@ func (r *rig) submit(t *testing.T, app string, retention job.Retention, created 
 	return *j
 }
 
-func (r *rig) hasBlobs(id string) bool {
+func (r *sweepRig) hasBlobs(id string) bool {
 	_, err := r.blobs.Get(context.Background(), id, blob.Document)
 	return err == nil
 }
 
-func (r *rig) exists(t *testing.T, id string) bool {
+func (r *sweepRig) exists(t *testing.T, id string) bool {
 	t.Helper()
 	_, err := r.store.GetJobAny(t.Context(), id)
 	switch {
@@ -165,7 +147,7 @@ func (r *rig) exists(t *testing.T, id string) bool {
 	return false
 }
 
-func (r *rig) auditKinds(t *testing.T, kind audit.Kind) []job.AuditEvent {
+func (r *sweepRig) auditKinds(t *testing.T, kind audit.Kind) []job.AuditEvent {
 	t.Helper()
 	events, err := r.store.ListAudit(t.Context(), job.AuditFilter{Kind: string(kind)}, 0)
 	if err != nil {
@@ -174,7 +156,7 @@ func (r *rig) auditKinds(t *testing.T, kind audit.Kind) []job.AuditEvent {
 	return events
 }
 
-func mustOnce(t *testing.T, s *sweeper.Sweeper, now time.Time) sweeper.Result {
+func mustOnce(t *testing.T, s *worker.Sweeper, now time.Time) worker.SweepResult {
 	t.Helper()
 	res, err := s.Once(t.Context(), now)
 	if err != nil {
@@ -184,7 +166,7 @@ func mustOnce(t *testing.T, s *sweeper.Sweeper, now time.Time) sweeper.Result {
 }
 
 func TestExpiredJobsAreRemovedWithTheirBlobs(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	none := r.submit(t, "app", job.RetentionNone, t0)                      // expires t0+24h
 	def := r.submit(t, "app", job.RetentionDefault, t0)                    // expires t0+48h
 	later := r.submit(t, "app", job.RetentionDefault, t0.Add(2*time.Hour)) // expires t0+50h
@@ -241,7 +223,7 @@ func TestExpiredJobsAreRemovedWithTheirBlobs(t *testing.T) {
 // than the idempotency window, the content and blobs go at expires_at and the row,
 // metadata only, at created_at + 24h, so the key still names the job meanwhile.
 func TestShortRetentionExpiresContentAndKeepsRowForIdempotency(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	ctx := t.Context()
 	short := job.Application{ID: "short", QuotaLimit: 100, QuotaWindow: "P1D", RetentionDefault: "2s", MaxAttempts: 3}
 	if err := r.store.UpsertApplication(ctx, short, t0); err != nil {
@@ -296,7 +278,7 @@ func TestShortRetentionExpiresContentAndKeepsRowForIdempotency(t *testing.T) {
 }
 
 func TestExpiredJobsAreRemovedInBatches(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	r.opts.Batch = 2
 	var ids []string
 	for i := range 5 {
@@ -313,7 +295,7 @@ func TestExpiredJobsAreRemovedInBatches(t *testing.T) {
 }
 
 func TestBlobFailureKeepsTheRowAndRetries(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	r.opts.Batch = 2
 	var ids []string
 	for i := range 4 {
@@ -338,7 +320,7 @@ func TestBlobFailureKeepsTheRowAndRetries(t *testing.T) {
 }
 
 func TestStaleRunningJobsAreFinishedAsTimeout(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	ctx := t.Context()
 	stale := r.submit(t, "app", job.RetentionDefault, t0)
 	fresh := r.submit(t, "app", job.RetentionDefault, t0.Add(10*time.Minute))
@@ -413,7 +395,7 @@ func TestStaleRunningJobsAreFinishedAsTimeout(t *testing.T) {
 // A stale job gets the terminal-state deletion its retention calls for: the worker that
 // would have done it is gone.
 func TestStaleJobsLoseTheirInputsPerRetention(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	r.cfg.Applications = []config.Application{{ID: "hourly", Retention: config.Retention{DeleteBlobsAtTerminal: true}}}
 	ctx := t.Context()
 	none := r.submit(t, "app", job.RetentionNone, t0)
@@ -446,7 +428,7 @@ func TestStaleJobsLoseTheirInputsPerRetention(t *testing.T) {
 }
 
 func TestOldQuotaTokensAndAuditRowsAreRemoved(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	ctx := t.Context()
 	now := t0.Add(10 * 24 * time.Hour)
 
@@ -514,7 +496,7 @@ func TestOldQuotaTokensAndAuditRowsAreRemoved(t *testing.T) {
 }
 
 func TestOrphanBlobsAreSweptAtStartAndDaily(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	s := r.sweeper()
 	kept := r.submit(t, "app", job.RetentionDefault, t0)
 
@@ -561,7 +543,7 @@ func TestOrphanBlobsAreSweptAtStartAndDaily(t *testing.T) {
 }
 
 func TestRunSweepsRepeatedlyUntilCancelled(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	var mu sync.Mutex
 	now := t0
 	clock := func() time.Time {
@@ -617,9 +599,9 @@ func TestRunSweepsRepeatedlyUntilCancelled(t *testing.T) {
 }
 
 func TestNothingToSweepIsSilent(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	res := mustOnce(t, r.sweeper(), t0)
-	if res != (sweeper.Result{}) {
+	if res != (worker.SweepResult{}) {
 		t.Errorf("result = %+v", res)
 	}
 	if logs := r.logs.String(); logs != "" {
@@ -628,7 +610,7 @@ func TestNothingToSweepIsSilent(t *testing.T) {
 }
 
 func TestLogsCarryCountsNeverContent(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	r.submit(t, "app", job.RetentionNone, t0)
 	mustOnce(t, r.sweeper(), t0.Add(48*time.Hour))
 	logs := r.logs.String()
@@ -641,9 +623,9 @@ func TestLogsCarryCountsNeverContent(t *testing.T) {
 }
 
 func TestDefaults(t *testing.T) {
-	r := newRig(t)
-	r.opts = sweeper.Options{}
-	s := sweeper.New(r.store, r.blobs, r.cfg, r.opts)
+	r := newSweepRig(t)
+	r.opts = worker.SweepOptions{}
+	s := worker.NewSweeper(r.store, r.blobs, r.cfg, r.opts)
 	j := r.submit(t, "app", job.RetentionNone, t0)
 	if res, err := s.Once(t.Context(), t0.Add(25*time.Hour)); err != nil || res.Expired != 1 || r.exists(t, j.ID) {
 		t.Errorf("default sweeper: %+v, %v", res, err)

@@ -104,8 +104,7 @@ internal/api/            handlers, middleware (auth, request id, limits), quota 
 internal/auth/           applications, tokens (hashing, expiry, revocation, scopes)
 internal/job/            job model, state machine, JobStore, SQLite and Postgres implementations, migrations and migrations_postgres
 internal/blob/           BlobStore interface, filesystem and S3 implementations
-internal/worker/         pool, leasing, job deadline, retention actions
-internal/sweeper/        expiry sweeper, advisory-locked across processes
+internal/worker/         pool, leasing, job deadline, retention actions; expiry sweeper, advisory-locked across processes
 internal/webhook/        signed completion webhooks
 internal/eval/           evaluation harness: corpus, case globs, comparison, report (verification, judge calls per case)
 internal/audit/          audit events (never content)

@@ -474,12 +474,6 @@ type adminJobResponse struct {
 }
 
 func adminJob(j job.Job) adminJobResponse {
-	var e struct {
-		Code string `json:"code"`
-	}
-	if j.Error != nil {
-		_ = json.Unmarshal(j.Error, &e) // the message is never copied
-	}
 	var verification *string
 	if j.Status.Terminal() {
 		v := cmp.Or(j.Verification, job.DefaultVerification(j.Status))
@@ -491,7 +485,7 @@ func adminJob(j job.Job) adminJobResponse {
 		JudgePolicy: cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy), Verification: verification,
 		Representation: j.Representation,
 		MediaType:      j.MediaType, Bytes: j.Size, Pages: j.PageCount, Retention: string(j.Retention),
-		ErrorCode: e.Code, CreatedAt: formatTime(j.CreatedAt), StartedAt: optionalTime(j.StartedAt),
+		ErrorCode: job.ErrorCode(j.Error), CreatedAt: formatTime(j.CreatedAt), StartedAt: optionalTime(j.StartedAt),
 		FinishedAt: optionalTime(j.FinishedAt), ExpiresAt: formatTime(j.ExpiresAt),
 		InputsDeletedAt: optionalTime(j.InputsDeletedAt), ContentDeletedAt: optionalTime(j.ContentDeletedAt),
 		InputTokens: j.InputTokens, OutputTokens: j.OutputTokens,

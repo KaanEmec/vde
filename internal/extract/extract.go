@@ -488,6 +488,7 @@ func (l *loop) fail(err error, role string) Outcome {
 	return l.failed(CodeInternal)
 }
 
+// jobErrorMessages are the job error messages of every code, generic: NewJobError.
 var jobErrorMessages = map[string]string{
 	CodeProviderUnavailable: "Every endpoint of a role's group failed.",
 	CodeExtractorFailed:     "The extractor gave no usable answer on any attempt.",
@@ -496,8 +497,13 @@ var jobErrorMessages = map[string]string{
 	CodeInternal:            "Internal error.",
 }
 
+// NewJobError returns the error of a job failed with code, with its fixed message.
+func NewJobError(code string) *JobError {
+	return &JobError{Code: code, Message: jobErrorMessages[code]}
+}
+
 func (l *loop) failed(code string) Outcome {
-	return l.outcome(StatusFailed, &JobError{Code: code, Message: jobErrorMessages[code]})
+	return l.outcome(StatusFailed, NewJobError(code))
 }
 
 func (l *loop) outcome(status Status, jobErr *JobError) Outcome {

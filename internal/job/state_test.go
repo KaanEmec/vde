@@ -279,3 +279,25 @@ func TestRunningToExtracted(t *testing.T) {
 		}
 	})
 }
+
+func TestErrorCode(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		raw  json.RawMessage
+		want string
+	}{
+		{"none", nil, ""},
+		{"code and message", json.RawMessage(`{"code":"timeout","message":"m"}`), "timeout"},
+		{"not JSON", json.RawMessage(`{"code":`), ""},
+		{"code not a string", json.RawMessage(`{"code":1}`), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ErrorCode(tt.raw); got != tt.want {
+				t.Errorf("ErrorCode = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

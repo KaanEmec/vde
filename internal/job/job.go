@@ -86,6 +86,18 @@ var (
 // NewID returns a new job id, j_<ULID>.
 func NewID() string { return "j_" + ulid.Make().String() }
 
+// ErrorCode is the code of a job's error JSON, "" for none or a malformed one; the
+// message is never read.
+func ErrorCode(raw json.RawMessage) string {
+	var e struct {
+		Code string `json:"code"`
+	}
+	if raw == nil || json.Unmarshal(raw, &e) != nil {
+		return ""
+	}
+	return e.Code
+}
+
 // Job is one row of the jobs table. A zero time.Time is a NULL column. Result, Feedback
 // and Error are JSON text, nil when NULL.
 type Job struct {

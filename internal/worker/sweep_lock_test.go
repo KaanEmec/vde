@@ -1,4 +1,4 @@
-package sweeper_test
+package worker_test
 
 import (
 	"context"
@@ -41,7 +41,7 @@ func (l *locker) counts() (tries, held, freed int) {
 // one that gets it sweeps and releases it after each sweep.
 func TestRunSkipsWithoutTheLock(t *testing.T) {
 	for _, free := range []bool{false, true} {
-		r := newRig(t)
+		r := newSweepRig(t)
 		r.opts.Clock = func() time.Time { return t0.Add(48 * time.Hour) }
 		r.cfg.Retention.SweepInterval = 5 * time.Millisecond
 		l := &locker{free: free}
@@ -76,7 +76,7 @@ func TestRunSkipsWithoutTheLock(t *testing.T) {
 // TestSQLiteLockIsFree: on SQLite one process owns the database, so the lock is always
 // granted, also twice.
 func TestSQLiteLockIsFree(t *testing.T) {
-	r := newRig(t)
+	r := newSweepRig(t)
 	release1, ok1, err1 := r.store.TryLock(t.Context(), job.SweepLock)
 	release2, ok2, err2 := r.store.TryLock(t.Context(), job.SweepLock)
 	if !ok1 || !ok2 || err1 != nil || err2 != nil {

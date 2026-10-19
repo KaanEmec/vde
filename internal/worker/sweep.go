@@ -1,8 +1,7 @@
-package sweeper
+package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -40,9 +39,9 @@ type Locker interface {
 	TryLock(ctx context.Context, key int64) (release func(), ok bool, err error)
 }
 
-// Options configure a Sweeper beside its configuration (retention.sweep_interval,
+// SweepOptions configure a Sweeper beside its configuration (retention.sweep_interval,
 // limits.job_timeout, audit.retention, the applications' retention).
-type Options struct {
+type SweepOptions struct {
 	Batch  int              // jobs per store round trip; tests set it, 0 means 100
 	Clock  func() time.Time // the time of each sweep of Run; nil means time.Now
 	Logger *slog.Logger
@@ -57,8 +56,8 @@ type Options struct {
 	Lock Locker
 }
 
-// Result counts what one sweep removed or finished.
-type Result struct {
+// SweepResult counts what one sweep removed or finished.
+type SweepResult struct {
 	Expired     int // expired jobs: content and blobs deleted, or row removed (one job.expired each)
 	Removed     int // job rows removed, past both expires_at and the idempotency window
 	Stale       int // running jobs finished as failed/timeout
@@ -76,22 +75,19 @@ type Sweeper struct {
 	store job.Store
 	blobs blob.Store
 	cfg   *config.Config
-	opts  Options
-	// deleteInputs lists the applications whose retention: default jobs lose their
-	// document, pages, instructions and schema at the terminal state: those with
-	// retention.delete_blobs_at_terminal or retention.force_none. The sweeper applies it
-	// to the jobs it finishes itself, as the worker does for the others. retention: none
-	// jobs are always cleared.
-	deleteInputs map[string]bool
-	log          *slog.Logger
-	audit        *audit.Recorder
+	opts  SweepOptions
+	// apps are the configured applications by id, for the retention of the jobs the
+	// sweeper finishes itself (inputsAtTerminal, as the worker does for the others).
+	apps  map[string]config.Application
+	log   *slog.Logger
+	audit *audit.Recorder
 
 	mu         sync.Mutex // serializes sweeps; guards lastOrphan
 	lastOrphan time.Time
 }
 
-// New returns a sweeper for cfg (validated). Call Run, or Once from a test.
-func New(store job.Store, blobs blob.Store, cfg *config.Config, opts Options) *Sweeper {
+// NewSweeper returns a sweeper for cfg (validated). Call Run, or Once from a test.
+func NewSweeper(store job.Store, blobs blob.Store, cfg *config.Config, opts SweepOptions) *Sweeper {
 	if opts.Batch <= 0 {
 		opts.Batch = defaultBatch
 	}
@@ -101,20 +97,18 @@ func New(store job.Store, blobs blob.Store, cfg *config.Config, opts Options) *S
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	deleteInputs := map[string]bool{}
+	apps := map[string]config.Application{}
 	for _, a := range cfg.Applications {
-		if a.Retention.ForceNone || a.Retention.DeleteBlobsAtTerminal {
-			deleteInputs[a.ID] = true
-		}
+		apps[a.ID] = a
 	}
 	return &Sweeper{
-		store: store, blobs: blobs, cfg: cfg, opts: opts, deleteInputs: deleteInputs,
+		store: store, blobs: blobs, cfg: cfg, opts: opts, apps: apps,
 		log: opts.Logger.With("component", "sweeper"), audit: opts.Audit.WithActor(audit.ActorSweeper),
 	}
 }
 
-// Run sweeps at once and then every retention.sweep_interval until ctx is done. A failed sweep is
-// logged and retried at the next tick.
+// Run sweeps at once and then every retention.sweep_interval until ctx is done. A failed
+// sweep is logged and retried at the next tick.
 func (s *Sweeper) Run(ctx context.Context) {
 	ticker := time.NewTicker(s.cfg.Retention.SweepInterval)
 	defer ticker.Stop()
@@ -128,7 +122,7 @@ func (s *Sweeper) Run(ctx context.Context) {
 	}
 }
 
-// lockedOnce runs Once under Options.Lock, or skips the sweep when another process
+// lockedOnce runs Once under SweepOptions.Lock, or skips the sweep when another process
 // holds the lock.
 func (s *Sweeper) lockedOnce(ctx context.Context) {
 	if s.opts.Lock != nil {
@@ -153,11 +147,11 @@ func (s *Sweeper) lockedOnce(ctx context.Context) {
 // Once runs one sweep as of now. The steps are independent: one that fails does not stop
 // the others, and the errors come back joined. The orphan blob sweep runs on the first
 // call and then once a day.
-func (s *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
+func (s *Sweeper) Once(ctx context.Context, now time.Time) (SweepResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var (
-		r    Result
+		r    SweepResult
 		errs []error
 	)
 	step := func(name string, n *int, f func() (int, error)) {
@@ -205,19 +199,17 @@ func (s *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	return r, errors.Join(errs...)
 }
 
-// expired deletes the blobs and then the content (instructions, schema, result,
-// feedback, error) of every terminal job past its expires_at, batch by batch until a
-// batch comes back short, and records job.expired. The row stays, metadata only, until
-// removeRows: GET already answers 404, and an idempotent replay still names the job. A
-// job still queued or running at its expires_at is expired once it is terminal. A job
-// whose blobs cannot be removed keeps its content, so the next sweep retries it.
-func (s *Sweeper) expired(ctx context.Context, now time.Time) (int, error) {
+// batched runs one pass over the jobs list returns, batch by batch until a batch comes
+// back short or nothing in it was done: each handles one job and reports whether it
+// counts. An error of each is collected and the pass goes on; a list error or the end
+// of ctx stops it.
+func (s *Sweeper) batched(ctx context.Context, list func() ([]job.Job, error), each func(job.Job) (bool, error)) (int, error) {
 	var (
 		total int
 		errs  []error
 	)
 	for {
-		batch, err := s.store.ListContentExpired(ctx, now, s.opts.Batch)
+		batch, err := list()
 		if err != nil {
 			return total, errors.Join(append(errs, err)...)
 		}
@@ -226,17 +218,12 @@ func (s *Sweeper) expired(ctx context.Context, now time.Time) (int, error) {
 			if err := ctx.Err(); err != nil {
 				return total + done, errors.Join(append(errs, err)...)
 			}
-			if err := s.blobs.DeleteAll(ctx, j.ID); err != nil {
-				errs = append(errs, fmt.Errorf("delete blobs of %s: %w", j.ID, err))
-				continue
-			}
-			switch err := s.store.MarkContentDeleted(ctx, j.ID, job.ContentAll, now); {
-			case errors.Is(err, job.ErrNotFound): // deleted by someone else meanwhile
-			case err != nil:
-				errs = append(errs, fmt.Errorf("delete content of %s: %w", j.ID, err))
-			default:
+			counted, err := each(j)
+			if counted {
 				done++
-				s.audit.JobExpired(ctx, j)
+			}
+			if err != nil {
+				errs = append(errs, err)
 			}
 		}
 		total += done
@@ -246,111 +233,81 @@ func (s *Sweeper) expired(ctx context.Context, now time.Time) (int, error) {
 	}
 }
 
-// removeRows removes the blobs (normally gone already) and then the row of every job
-// past both its expires_at and created_at + job.IdempotencyWindow, batch by batch. The
-// audit record stays. A row whose content the sweeper had not expired (deleted at the
-// first read, or a job not terminal at its expires_at) gets its job.expired here; late
-// counts those. A job whose blobs cannot be removed keeps its row for the next sweep.
-func (s *Sweeper) removeRows(ctx context.Context, now time.Time) (removed, late int, err error) {
-	var errs []error
-	for {
-		batch, err := s.store.ListExpired(ctx, now, s.opts.Batch)
-		if err != nil {
-			return removed, late, errors.Join(append(errs, err)...)
+// expired deletes the blobs and then the content (instructions, schema, result,
+// feedback, error) of every terminal job past its expires_at and records job.expired.
+// The row stays, metadata only, until removeRows: GET already answers 404, and an
+// idempotent replay still names the job. A job still queued or running at its expires_at
+// is expired once it is terminal. A job whose blobs cannot be removed keeps its content,
+// so the next sweep retries it.
+func (s *Sweeper) expired(ctx context.Context, now time.Time) (int, error) {
+	list := func() ([]job.Job, error) { return s.store.ListContentExpired(ctx, now, s.opts.Batch) }
+	return s.batched(ctx, list, func(j job.Job) (bool, error) {
+		if err := s.blobs.DeleteAll(ctx, j.ID); err != nil {
+			return false, fmt.Errorf("delete blobs of %s: %w", j.ID, err)
 		}
-		n := 0
-		for _, j := range batch {
-			if err := ctx.Err(); err != nil {
-				return removed + n, late, errors.Join(append(errs, err)...)
-			}
-			if err := s.blobs.DeleteAll(ctx, j.ID); err != nil {
-				errs = append(errs, fmt.Errorf("delete blobs of %s: %w", j.ID, err))
-				continue
-			}
-			switch err := s.store.DeleteJob(ctx, j.ID); {
-			case errors.Is(err, job.ErrNotFound): // deleted by someone else meanwhile
-			case err != nil:
-				errs = append(errs, fmt.Errorf("delete job %s: %w", j.ID, err))
-			default:
-				n++
-				if j.ContentDeletedAt.IsZero() || j.ContentDeletedAt.Before(j.ExpiresAt) {
-					late++
-					s.audit.JobExpired(ctx, j)
-				}
-			}
+		switch err := s.store.MarkContentDeleted(ctx, j.ID, job.ContentAll, now); {
+		case errors.Is(err, job.ErrNotFound): // deleted by someone else meanwhile
+			return false, nil
+		case err != nil:
+			return false, fmt.Errorf("delete content of %s: %w", j.ID, err)
 		}
-		removed += n
-		if len(batch) < s.opts.Batch || n == 0 {
-			return removed, late, errors.Join(errs...)
-		}
-	}
+		s.audit.JobExpired(ctx, j)
+		return true, nil
+	})
 }
 
-// timeoutMessage is the job error message of code timeout, as the worker writes it.
-const timeoutMessage = "The job's time limit expired."
+// removeRows removes the blobs (normally gone already) and then the row of every job
+// past both its expires_at and created_at + job.IdempotencyWindow. The audit record
+// stays. A row whose content the sweeper had not expired (deleted at the first read, or
+// a job not terminal at its expires_at) gets its job.expired here; late counts those. A
+// job whose blobs cannot be removed keeps its row for the next sweep.
+func (s *Sweeper) removeRows(ctx context.Context, now time.Time) (removed, late int, err error) {
+	list := func() ([]job.Job, error) { return s.store.ListExpired(ctx, now, s.opts.Batch) }
+	removed, err = s.batched(ctx, list, func(j job.Job) (bool, error) {
+		if err := s.blobs.DeleteAll(ctx, j.ID); err != nil {
+			return false, fmt.Errorf("delete blobs of %s: %w", j.ID, err)
+		}
+		switch err := s.store.DeleteJob(ctx, j.ID); {
+		case errors.Is(err, job.ErrNotFound): // deleted by someone else meanwhile
+			return false, nil
+		case err != nil:
+			return false, fmt.Errorf("delete job %s: %w", j.ID, err)
+		}
+		if j.ContentDeletedAt.IsZero() || j.ContentDeletedAt.Before(j.ExpiresAt) {
+			late++
+			s.audit.JobExpired(ctx, j)
+		}
+		return true, nil
+	})
+	return removed, late, err
+}
 
 // stale finishes the running jobs whose time limit and grace are over: their worker is
 // lost. The persisted candidate and feedback are kept.
 func (s *Sweeper) stale(ctx context.Context, now time.Time) (int, error) {
 	cutoff := now.Add(-(s.cfg.Limits.JobTimeout + grace))
-	var (
-		total int
-		errs  []error
-	)
-	for {
-		batch, err := s.store.ListStaleRunning(ctx, cutoff, s.opts.Batch)
-		if err != nil {
-			return total, errors.Join(append(errs, err)...)
+	list := func() ([]job.Job, error) { return s.store.ListStaleRunning(ctx, cutoff, s.opts.Batch) }
+	return s.batched(ctx, list, func(j job.Job) (bool, error) {
+		out := fromRow(j, job.StatusFailed, extract.CodeTimeout)
+		switch err := s.store.Finish(ctx, j.ID, "", out, now); {
+		case errors.Is(err, job.ErrConflict), errors.Is(err, job.ErrNotFound): // finished or removed meanwhile
+			return false, nil
+		case err != nil:
+			return false, fmt.Errorf("finish job %s: %w", j.ID, err)
 		}
-		finished := 0
-		for _, j := range batch {
-			if err := ctx.Err(); err != nil {
-				return total + finished, errors.Join(append(errs, err)...)
-			}
-			out := timeoutOutcome(j)
-			switch err := s.store.Finish(ctx, j.ID, "", out, now); {
-			case errors.Is(err, job.ErrConflict), errors.Is(err, job.ErrNotFound): // finished or removed meanwhile
-			case err != nil:
-				errs = append(errs, fmt.Errorf("finish job %s: %w", j.ID, err))
-			default:
-				finished++
-				j.Status, j.Attempts, j.Error, j.FinishedAt = out.Status, out.Attempts, out.Error, now
-				s.audit.JobFinished(ctx, j)
-				if err := s.clearInputs(ctx, j, now); err != nil {
-					errs = append(errs, err)
-				}
-			}
-		}
-		total += finished
-		if len(batch) < s.opts.Batch || finished == 0 {
-			return total, errors.Join(errs...)
-		}
-	}
+		j.Status, j.Attempts, j.Error, j.FinishedAt = out.Status, out.Attempts, out.Error, now
+		s.audit.JobFinished(ctx, j)
+		return true, s.clearInputs(ctx, j, now)
+	})
 }
 
 // clearInputs is the terminal-state deletion of contract §10 for a job the worker did
-// not finish: the blobs, then the instruction and schema columns.
+// not finish.
 func (s *Sweeper) clearInputs(ctx context.Context, j job.Job, now time.Time) error {
-	if j.Retention != job.RetentionNone && !s.deleteInputs[j.ApplicationID] {
+	if !inputsAtTerminal(s.apps[j.ApplicationID], j) {
 		return nil
 	}
-	if err := s.blobs.DeleteAll(ctx, j.ID); err != nil {
-		return fmt.Errorf("delete blobs of %s: %w", j.ID, err)
-	}
-	if err := s.store.MarkContentDeleted(ctx, j.ID, job.ContentInputs, now); err != nil {
-		return fmt.Errorf("delete inputs of %s: %w", j.ID, err)
-	}
-	return nil
-}
-
-func timeoutOutcome(j job.Job) job.Outcome {
-	e, _ := json.Marshal(extract.JobError{Code: extract.CodeTimeout, Message: timeoutMessage})
-	o := job.Outcome{Status: job.StatusFailed, Attempts: j.Attempts, Result: j.Result, Error: e,
-		Feedback: extract.VisibleFeedback(j.JudgePolicy, j.Feedback)} // contract v1 sources only under always
-	if o.Feedback == nil {
-		o.Feedback = json.RawMessage(`[]`)
-	}
-	return o
+	return deleteInputs(ctx, s.blobs, s.store, j.ID, now)
 }
 
 // quota removes each application's quota windows older than QuotaWindowsToKeep windows.

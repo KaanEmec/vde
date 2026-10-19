@@ -47,10 +47,9 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 | `internal/pdf/` | pdfium on WebAssembly (go-pdfium, wazero): pages, text layer, rendering (`pdf.go`, ADR 0010) |
 | `internal/provider/` | `Provider` interface, request/response types, error classes (`doc.go`); adapters `anthropic`, `openai` (OpenAI-compatible, OpenRouter preset), `gemini`, `bedrock`, `vertex`, `classifier`, `fake` (each with `doc.go`) |
 | `internal/router/` | Endpoint groups, ordered failover, per-endpoint health; never across roles (`doc.go`) |
-| `internal/sweeper/` | Retention sweeper, advisory-locked across processes (`doc.go`) |
 | `internal/version/` | Build info injected by `-ldflags` (`version.go`) |
 | `internal/webhook/` | Signed completion webhooks (`webhook.go`) |
-| `internal/worker/` | Worker pool: leasing, job deadline, retention action (`doc.go`) |
+| `internal/worker/` | Worker pool: leasing, job deadline, retention action (`doc.go`); retention sweeper, advisory-locked across processes (`sweep.go`) |
 | `test/conformance/` | Black-box suite for the TravelInbox contract (`doc.go`) |
 | `docs/` | Architecture and ADRs, roadmap, operator, API, providers, conformance, security, quality |
 | `examples/` | Example configs, compose (single and `scaled`), synthetic samples ([README](examples/README.md)) |

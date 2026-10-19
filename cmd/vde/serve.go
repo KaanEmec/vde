@@ -27,7 +27,6 @@ import (
 	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/router"
-	"github.com/kaanemec/vde/internal/sweeper"
 	"github.com/kaanemec/vde/internal/version"
 	"github.com/kaanemec/vde/internal/webhook"
 	"github.com/kaanemec/vde/internal/worker"
@@ -259,7 +258,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		},
 		PDF: document.PDFEngineOf(pdfEngine),
 	})
-	sweep := sweeper.New(store, blobs, cfg, sweeper.Options{
+	sweep := worker.NewSweeper(store, blobs, cfg, worker.SweepOptions{
 		Logger:  logger,
 		Metrics: m,
 		Audit:   rec.WithActor(audit.ActorSweeper),

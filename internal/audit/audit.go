@@ -375,7 +375,7 @@ func (r *Recorder) JobCreated(ctx context.Context, j job.Job) {
 // records the status-derived verification and the default policy.
 func (r *Recorder) JobFinished(ctx context.Context, j job.Job) {
 	r.warn(ctx, j.ApplicationID, j.ID, JobFinished{
-		Status: string(j.Status), Attempts: j.Attempts, ErrorCode: errorCode(j.Error), ServiceVersion: j.ServiceVersion,
+		Status: string(j.Status), Attempts: j.Attempts, ErrorCode: job.ErrorCode(j.Error), ServiceVersion: j.ServiceVersion,
 		InputTokens: j.InputTokens, OutputTokens: j.OutputTokens,
 		Verification: cmp.Or(j.Verification, job.DefaultVerification(j.Status)),
 		JudgePolicy:  cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy),
@@ -390,17 +390,6 @@ func (r *Recorder) JobDeleted(ctx context.Context, j job.Job, reason string) {
 // JobExpired records job.expired for a job the sweeper removed.
 func (r *Recorder) JobExpired(ctx context.Context, j job.Job) {
 	r.warn(ctx, j.ApplicationID, j.ID, JobExpired{Status: string(j.Status), Retention: string(j.Retention)})
-}
-
-// errorCode extracts the code of a job's error JSON; the message is never copied.
-func errorCode(raw json.RawMessage) string {
-	var e struct {
-		Code string `json:"code"`
-	}
-	if raw == nil || json.Unmarshal(raw, &e) != nil {
-		return ""
-	}
-	return e.Code
 }
 
 // ParseSince reads the start of a listing window as vde audit list and the admin API

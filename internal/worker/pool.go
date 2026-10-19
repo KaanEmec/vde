@@ -209,7 +209,7 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	j.Verification = cmp.Or(out.Verification, job.DefaultVerification(out.Status))
 	j.JudgePolicy = cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy)
 	log.Info("worker: job finished", "status", string(out.Status), "verification", j.Verification, "attempts", out.Attempts,
-		"error_code", errorCode(out), "input_tokens", out.InputTokens, "output_tokens", out.OutputTokens)
+		"error_code", job.ErrorCode(out.Error), "input_tokens", out.InputTokens, "output_tokens", out.OutputTokens)
 	p.opts.Metrics.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
 	if loop.Decision != "" {
 		p.opts.Metrics.JudgeDecision(j.JudgePolicy, loop.Decision, loop.Disagreements)
@@ -395,33 +395,40 @@ func (p *Pool) maxAttempts(app config.Application, j job.Job) int {
 	return limit
 }
 
-// applyRetention deletes the inputs of a job at its terminal state (contract §10): blobs
-// first, then the instruction and schema columns. That is every retention: none job, and
-// a retention: default job of an application with delete_blobs_at_terminal; the other
-// default jobs keep their inputs until the sweeper removes them at expires_at.
+// applyRetention deletes the inputs of a job the worker finished, when its retention says
+// so (inputsAtTerminal).
 func (p *Pool) applyRetention(ctx context.Context, log *slog.Logger, app config.Application, j job.Job) {
-	r := app.Retention
-	if j.Retention != job.RetentionNone && !r.ForceNone && !r.DeleteBlobsAtTerminal {
+	if !inputsAtTerminal(app, j) {
 		return
 	}
-	if err := p.blobs.DeleteAll(ctx, j.ID); err != nil {
-		log.Error("worker: deleting blobs failed", "error", err)
-		return
-	}
-	if err := p.store.MarkContentDeleted(ctx, j.ID, job.ContentInputs, time.Now()); err != nil {
+	if err := deleteInputs(ctx, p.blobs, p.store, j.ID, time.Now()); err != nil {
 		log.Error("worker: deleting inputs failed", "error", err)
 	}
 }
 
-// Job error messages, generic as in extract.
-var errorMessages = map[string]string{
-	extract.CodeExtractorFailed: "The extractor gave no usable answer on any attempt.",
-	extract.CodeTimeout:         "The job's time limit expired.",
-	extract.CodeInternal:        "Internal error.",
+// inputsAtTerminal reports whether a job loses its inputs at its terminal state (contract
+// §10): every retention: none job, and a retention: default job of an application with
+// delete_blobs_at_terminal or force_none. The other default jobs keep their inputs until
+// the sweeper removes them at expires_at.
+func inputsAtTerminal(app config.Application, j job.Job) bool {
+	r := app.Retention
+	return j.Retention == job.RetentionNone || r.ForceNone || r.DeleteBlobsAtTerminal
+}
+
+// deleteInputs deletes a job's inputs: the blobs first, then the instruction and schema
+// columns.
+func deleteInputs(ctx context.Context, blobs blob.Store, store job.Store, id string, now time.Time) error {
+	if err := blobs.DeleteAll(ctx, id); err != nil {
+		return fmt.Errorf("delete blobs of %s: %w", id, err)
+	}
+	if err := store.MarkContentDeleted(ctx, id, job.ContentInputs, now); err != nil {
+		return fmt.Errorf("delete inputs of %s: %w", id, err)
+	}
+	return nil
 }
 
 func jobError(code string) json.RawMessage {
-	b, _ := json.Marshal(extract.JobError{Code: code, Message: errorMessages[code]})
+	b, _ := json.Marshal(extract.NewJobError(code))
 	return b
 }
 
@@ -486,12 +493,4 @@ func merge(j job.Job, o extract.Outcome) job.Outcome {
 		out.Error, _ = json.Marshal(o.Error)
 	}
 	return out
-}
-
-func errorCode(o job.Outcome) string {
-	var e extract.JobError
-	if o.Error == nil || json.Unmarshal(o.Error, &e) != nil {
-		return ""
-	}
-	return e.Code
 }
