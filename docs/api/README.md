@@ -15,10 +15,8 @@ error codes in step, and check the superset relation.
   described by [`api/admin-openapi.yaml`](../../api/admin-openapi.yaml).
 - [writing-instructions.md](writing-instructions.md): how framings and your instructions
   compose, and how to design schemas.
-- [examples/](examples/): [`submit.sh`](examples/submit.sh) (curl),
-  [`node/client.mjs`](examples/node/client.mjs) (Node 20+),
-  [`swift/VDEClient.swift`](examples/swift/VDEClient.swift) (URLSession; server-side only,
-  never with the service token in a shipped app).
+- [`examples/submit.sh`](examples/submit.sh): submit, poll and read with curl. Call the
+  service from your server only; never ship its token in a browser or mobile app.
 
 ## Stability
 

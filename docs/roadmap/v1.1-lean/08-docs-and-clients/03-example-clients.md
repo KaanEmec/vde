@@ -1,6 +1,6 @@
 # Job: Example clients: Node (web) and Swift (mobile)
 
-Version: v1.1 · Epic: 08 Docs and clients · Status: planned · Depends on: owner decision L5, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
+Version: v1.1 · Epic: 08 Docs and clients · Status: done (CHANGELOG line added at closeout) · Depends on: owner decision L5, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -23,7 +23,8 @@ Every example client in the repository is either run by a test or gone.
 ## Tasks
 
 - [x] Owner decision L5 (2026-10-19): delete Node and Swift, keep `submit.sh`.
-- [ ] Delete and repoint links.
+- [x] Delete and repoint links (and the stale "not run against a live deployment" note in
+      `docs/api/guide.md`).
   - Skill: none (Edit).
   - Prompt: "Delete docs/api/examples/node and docs/api/examples/swift; update
     docs/api/README.md and any link (grep for client.mjs and VDEClient); add a CHANGELOG
@@ -39,3 +40,5 @@ Every example client in the repository is either run by a test or gone.
 ## Out of scope
 
 - An SDK package.
+
+Result: −404 lines (Node and Swift clients); `docs/api/README.md` and `guide.md` repointed.

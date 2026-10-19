@@ -14,5 +14,5 @@ change.
 | --- | --- | --- |
 | 01 | [Deduplicate and de-stale the documentation](01-dedupe-and-destale.md) | planned |
 | 02 | [Configuration reference from one source](02-config-reference-single-source.md) | planned |
-| 03 | [Example clients: Node (web) and Swift (mobile)](03-example-clients.md) | planned |
+| 03 | [Example clients: Node (web) and Swift (mobile)](03-example-clients.md) | done |
 | 04 | [History of the done versions](04-roadmap-history.md) | planned |

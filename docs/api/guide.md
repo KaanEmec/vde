@@ -4,15 +4,11 @@ A task-oriented guide to the vde HTTP API. The reference is
 [`api/openapi.yaml`](../../api/openapi.yaml) (also served at `GET /v1/openapi.yaml`) and the
 conventions are in the [README](README.md); this page walks through a call from start to
 finish. Writing the instructions and the schema you send is a topic of its own:
-[writing-instructions.md](writing-instructions.md). Runnable clients are in
-[`examples/`](examples/).
+[writing-instructions.md](writing-instructions.md). A runnable curl client is
+[`examples/submit.sh`](examples/submit.sh).
 
 The flow is always the same: **submit** a document and get a job back at once, **poll** the
 job until it reaches a terminal status, **read** `result` and `feedback`.
-
-> **The examples have not been run against a live deployment yet** (the handlers are still
-> being wired). They follow the contract and the OpenAPI document exactly; syntax checks
-> are all they have had so far.
 
 ## Where a client may run
 
