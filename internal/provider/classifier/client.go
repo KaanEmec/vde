@@ -97,14 +97,14 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if c.key != "" {
 		header.Set("Authorization", "Bearer "+c.key)
 	}
-	raw, _, err := provider.PostJSON(ctx, c.http, c.url, header, data, "classifier")
+	raw, _, err := provider.PostJSON(ctx, c.http, c.url, header, data, "classifier", false)
 	if err != nil {
 		return provider.Response{}, err
 	}
 	var cr Response
 	if json.Unmarshal(raw, &cr) != nil {
 		// Not wrapped: json errors can quote a byte of the response.
-		return provider.Response{}, &provider.Error{Message: "malformed response"}
+		return provider.Response{}, &provider.Error{Message: "classifier: malformed response"}
 	}
 	text, err := Verdict(questions, cr.Decisions)
 	if err != nil {
@@ -129,10 +129,10 @@ func Verdict(questions []config.Question, decisions []Decision) (string, error) 
 	byID := make(map[string]float64, len(decisions))
 	for _, d := range decisions {
 		if _, dup := byID[d.Question]; dup {
-			return "", &provider.Error{Message: "duplicate decision for one question"}
+			return "", &provider.Error{Message: "classifier: duplicate decision for one question"}
 		}
 		if d.Probability == nil || *d.Probability < 0 || *d.Probability > 1 {
-			return "", &provider.Error{Message: "decision without a probability from 0 to 1"}
+			return "", &provider.Error{Message: "classifier: decision without a probability from 0 to 1"}
 		}
 		byID[d.Question] = *d.Probability
 	}
@@ -140,7 +140,7 @@ func Verdict(questions []config.Question, decisions []Decision) (string, error) 
 	for _, q := range questions {
 		p, ok := byID[q.ID]
 		if !ok {
-			return "", &provider.Error{Message: "no decision for question " + q.ID}
+			return "", &provider.Error{Message: "classifier: no decision for question " + q.ID}
 		}
 		v.Confidence = min(v.Confidence, p)
 		if p < q.Threshold {
@@ -152,7 +152,7 @@ func Verdict(questions []config.Question, decisions []Decision) (string, error) 
 	}
 	out, err := json.Marshal(v)
 	if err != nil {
-		return "", &provider.Error{Message: "encoding verdict failed", Err: err}
+		return "", &provider.Error{Message: "classifier: encoding verdict failed", Err: err}
 	}
 	return string(out), nil
 }

@@ -102,7 +102,7 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		header.Set("HTTP-Referer", openRouterReferer)
 		header.Set("X-Title", openRouterTitle)
 	}
-	raw, _, err := provider.PostJSON(ctx, c.http, c.url, header, body, "openai")
+	raw, _, err := provider.PostJSON(ctx, c.http, c.url, header, body, "openai", false)
 	if err != nil {
 		return provider.Response{}, err
 	}
@@ -164,18 +164,18 @@ func parseResponse(raw []byte) (provider.Response, error) {
 	var cr chatResponse
 	if json.Unmarshal(raw, &cr) != nil {
 		// Not wrapped: json errors can quote a byte of the response.
-		return provider.Response{}, &provider.Error{Message: "malformed response"}
+		return provider.Response{}, &provider.Error{Message: "openai: malformed response"}
 	}
 	if len(cr.Choices) == 0 {
-		return provider.Response{}, &provider.Error{Message: "response has no choices"}
+		return provider.Response{}, &provider.Error{Message: "openai: response has no choices"}
 	}
 	choice := cr.Choices[0]
 	if choice.FinishReason == "content_filter" {
-		return provider.Response{}, &provider.Error{Message: "response blocked by content filter"}
+		return provider.Response{}, &provider.Error{Message: "openai: response blocked by content filter"}
 	}
 	text := contentText(choice.Message.Content)
 	if strings.TrimSpace(text) == "" {
-		return provider.Response{}, &provider.Error{Message: "response has no content"}
+		return provider.Response{}, &provider.Error{Message: "openai: response has no content"}
 	}
 	return provider.Response{
 		Text:         text,

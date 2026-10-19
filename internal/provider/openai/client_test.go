@@ -267,6 +267,9 @@ func TestErrors(t *testing.T) {
 			if pe.RetryAfter != tt.retryAfter {
 				t.Errorf("RetryAfter = %v, want %v", pe.RetryAfter, tt.retryAfter)
 			}
+			if !strings.HasPrefix(pe.Message, "openai: ") {
+				t.Errorf("Message = %q, want the openai prefix", pe.Message)
+			}
 			providertest.AssertNoContent(t, err, secrets...)
 		})
 	}

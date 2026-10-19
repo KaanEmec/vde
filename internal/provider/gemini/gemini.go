@@ -87,23 +87,23 @@ type generateResponse struct {
 // Complete runs one generateContent call. Errors never contain request or response
 // content.
 func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
-	body, err := Body(req)
+	body, err := Body(req, "gemini")
 	if err != nil {
 		return provider.Response{}, err
 	}
 	endpoint := c.baseURL + "/v1beta/models/" + url.PathEscape(req.Model) + ":generateContent"
 	header := http.Header{}
 	header.Set(apiKeyHeader, c.apiKey)
-	raw, status, err := provider.PostJSON(ctx, c.http, endpoint, header, body, "gemini")
+	raw, status, err := provider.PostJSON(ctx, c.http, endpoint, header, body, "gemini", false)
 	if err != nil {
 		return provider.Response{}, err
 	}
-	return Parse(raw, status)
+	return Parse(raw, status, "gemini")
 }
 
 // Body maps the request to the generateContent body, the same on the Gemini API and on
-// Vertex AI.
-func Body(req provider.Request) ([]byte, error) {
+// Vertex AI; name ("gemini" or "vertex") starts its error messages.
+func Body(req provider.Request, name string) ([]byte, error) {
 	gr := generateRequest{
 		GenerationConfig: generationConfig{MaxOutputTokens: req.MaxTokens},
 	}
@@ -124,7 +124,7 @@ func Body(req provider.Request) ([]byte, error) {
 	gr.Contents = []content{user}
 	body, err := json.Marshal(gr)
 	if err != nil {
-		return nil, &provider.Error{Message: "gemini: encoding request failed", Err: err}
+		return nil, &provider.Error{Message: name + ": encoding request failed", Err: err}
 	}
 	return body, nil
 }
@@ -136,34 +136,34 @@ func blobPart(b *provider.Blob) part {
 	}}
 }
 
-// Parse reads a 2xx generateContent body; its errors carry status. A blocked prompt or
-// answer, or an answer without text, is permanent.
-func Parse(raw []byte, status int) (provider.Response, error) {
+// Parse reads a 2xx generateContent body; its errors carry status and start with name. A
+// blocked prompt or answer, or an answer without text, is permanent.
+func Parse(raw []byte, status int, name string) (provider.Response, error) {
 	var gr generateResponse
 	if err := json.Unmarshal(raw, &gr); err != nil {
 		// The decode error is dropped: it can quote response bytes.
 		return provider.Response{}, &provider.Error{
 			Status:  status,
-			Message: "gemini: malformed response",
+			Message: name + ": malformed response",
 		}
 	}
 	if gr.PromptFeedback.BlockReason != "" {
-		return provider.Response{}, provider.Refused(status, "gemini: prompt blocked by the provider")
+		return provider.Response{}, provider.Refused(status, name+": prompt blocked by the provider")
 	}
 	if len(gr.Candidates) == 0 {
-		return provider.Response{}, provider.Refused(status, "gemini: response had no candidates")
+		return provider.Response{}, provider.Refused(status, name+": response had no candidates")
 	}
 	cand := gr.Candidates[0]
 	switch cand.FinishReason {
 	case "SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII":
-		return provider.Response{}, provider.Refused(status, "gemini: answer blocked by the provider")
+		return provider.Response{}, provider.Refused(status, name+": answer blocked by the provider")
 	}
 	var text strings.Builder
 	for _, p := range cand.Content.Parts {
 		text.WriteString(p.Text)
 	}
 	if text.Len() == 0 {
-		return provider.Response{}, provider.Refused(status, "gemini: response had no text")
+		return provider.Response{}, provider.Refused(status, name+": response had no text")
 	}
 	return provider.Response{
 		Text:         text.String(),

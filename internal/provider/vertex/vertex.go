@@ -88,9 +88,9 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		if err != nil {
 			return provider.Response{}, err
 		}
-		return anthropic.Parse(raw)
+		return anthropic.Parse(raw, "vertex")
 	case strings.HasPrefix(req.Model, "gemini"):
-		body, err := gemini.Body(req)
+		body, err := gemini.Body(req, "vertex")
 		if err != nil {
 			return provider.Response{}, err
 		}
@@ -98,7 +98,7 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		if err != nil {
 			return provider.Response{}, err
 		}
-		return gemini.Parse(raw, status)
+		return gemini.Parse(raw, status, "vertex")
 	default:
 		return provider.Response{}, &provider.Error{Message: "vertex: model must be a gemini or claude model"}
 	}
@@ -122,5 +122,5 @@ func (c *Client) post(ctx context.Context, endpoint string, body []byte) ([]byte
 	}
 	header := http.Header{}
 	header.Set("Authorization", tok.Type()+" "+tok.AccessToken)
-	return provider.PostJSON(ctx, c.http, endpoint, header, body, "vertex")
+	return provider.PostJSON(ctx, c.http, endpoint, header, body, "vertex", false)
 }

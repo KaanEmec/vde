@@ -17,7 +17,7 @@ import (
 // beyond this is a fault, not an answer.
 const DefaultMaxResponseBytes = 8 << 20
 
-// maxErrorBodyBytes bounds how much of a non-2xx body PostJSON returns.
+// maxErrorBodyBytes bounds how much of a non-2xx body PostJSON returns when asked to.
 const maxErrorBodyBytes = 64 << 10
 
 // ErrResponseTooLarge is returned by a response body read past the client's cap.
@@ -104,10 +104,11 @@ func StatusError(resp *http.Response, message string) *Error {
 // PostJSON posts body as JSON to endpoint with the extra header and returns the body and
 // status of a 2xx response. Every failure is an *Error whose message starts with name and
 // never quotes the response: an invalid URL is Permanent, a failed call or body read is
-// classified by Classify, and a non-2xx response is StatusError. With a non-2xx response
-// the returned bytes are at most 64 KiB of its body, for an adapter that names a
-// documented error code; they must never reach an error message.
-func PostJSON(ctx context.Context, client *http.Client, endpoint string, header http.Header, body []byte, name string) ([]byte, int, error) {
+// classified by Classify, and a non-2xx response is StatusError. The body of a non-2xx
+// response is not read, since it can echo request content, unless errorBody is set: then
+// at most 64 KiB of it is returned, for an adapter that names a documented error type;
+// those bytes must never reach an error message.
+func PostJSON(ctx context.Context, client *http.Client, endpoint string, header http.Header, body []byte, name string, errorBody bool) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, &Error{Message: name + ": invalid endpoint URL"}
@@ -122,7 +123,10 @@ func PostJSON(ctx context.Context, client *http.Client, endpoint string, header 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		var data []byte
+		if errorBody {
+			data, _ = io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		}
 		return data, resp.StatusCode, StatusError(resp, name+": request rejected")
 	}
 	raw, err := io.ReadAll(resp.Body)

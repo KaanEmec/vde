@@ -166,14 +166,14 @@ func TestPostJSON(t *testing.T) {
 
 	t.Run("2xx", func(t *testing.T) {
 		t.Parallel()
-		raw, status, err := PostJSON(t.Context(), client, srv.URL+"/ok", header, []byte(`{}`), "test")
+		raw, status, err := PostJSON(t.Context(), client, srv.URL+"/ok", header, []byte(`{}`), "test", false)
 		if err != nil || status != http.StatusOK || string(raw) != "POST|application/json|extra|{}" {
 			t.Errorf("PostJSON = %q, %d, %v", raw, status, err)
 		}
 	})
 	t.Run("non-2xx", func(t *testing.T) {
 		t.Parallel()
-		raw, status, err := PostJSON(t.Context(), NewHTTPClient(time.Second, DefaultMaxResponseBytes), srv.URL+"/rejected", nil, nil, "test")
+		raw, status, err := PostJSON(t.Context(), NewHTTPClient(time.Second, DefaultMaxResponseBytes), srv.URL+"/rejected", nil, nil, "test", true)
 		var pe *Error
 		if !errors.As(err, &pe) || pe.Kind != Retryable || pe.Status != http.StatusTooManyRequests || pe.RetryAfter != 3*time.Second {
 			t.Fatalf("error = %v, want a retryable 429 with Retry-After", err)
@@ -185,9 +185,20 @@ func TestPostJSON(t *testing.T) {
 			t.Errorf("error = %v, want the fixed message only", err)
 		}
 	})
+	t.Run("non-2xx body not read", func(t *testing.T) {
+		t.Parallel()
+		raw, status, err := PostJSON(t.Context(), NewHTTPClient(time.Second, DefaultMaxResponseBytes), srv.URL+"/rejected", nil, nil, "test", false)
+		var pe *Error
+		if !errors.As(err, &pe) || pe.Kind != Retryable || pe.Status != http.StatusTooManyRequests {
+			t.Fatalf("error = %v, want a retryable 429", err)
+		}
+		if status != http.StatusTooManyRequests || raw != nil {
+			t.Errorf("status %d, %d bytes; want 429 and no body", status, len(raw))
+		}
+	})
 	t.Run("oversized", func(t *testing.T) {
 		t.Parallel()
-		raw, _, err := PostJSON(t.Context(), client, srv.URL+"/large", nil, nil, "test")
+		raw, _, err := PostJSON(t.Context(), client, srv.URL+"/large", nil, nil, "test", false)
 		var pe *Error
 		if !errors.As(err, &pe) || pe.Kind != Permanent || pe.Status != 0 || !errors.Is(err, ErrResponseTooLarge) || raw != nil {
 			t.Fatalf("PostJSON = %q, %v; want a permanent ErrResponseTooLarge", raw, err)
@@ -198,7 +209,7 @@ func TestPostJSON(t *testing.T) {
 	})
 	t.Run("invalid URL", func(t *testing.T) {
 		t.Parallel()
-		_, _, err := PostJSON(t.Context(), client, "http://[::1", nil, nil, "test")
+		_, _, err := PostJSON(t.Context(), client, "http://[::1", nil, nil, "test", false)
 		var pe *Error
 		if !errors.As(err, &pe) || pe.Kind != Permanent || pe.Message != "test: invalid endpoint URL" {
 			t.Errorf("error = %v, want a permanent invalid URL", err)
@@ -209,7 +220,7 @@ func TestPostJSON(t *testing.T) {
 		closed := httptest.NewServer(http.NotFoundHandler())
 		url := closed.URL
 		closed.Close()
-		_, _, err := PostJSON(t.Context(), client, url, nil, nil, "test")
+		_, _, err := PostJSON(t.Context(), client, url, nil, nil, "test", false)
 		if Classify(err) != Retryable {
 			t.Errorf("error = %v, want retryable", err)
 		}

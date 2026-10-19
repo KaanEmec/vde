@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -117,26 +118,37 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if c.apiKey != "" {
 		header.Set("x-api-key", c.apiKey)
 	}
-	raw, _, err := provider.PostJSON(ctx, c.http, c.baseURL+"/v1/messages", header, body, "anthropic")
+	raw, _, err := provider.PostJSON(ctx, c.http, c.baseURL+"/v1/messages", header, body, "anthropic", true)
 	if err != nil {
 		return provider.Response{}, statusError(raw, err)
 	}
-	return Parse(raw)
+	var mr messagesResponse
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&mr); err != nil {
+		// An empty or cut-off body (io.EOF, io.ErrUnexpectedEOF) is Retryable, so the
+		// router fails over; a syntax error is Permanent. Not wrapped: a syntax error can
+		// quote bytes of the response.
+		return provider.Response{}, &provider.Error{Kind: provider.Classify(err), Message: "anthropic: unreadable response body"}
+	}
+	return answer(&mr, "anthropic")
 }
 
 // Body maps the request to the Messages API body. A non-empty vertexVersion gives the
 // Vertex AI form: that anthropic_version in the body and no model, which Vertex takes
-// from the URL.
+// from the URL; its errors then start with "vertex:".
 func Body(req provider.Request, vertexVersion string) ([]byte, error) {
+	name := "anthropic"
+	if vertexVersion != "" {
+		name = "vertex"
+	}
 	if req.Model == "" {
-		return nil, &provider.Error{Message: "anthropic: request has no model"}
+		return nil, &provider.Error{Message: name + ": request has no model"}
 	}
 	if len(req.Parts) == 0 {
-		return nil, &provider.Error{Message: "anthropic: request has no content parts"}
+		return nil, &provider.Error{Message: name + ": request has no content parts"}
 	}
 	blocks := make([]contentBlock, 0, len(req.Parts))
 	for _, p := range req.Parts {
-		b, err := block(p)
+		b, err := block(p, name)
 		if err != nil {
 			return nil, err
 		}
@@ -153,31 +165,31 @@ func Body(req provider.Request, vertexVersion string) ([]byte, error) {
 	}
 	body, err := json.Marshal(r)
 	if err != nil {
-		return nil, &provider.Error{Message: "anthropic: encoding request failed", Err: err}
+		return nil, &provider.Error{Message: name + ": encoding request failed", Err: err}
 	}
 	return body, nil
 }
 
 // block maps one part to a content block. Exactly one field of a Part must be set.
-func block(p provider.Part) (contentBlock, error) {
+func block(p provider.Part, name string) (contentBlock, error) {
 	switch {
 	case p.Text != "" && p.Image == nil && p.Document == nil:
 		return contentBlock{Type: "text", Text: p.Text}, nil
 	case p.Image != nil && p.Text == "" && p.Document == nil:
 		if p.Image.MediaType == "" || len(p.Image.Data) == 0 {
-			return contentBlock{}, &provider.Error{Message: "anthropic: image part is empty or has no media type"}
+			return contentBlock{}, &provider.Error{Message: name + ": image part is empty or has no media type"}
 		}
 		return contentBlock{Type: "image", Source: base64Source(p.Image)}, nil
 	case p.Document != nil && p.Text == "" && p.Image == nil:
 		if p.Document.MediaType != "application/pdf" {
-			return contentBlock{}, &provider.Error{Message: "anthropic: document parts must be application/pdf"}
+			return contentBlock{}, &provider.Error{Message: name + ": document parts must be application/pdf"}
 		}
 		if len(p.Document.Data) == 0 {
-			return contentBlock{}, &provider.Error{Message: "anthropic: document part is empty"}
+			return contentBlock{}, &provider.Error{Message: name + ": document part is empty"}
 		}
 		return contentBlock{Type: "document", Source: base64Source(p.Document)}, nil
 	default:
-		return contentBlock{}, &provider.Error{Message: "anthropic: part must set exactly one of text, image or document"}
+		return contentBlock{}, &provider.Error{Message: name + ": part must set exactly one of text, image or document"}
 	}
 }
 
@@ -200,17 +212,24 @@ func statusError(raw []byte, err error) error {
 	return pe
 }
 
-// Parse reads a 2xx Messages API body. A refusal or an answer without text is a permanent
-// failure: asking again elsewhere would not change a content decision, and an empty
-// answer is not a usable extraction.
-func Parse(raw []byte) (provider.Response, error) {
+// Parse reads a 2xx Messages API body for an adapter that reuses this wire format
+// (vertex); name starts its error messages. Unlike Complete, it treats every unreadable
+// body as Permanent, as vertex always did.
+func Parse(raw []byte, name string) (provider.Response, error) {
 	var mr messagesResponse
 	if json.Unmarshal(raw, &mr) != nil {
 		// Not wrapped: a syntax error can quote bytes of the response.
-		return provider.Response{}, &provider.Error{Message: "anthropic: unreadable response body"}
+		return provider.Response{}, &provider.Error{Message: name + ": unreadable response body"}
 	}
+	return answer(&mr, name)
+}
+
+// answer turns a decoded body into the response. A refusal or an answer without text is
+// a permanent failure: asking again elsewhere would not change a content decision, and
+// an empty answer is not a usable extraction.
+func answer(mr *messagesResponse, name string) (provider.Response, error) {
 	if mr.StopReason == "refusal" {
-		return provider.Response{}, &provider.Error{Message: "anthropic: the model declined to answer (refusal)"}
+		return provider.Response{}, &provider.Error{Message: name + ": the model declined to answer (refusal)"}
 	}
 	var text strings.Builder
 	for _, b := range mr.Content {
@@ -219,7 +238,7 @@ func Parse(raw []byte) (provider.Response, error) {
 		}
 	}
 	if strings.TrimSpace(text.String()) == "" {
-		return provider.Response{}, &provider.Error{Message: "anthropic: the model returned no text"}
+		return provider.Response{}, &provider.Error{Message: name + ": the model returned no text"}
 	}
 	return provider.Response{
 		Text:         text.String(),

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,28 +211,42 @@ func TestComplete_statusErrors(t *testing.T) {
 	}
 }
 
-func TestComplete_unusableAnswerStatus(t *testing.T) {
+// TestComplete_unusableAnswers: a 2xx answer that cannot be used is permanent, reported
+// as the family's direct adapter does (Gemini with the status, Claude without) but named
+// vertex, and never quotes the answer. Unlike anthropic, an empty or cut-off Claude body
+// is permanent too.
+func TestComplete_unusableAnswers(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name, model, reply string
 		status             int
 	}{
+		{"gemini prompt blocked", "gemini-x", `{"promptFeedback":{"blockReason":"SAFETY"},"candidates":[]}`, 200},
+		{"gemini safety finish", "gemini-x", `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"SAFETY"}]}`, 200},
 		{"gemini blocklist finish", "gemini-x", `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"BLOCKLIST"}]}`, 200},
 		{"gemini spii finish", "gemini-x", `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"SPII"}]}`, 200},
+		{"gemini no candidates", "gemini-x", `{"candidates":[]}`, 200},
+		{"gemini no text", "gemini-x", `{"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}`, 200},
 		{"gemini malformed", "gemini-x", `{"candidates":[` + secretAns, 200},
 		{"claude refusal", "claude-x", `{"stop_reason":"refusal","content":[{"type":"text","text":"` + secretAns + `"}]}`, 0},
 		{"claude no text", "claude-x", `{"stop_reason":"end_turn","content":[]}`, 0},
 		{"claude malformed", "claude-x", `{"content":` + secretAns, 0},
+		{"claude cut off", "claude-x", `{"content":[{"type":"text","text":"` + secretAns, 0},
+		{"claude empty", "claude-x", ``, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c, _ := serve(t, 200, tt.reply, nil)
 			_, err := c.Complete(context.Background(), provider.Request{Model: tt.model, Parts: []provider.Part{{Text: "x"}}})
-			var pe *provider.Error
-			if !errors.As(err, &pe) || pe.Kind != provider.Permanent || pe.Status != tt.status {
-				t.Fatalf("error = %v, want permanent with status %d", err, tt.status)
+			pe := providertest.AsError(t, err)
+			if pe.Kind != provider.Permanent || pe.Status != tt.status {
+				t.Errorf("error = %v (kind %s, status %d), want permanent with status %d", err, pe.Kind, pe.Status, tt.status)
 			}
+			if !strings.HasPrefix(pe.Message, "vertex: ") {
+				t.Errorf("Message = %q, want the vertex prefix", pe.Message)
+			}
+			providertest.AssertNoContent(t, err, secretAns)
 		})
 	}
 }

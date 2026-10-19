@@ -332,8 +332,8 @@ func TestCompleteMalformedBody(t *testing.T) {
 	wantProviderError(t, err, provider.Permanent, 0)
 }
 
-// TestCompleteCutOffBody: a 2xx body that ends early is permanent like any other
-// unreadable answer, as for the other adapters (it was retryable while decoded as a stream).
+// TestCompleteCutOffBody: a 2xx body that ends early is retryable, so the router fails
+// over; a syntax error (TestCompleteMalformedBody) stays permanent.
 func TestCompleteCutOffBody(t *testing.T) {
 	t.Parallel()
 	for name, body := range map[string]string{"empty": "", "cut off": `{"model":"m","content":[{"type":"text","text":"` + secretAns} {
@@ -341,8 +341,28 @@ func TestCompleteCutOffBody(t *testing.T) {
 			t.Parallel()
 			srv, _ := providertest.Serve(t, reply(body))
 			_, err := complete(t, srv, request())
-			wantProviderError(t, err, provider.Permanent, 0)
+			wantProviderError(t, err, provider.Retryable, 0)
 		})
+	}
+}
+
+// TestNamedErrors: Body in the Vertex form and Parse name the calling adapter, and Parse
+// treats every unreadable body as permanent.
+func TestNamedErrors(t *testing.T) {
+	t.Parallel()
+	_, err := Body(provider.Request{Model: "claude-test", Parts: []provider.Part{{}}}, "vertex-1")
+	if pe := providertest.AsError(t, err); !strings.HasPrefix(pe.Message, "vertex: ") {
+		t.Errorf("Body message = %q, want the vertex prefix", pe.Message)
+	}
+	for _, raw := range []string{"", `{"content":[{"type":"text","text":"` + secretAns, `{"stop_reason":"refusal"}`} {
+		_, err := Parse([]byte(raw), "vertex")
+		wantProviderError(t, err, provider.Permanent, 0)
+		if pe := providertest.AsError(t, err); !strings.HasPrefix(pe.Message, "vertex: ") {
+			t.Errorf("Parse message = %q, want the vertex prefix", pe.Message)
+		}
+	}
+	if resp, err := Parse([]byte(successBody("ok")), "vertex"); err != nil || resp.Text != "ok" {
+		t.Errorf("Parse = %+v, %v", resp, err)
 	}
 }
 
