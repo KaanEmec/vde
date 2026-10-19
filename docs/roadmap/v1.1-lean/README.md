@@ -6,7 +6,9 @@ Status: planned (roadmap written 2026-10-19; no code changed yet) · Depends on:
 
 Make the project smaller without changing what it promises: remove dead code, unneeded
 abstractions and layers, duplicated logic, unused files and duplicated documentation, so
-that every remaining line has a production reason. The `/v1` API and the configuration
+that every remaining line has a production reason. CI and releases move from GitHub
+Actions to the owner's machine (`make ci`, `make release`); GitHub stays the online
+backup and hosts the release artifacts. The `/v1` API and the configuration
 schema stay as frozen in v1.0 ([compatibility policy](../../compatibility.md)); anything
 that would break them is only deprecated here (epic 09) and removed in a later major
 version, after an owner decision.
@@ -42,16 +44,20 @@ numbers with the tools before editing.
 | `golangci-lint` `unparam` | 9 findings (2 in production code) |
 | Longest functions | `serveAs` 254, `createJob` 163, `extractFile` 147, `loop.run` 138 (cognitive complexity 54), `runEval` 138 |
 
-Job 00-02 re-measures these and stores the eval reference report the later jobs compare
+Job 00-04 re-measures these and stores the eval reference report the later jobs compare
 against.
 
 ## Exit criterion
 
-Tag `v1.1.0` with:
+Release `v1.1.0` with `make release` when:
 
-- `make check`, `make conformance`, `make scenarios` green; `make eval` numbers identical
-  to the 00-02 reference under `always`, `never` and `auto`.
+- `make ci` is green (check, lint, both toolchains, govulncheck, fuzz, cross,
+  conformance, eval, storage) and `make eval` numbers equal the 00-04 reference under
+  `always`, `never` and `auto`.
 - Every 1.0 configuration file still loads; `TestOpenAPISupersetOfSnapshot` passes.
+- No workflow remains under `.github/`, Actions is disabled for the repository, and the
+  release (archives, checksums, GHCR image) was built and uploaded from the owner's
+  machine.
 - Production Go lines down by at least 1,800 (about 8 %), test lines by at least 1,000,
   tracked files by at least 350, with no new dependency, production package or
   interface (04-03 adds one test-support package that replaces five copies).
@@ -65,27 +71,30 @@ Tag `v1.1.0` with:
 
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
-| 00 | [Preparation: skills and baseline](00-preparation/README.md) | none | planned |
+| 00 | [Preparation: skills, local CI and release, baseline](00-preparation/README.md) | none; runs first, merged into `main` before the rest | planned |
 | 01 | [Dead code and dead features](01-dead-code/README.md) | 00 | planned |
 | 02 | [Remove unneeded abstractions](02-de-abstraction/README.md) | 01 | planned |
 | 03 | [One source for each rule](03-single-source/README.md) | 01 | planned |
 | 04 | [Provider adapters](04-providers/README.md) | 01-03 | planned |
 | 05 | [Long functions](05-long-functions/README.md) | 02, 03 | planned |
 | 06 | [Tests and testdata](06-tests-and-testdata/README.md) | 00 | planned |
-| 07 | [Dependencies, CI and build](07-dependencies-and-build/README.md) | 00 | planned (02 dropped) |
+| 07 | [Dependencies](07-dependencies-and-build/README.md) | 00 | planned (02 dropped) |
 | 08 | [Documentation and example clients](08-docs-and-clients/README.md) | 00; 08-01 last of all docs edits | planned |
 | 09 | [Deprecations (owner decisions)](09-deprecations/README.md) | 02, 04 | planned (03 dropped) |
 | 10 | [Closeout](10-closeout/README.md) | all | planned |
 
 ## Order and parallel waves
 
-Parallel agents must own disjoint files (AGENTS.md); one orchestrator commits. Suggested
-waves:
+Epic 00 comes first and ends on `main`: the local CI and release (00-02, 00-03) are
+merged and pushed, and Actions is off, before the baseline (00-04) and before any
+refactoring job, so every later job is checked by `make ci`. After that, parallel agents
+must own disjoint files (AGENTS.md) and one orchestrator commits. Suggested waves:
 
 | Wave | Jobs (in parallel) | Files owned |
 | --- | --- | --- |
-| 0 | 00-01, 00-02 | none (setup, measurements) |
-| 1 | 01-01; 06-03; 07-01; 07-03; 08-03 | 01-01: Go code across packages (alone in Go); 06-03: `internal/eval`, `testdata/eval`, `testdata/travelinbox`, `cmd/vde/eval.go`; 07-01: `internal/job/job.go`, `internal/api/middleware.go`; 07-03: `.github/`, `Makefile`, `Dockerfile`, `.dockerignore`; 08-03: `docs/api/examples/` |
+| 0a | 00-01, then 00-02, then 00-03 on branch `v1.1/local-ci`; merged into `main` and pushed | `.github/`, `.githooks/`, `Makefile`, `Dockerfile`, `.dockerignore`, `.goreleaser.yaml`, CONTRIBUTING, the docs that mention GitHub CI |
+| 0b | 00-04 | none (measurements) |
+| 1 | 01-01; 06-03; 07-01; 08-03 | 01-01: Go code across packages (alone in Go); 06-03: `internal/eval`, `testdata/eval`, `testdata/travelinbox`, `cmd/vde/eval.go`; 07-01: `internal/job/job.go`, `internal/api/middleware.go`; 08-03: `docs/api/examples/` |
 | 2 | 01-02, 01-03 (sequential); 03-06 | 01-02/03: `internal/logging`, `cmd/vde/config.go`, `internal/provider`, `internal/ground`; 03-06: `internal/config/schema*.go` |
 | 3 | 02-01, 02-02, 02-03, 02-04 (sequential: all touch `internal/api` and `cmd/vde/serve.go`) | |
 | 4 | 03-01 … 03-05 (sequential); 04-01, 04-02 (sequential) in parallel with them | 03: `internal/api`, `internal/worker`, `internal/sweeper`, `cmd/vde`; 04: `internal/provider/**` |

@@ -10,12 +10,12 @@ Prove the exit criterion, review the whole diff once more, and prepare `v1.1.0`.
 
 - [ ] Re-measure against the baseline.
   - Skill: EVID.
-  - Prompt: "Repeat every measurement of docs/roadmap/v1.1-lean/00-preparation/02-baseline.md
+  - Prompt: "Repeat every measurement of docs/roadmap/v1.1-lean/00-preparation/04-baseline.md
     and write a before/after table into the version README's 'Exit criterion check'
     section. Report only numbers."
 - [ ] Behaviour proof.
   - Skill: none (make).
-  - Prompt: "Run `make check`, `make conformance`, `make scenarios`, `make eval` with
+  - Prompt: "Run `make ci`, `make scenarios`, and `make eval` with
     `--compare` against eval-reports/lean-baseline under always, never and auto, and load
     every examples/*.yaml and a copy of a 1.0 configuration with each deprecated key set.
     Report pass/fail and any numeric difference."
@@ -29,7 +29,8 @@ Prove the exit criterion, review the whole diff once more, and prepare `v1.1.0`.
   - Prompt: "Write the CHANGELOG 1.1.0 entry (Removed, Deprecated, Fixed, Changed;
     numbers from the measurements), update STATUS.md, the roadmap README and this
     version's tables. Targeted edits."
-- [ ] Owner tags `v1.1.0` after `make live` (owner's endpoint).
+- [ ] Owner releases `v1.1.0` locally after `make live` (owner's endpoint): `make
+      release VERSION=v1.1.0 DRY_RUN=1`, then without `DRY_RUN` (00-03).
   - Skill: none.
   - Prompt: none.
 

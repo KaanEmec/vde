@@ -1,6 +1,6 @@
 # Job: Test-only and unused symbols
 
-Version: v1.1 · Epic: 01 Dead code · Status: planned · Depends on: 00-02
+Version: v1.1 · Epic: 01 Dead code · Status: planned · Depends on: 00-04
 
 ## Goal
 

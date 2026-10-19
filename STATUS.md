@@ -31,7 +31,7 @@ endpoint); the release workflow built the image and four archives.
 | [v0.3 Hardening and extensions](docs/roadmap/v0.3-hardening-and-extensions/README.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
 | [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
-| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | planned 2026-10-19 (roadmap only, no code changed) | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); owner decisions L1 to L9 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
+| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | planned 2026-10-19 (roadmap only, no code changed) | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
 
 ## What is verified, and how
 
@@ -141,7 +141,8 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
 4. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
    SBOMs first, then the docs site, then the load test), each as its own job.
 5. If the comparison justifies it, the `auto` thresholds above (needs an ADR 0009 amendment).
-6. v1.1 Lean ([roadmap](docs/roadmap/v1.1-lean/README.md)): epic 00 (install the skills, take the baseline) and the waves in the version README.
+6. v1.1 Lean ([roadmap](docs/roadmap/v1.1-lean/README.md)): epic 00 first (skills; local CI and release merged into `main`;
+   then the baseline), then the waves in the version README.
 
 ## How to resume
 

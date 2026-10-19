@@ -20,7 +20,7 @@ runner; Go table tests that duplicate a scenario case for case are gone. Tests o
   top-level scenarios (acceptFirstTry, unparseableThenAccept, rejectRepaired,
   attemptsExhausted, extractorFailover, judgeGroupDown, deadline, judgeUnparseable,
   confidence, schemaless).
-- `make scenarios` reruns `TestScenarios` verbosely (07-03 decides the target).
+- `make scenarios` reruns `TestScenarios` verbosely (00-02 decides the target).
 - About −250 to −450 test lines.
 
 ## Tasks

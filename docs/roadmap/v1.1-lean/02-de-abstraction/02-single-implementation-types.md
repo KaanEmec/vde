@@ -25,7 +25,7 @@ wrapper type has a single production implementation. Structure only.
   deciding.
 - `internal/audit` `Appender` (one test fake) and `internal/provider/bedrock`
   `ConverseAPI` (test seam): keep; record why.
-- The exhaustive list comes from the `iface` linter of 00-02 and the architecture pass
+- The exhaustive list comes from the `iface` linter of 00-04 and the architecture pass
   below; add what they find.
 
 ## Tasks

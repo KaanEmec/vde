@@ -1,6 +1,6 @@
 # Job: Dependency hygiene and a local ULID
 
-Version: v1.1 · Epic: 07 Dependencies and build · Status: planned · Depends on: 00-02
+Version: v1.1 · Epic: 07 Dependencies and build · Status: planned · Depends on: 00-04
 
 ## Goal
 

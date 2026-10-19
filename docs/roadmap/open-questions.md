@@ -66,6 +66,12 @@ it changed. New questions go at the bottom under "Open".
       judge and `feedback_fallback`. Keep Bedrock and Vertex. → 09-02 (this revises
       decision 14 for 2.0).
     - **L9** Keep `vde eval --url`. → 09-03 dropped.
+18. **CI and releases run locally (2026-10-19).** The owner wants every check and build on
+    their own machine; GitHub is the online backup and hosts the release artifacts
+    (GitHub releases, the GHCR image) but runs nothing: `make ci` replaces
+    `.github/workflows/ci.yml` and Dependabot, `make release` replaces `release.yml`,
+    and Actions is disabled for the repository. Revises v0.1 01-04 and v0.2 08-03.
+    Done first, before any other v1.1 job. → v1.1 00-02, 00-03.
 
 ## Open
 

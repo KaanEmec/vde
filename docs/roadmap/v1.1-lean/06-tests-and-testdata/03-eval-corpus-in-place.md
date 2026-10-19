@@ -1,6 +1,6 @@
 # Job: Eval reads the TravelInbox corpus in place
 
-Version: v1.1 · Epic: 06 Tests and testdata · Status: planned · Depends on: 00-02; owner decision L3, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
+Version: v1.1 · Epic: 06 Tests and testdata · Status: planned · Depends on: 00-04; owner decision L3, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -52,7 +52,7 @@ the same. Removes `vde eval import-travelinbox` (an operator CLI change).
 ## Acceptance criteria
 
 - `git ls-files testdata | wc -l` down by at least 350; `make eval` reports identical
-  numbers and case ids; CI `eval` job green.
+  numbers and case ids; `make ci` green.
 
 ## Out of scope
 

@@ -63,11 +63,12 @@ Every prompt in this version says "Guardrails: skills.md". It means all of these
 4. **Keep the decided interfaces.** `provider.Provider`, `job.Store`, `blob.Store` stay
    (overview principle 2). Every other interface must justify a second production
    implementation or go.
-5. **Nothing new.** No new dependency, package, interface, linter in `.golangci.yml`, CI
-   job or config key (one exception: the test-support package of 04-03, which replaces
+5. **Nothing new.** No new dependency, package, interface, linter in `.golangci.yml`, `make ci`
+   step or config key (one exception: the test-support package of 04-03, which replaces
    five copies). A job's net production line count goes down; record
    `git diff --stat` in the job file when done.
-6. **Checks.** `make check` after every step. Also `make conformance` when `internal/api`
+6. **Checks.** `make check` after every step; `make ci` (00-02) before a job is marked
+   done. Also `make conformance` when `internal/api`
    or `cmd/vde/serve.go` changes; `make scenarios` and `make eval` when `internal/extract`,
    `internal/ground`, `internal/document`, `internal/eval` or a provider changes, compared
    with the baseline report (`--compare`, numbers identical).

@@ -24,8 +24,8 @@ Duplicated content and its proposed home:
 
 Stale statements: `docs/operator/README.md` "What is planned" (`--probe` "planned for
 v0.3", gone after 01-02); `docs/operator/providers.md` "the service never renders pages"
-(false since v0.4); CONTRIBUTING "until a remote repository exists" and its required
-checks list (missing `fuzz`, `conformance`, `eval`, `storage`); seven roadmap jobs left
+(false since v0.4); CONTRIBUTING "until a remote repository exists" (its CI and release
+sections are rewritten by 00-02 and 00-03); seven roadmap jobs left
 `in progress` inside done versions (v0.1 02-04; v0.2 06-03, 09-03, 10-01, 10-02, 10-03;
 v0.3 02-01): set each to `done` or `dropped` with a one-line reason. `docs/quality.md`
 names two reports without links.
