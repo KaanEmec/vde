@@ -33,6 +33,13 @@ All notable changes to this project are recorded here, in the format of
   validated as in 1.0; setting any of them makes `vde config check` and `vde serve` warn
   (`vde config check --strict` fails). `timeout` no longer has a default. They will be
   removed in 2.0.
+- Escalation (`roles.extractor.escalation`, `roles.judge.escalation`), the second judge
+  (`roles.second_judge`), the classifier judge (`provider: classifier` with
+  `models.<model>.questions`) and its feedback fallback (`roles.judge.feedback_fallback`,
+  `roles.judge.feedback_group`) are deprecated, to be removed in 2.0 (proposed in
+  ADR 0011). They work as before and `service_version` is unchanged; `vde config check`
+  and `vde serve` warn once for each one set (`vde config check --strict` fails). Bedrock
+  and Vertex stay.
 
 ### Removed
 

@@ -1,6 +1,6 @@
 # Epic 09: Deprecations (owner decisions)
 
-Version: v1.1 · Status: in progress · Depends on: owner decisions L7 to L9 (taken 2026-10-19); 02 and 04 done
+Version: v1.1 · Status: done · Depends on: owner decisions L7 to L9 (taken 2026-10-19); 02 and 04 done
 
 The largest possible cuts are features nobody uses yet: they are speculative, but they
 sit behind the 1.x compatibility promise. Under [docs/compatibility.md](../../../compatibility.md):
@@ -19,5 +19,5 @@ The decisions (2026-10-19) are recorded in
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [Remove the experimental `document.url`](01-experimental-api.md) | done |
-| 02 | [Unverified providers and model tiers](02-unverified-providers-and-tiers.md) | planned |
+| 02 | [Unverified providers and model tiers](02-unverified-providers-and-tiers.md) | done |
 | 03 | [`vde eval --url`](03-eval-url.md) | dropped (L9) |

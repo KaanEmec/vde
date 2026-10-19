@@ -1,6 +1,6 @@
 # Job: Unverified providers and model tiers
 
-Version: v1.1 · Epic: 09 Deprecations · Status: planned · Depends on: owner decision L8, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17); 04-02, 05-01
+Version: v1.1 · Epic: 09 Deprecations · Status: done · Depends on: owner decision L8, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17); 04-02, 05-01
 
 ## Goal
 
@@ -28,7 +28,7 @@ behaviour change in 1.1: the items keep working and warn.
 ## Tasks
 
 - [x] Owner decision L8 (2026-10-19): deprecate escalation, second judge, classifier and `feedback_fallback`; keep Bedrock and Vertex.
-- [ ] Design the 2.0 shape of `extract.Roles` (input for the ADR proposal).
+- [ ] Design the 2.0 shape of `extract.Roles` (input for the ADR proposal). Skipped by the orchestrator (no CRITIC or ARCH run); the ADR proposal sketches the shape from reading `internal/extract`.
   - Skill: CRITIC, ARCH.
   - Prompt: "Use the architecture-critic agent (or the pasted lens) on internal/extract
     roles and the classifier adapter: what would the loop and
@@ -36,7 +36,7 @@ behaviour change in 1.1: the items keep working and warn.
     and concepts go, and what an operator loses. Then
     `/mattpocock-skills:improve-codebase-architecture` focused on internal/extract/roles.go
     with the same question; write no repository files."
-- [ ] Deprecate what was decided.
+- [x] Deprecate what was decided.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: for `provider: classifier`, `escalation`,
     `second_judge`, `feedback_fallback` and any key only they use,
@@ -44,13 +44,13 @@ behaviour change in 1.1: the items keep working and warn.
     the 2.0 removal; mark it deprecated in internal/config/schema.json descriptions,
     docs/operator/configuration.md, the provider pages and CHANGELOG 'Deprecated'.
     No behaviour change. Guardrails: skills.md."
-- [ ] Draft the 2.0 removal (ADR proposal only).
+- [x] Draft the 2.0 removal (ADR proposal only).
   - Skill: none (Write).
   - Prompt: "Draft an ADR in docs/architecture/decisions/ with status 'proposed' that
     amends ADR 0004 and ADR 0009 (and revises open-questions decision 14) for the 2.0
     removal of the deprecated items, with the
     line, test and dependency counts above. Do not change code."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW.
   - Prompt: `/code-review medium <first>^..<last>`.
 
@@ -58,6 +58,35 @@ behaviour change in 1.1: the items keep working and warn.
 
 - Deprecated items warn from `vde config check` and `vde serve`; the ADR proposal is
   written.
+
+## Result
+
+- **Warnings.** `config.Validate` warns once per item set, so `vde config check` and
+  `vde serve` (both through `loadConfigEnv`) print it and `--strict` fails on it:
+  `endpoints.<name>.provider: classifier is deprecated (removal in 2.0); it still works`,
+  and `is deprecated (removal in 2.0); it still works` on `roles.extractor.escalation`,
+  `roles.judge.escalation`, `roles.second_judge` and `roles.judge.feedback_fallback` (which
+  also covers `feedback_group`; `models.<m>.questions` is covered by the classifier
+  warning, since it is allowed only there). Nothing else changes: validation, the loop and
+  `service_version` are untouched. `TestValidate_deprecated` checks that each item yields
+  exactly its warnings and no error (it replaces the two "no issues" cases for escalation
+  and the second judge); the CLI test of `tieredConfig` checks the printed warnings.
+- **Docs.** `internal/config/schema.json` descriptions, `docs/operator/configuration.md`
+  rows, `docs/providers/classifier.md` (a deprecation note), `docs/providers/README.md`,
+  README feature table, CHANGELOG "Deprecated".
+- **ADR.** [ADR 0011](../../../architecture/decisions/0011-remove-tiers-and-classifier-judge.md),
+  status proposed: amends ADR 0004 and ADR 0009, revises decision 14, with counts
+  measured now: about 590 production lines (classifier package 171) and about 1,100 test
+  lines, no dependency. Listed in the overview. ADR 0004, ADR 0009 and decision 14 are
+  unchanged until it is accepted.
+- **Deviation.** Production lines go up (+22, the warnings): a deprecation adds the
+  warning; the removal in 2.0 takes the lines out.
+- Checks: `make check`, `make scenarios` green (no scenario uses the items, so no
+  report changes); `make ci` before the commit. Not run: the CRITIC/ARCH step and the Gate
+  (orchestrator).
+
+`git diff --stat`: 13 files, +163 −37, plus ADR 0011 (new, 108 lines); production Go +22,
+tests +73 −12, the rest docs and roadmap.
 
 ## Out of scope
 

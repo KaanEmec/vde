@@ -65,13 +65,13 @@
             "feedback_fallback": {
               "type": "string",
               "enum": ["", "whole_result", "llm"],
-              "description": "What a classifier reject carries: whole_result (default) or llm feedback from feedback_group."
+              "description": "Deprecated (removal in 2.0); still works, warns. What a classifier reject carries: whole_result (default) or llm feedback from feedback_group."
             },
-            "feedback_group": {"type": "string", "description": "LLM group asked for feedback on classifier rejections; only with feedback_fallback: llm."}
+            "feedback_group": {"type": "string", "description": "Deprecated with feedback_fallback (removal in 2.0). LLM group asked for feedback on classifier rejections; only with feedback_fallback: llm."}
           }
         },
         "second_judge": {
-          "description": "An optional second judge that must also accept.",
+          "description": "Deprecated (removal in 2.0); still works, warns. An optional second judge that must also accept.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -286,7 +286,7 @@
       "enum": ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "text/plain", "text/html", "text/markdown"]
     },
     "escalation": {
-      "description": "Serve the role from group from attempt from_attempt on.",
+      "description": "Deprecated (removal in 2.0); still works, warns. Serve the role from group from attempt from_attempt on.",
       "type": "array",
       "items": {
         "type": "object",
@@ -307,7 +307,7 @@
         "provider": {
           "type": "string",
           "enum": ["anthropic", "openai_compatible", "gemini", "bedrock", "vertex", "classifier", "fake"],
-          "description": "Provider adapter."
+          "description": "Provider adapter; classifier is deprecated (removal in 2.0), still works and warns."
         },
         "preset": {"type": "string", "enum": ["", "openrouter"], "description": "openrouter, with openai_compatible only."},
         "base_url": {"type": "string", "description": "API base URL; default per provider or preset."},
@@ -336,7 +336,7 @@
         },
         "max_output_tokens": {"type": "integer", "minimum": 0, "description": "Output-token limit per call; 0 means 16384."},
         "questions": {
-          "description": "The fixed questions of a classifier model.",
+          "description": "The fixed questions of a classifier model; deprecated with provider classifier (removal in 2.0).",
           "type": "array",
           "items": {
             "type": "object",

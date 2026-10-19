@@ -2,6 +2,12 @@
 
 Adapter: `internal/provider/classifier`. Configure with `provider: classifier`.
 
+> **Deprecated in 1.1, removal planned for 2.0** (owner decision L8,
+> [ADR 0011, proposed](../architecture/decisions/0011-remove-tiers-and-classifier-judge.md)).
+> It still works in 1.x; each classifier endpoint makes `vde config check` and `vde serve`
+> warn, and so do `roles.judge.feedback_fallback` and `feedback_group`. No vendor
+> classifier API was available to test it against.
+
 A classifier model answers a fixed set of typed questions with calibrated probabilities
 instead of writing text (ADR 0004, decision 14). TypeSafe AI's Jev is the example the owner
 named; its API was early access when this adapter was written and is not called directly.

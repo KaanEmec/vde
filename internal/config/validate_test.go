@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -612,15 +613,8 @@ func TestValidate(t *testing.T) {
 			wantMessage: "must be positive",
 		},
 
-		// Escalation (v0.3 03-01): defined groups, from_attempt from 2, increasing, within max_attempts.
-		{
-			name: "escalation steps",
-			edit: func(c *Config) {
-				c.Limits.MaxAttempts = 4
-				c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 2, Group: "review"}, {FromAttempt: 4, Group: "extraction"}}
-				c.Roles.Judge.Escalation = []Escalation{{FromAttempt: 3, Group: "extraction"}}
-			},
-		},
+		// Escalation: defined groups, from_attempt from 2, increasing, within max_attempts.
+		// A valid one only warns (TestValidate_deprecated).
 		{
 			name:        "escalation group undefined",
 			edit:        func(c *Config) { c.Roles.Judge.Escalation = []Escalation{{FromAttempt: 3, Group: "strong"}} },
@@ -666,8 +660,7 @@ func TestValidate(t *testing.T) {
 			wantWarning: true,
 		},
 
-		// Second judge (v0.3 03-02).
-		{name: "second judge", edit: func(c *Config) { c.Roles.SecondJudge.Group = "extraction" }},
+		// Second judge; a valid one only warns (TestValidate_deprecated).
 		{
 			name:        "second judge group undefined",
 			edit:        func(c *Config) { c.Roles.SecondJudge.Group = "other" },
@@ -920,6 +913,68 @@ func TestValidate_autoWithClassifierJudge(t *testing.T) {
 }
 
 // addClassifier adds the classifier endpoint jev and the group classify serving it.
+// TestValidate_deprecated: escalation, the second judge, the classifier provider and the
+// feedback fallback keep working in 1.x and warn once each, naming the 2.0 removal.
+func TestValidate_deprecated(t *testing.T) {
+	t.Parallel()
+	const msg = "is deprecated (removal in 2.0); it still works"
+	for _, tt := range []struct {
+		name string
+		edit func(c *Config)
+		want []string // every issue, all warnings
+	}{
+		{
+			name: "escalation steps",
+			edit: func(c *Config) {
+				c.Limits.MaxAttempts = 4
+				c.Roles.Extractor.Escalation = []Escalation{{FromAttempt: 2, Group: "review"}, {FromAttempt: 4, Group: "extraction"}}
+				c.Roles.Judge.Escalation = []Escalation{{FromAttempt: 3, Group: "extraction"}}
+			},
+			want: []string{"roles.extractor.escalation: " + msg, "roles.judge.escalation: " + msg},
+		},
+		{
+			name: "second judge",
+			edit: func(c *Config) { c.Roles.SecondJudge.Group = "extraction" },
+			want: []string{"roles.second_judge: " + msg},
+		},
+		{
+			name: "classifier endpoint",
+			edit: addClassifier,
+			want: []string{"endpoints.jev.provider: classifier " + msg},
+		},
+		{
+			name: "classifier second judge with LLM feedback",
+			edit: func(c *Config) {
+				addClassifier(c)
+				c.Groups["classify"].Endpoints = append(c.Groups["classify"].Endpoints, c.Groups["review"].Endpoints...)
+				c.Roles.SecondJudge.Group = "classify"
+				c.Roles.Judge.FeedbackFallback, c.Roles.Judge.FeedbackGroup = FeedbackLLM, "review"
+			},
+			want: []string{
+				"endpoints.jev.provider: classifier " + msg,
+				"roles.second_judge: " + msg,
+				"roles.judge.feedback_fallback: " + msg + " (with roles.judge.feedback_group)",
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := validConfig(t)
+			tt.edit(cfg)
+			var got []string
+			for _, i := range cfg.Validate() {
+				if !i.Warning {
+					t.Errorf("error %v, want warnings only", i)
+				}
+				got = append(got, i.Key+": "+i.Message)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Validate() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func addClassifier(c *Config) {
 	c.Endpoints["jev"] = &Endpoint{
 		Provider: ProviderClassifier,

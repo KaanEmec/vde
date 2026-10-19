@@ -148,6 +148,9 @@ func (v *validator) endpoints(c *Config) {
 			continue
 		}
 		v.oneOf(key+".provider", e.Provider, providers)
+		if e.Provider == ProviderClassifier {
+			v.warnf(key+".provider", "classifier is deprecated (removal in 2.0); it still works")
+		}
 		if e.Preset != "" {
 			if _, ok := presetBaseURLs[e.Preset]; !ok {
 				v.errorf(key+".preset", "unknown preset %q", e.Preset)
@@ -311,6 +314,25 @@ func (v *validator) roles(c *Config) {
 	v.judgeRole(c)
 	if g := c.Roles.SecondJudge.Group; g != "" {
 		v.roleGroup(c, "roles.second_judge.group", g, true)
+	}
+	v.deprecatedRoles(c)
+}
+
+// deprecatedRoles warns once for each role option deprecated in 1.1 and removed in 2.0
+// (the classifier provider warns from endpoints). They keep working until then.
+func (v *validator) deprecatedRoles(c *Config) {
+	const msg = "is deprecated (removal in 2.0); it still works"
+	if len(c.Roles.Extractor.Escalation) > 0 {
+		v.warnf("roles.extractor.escalation", msg)
+	}
+	if len(c.Roles.Judge.Escalation) > 0 {
+		v.warnf("roles.judge.escalation", msg)
+	}
+	if c.Roles.SecondJudge.Group != "" {
+		v.warnf("roles.second_judge", msg)
+	}
+	if c.Roles.Judge.FeedbackFallback != "" || c.Roles.Judge.FeedbackGroup != "" {
+		v.warnf("roles.judge.feedback_fallback", "%s (with roles.judge.feedback_group)", msg)
 	}
 }
 

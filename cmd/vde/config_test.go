@@ -48,7 +48,8 @@ documents:
   pdf: {mode: native}
 `
 
-// tieredConfig escalates the extractor, adds a second judge and an LLM feedback group.
+// tieredConfig escalates the extractor, adds a second judge and an LLM feedback group, all
+// deprecated (removal in 2.0).
 const tieredConfig = `
 endpoints:
   anthropic:
@@ -156,6 +157,11 @@ func TestRunConfigCheck(t *testing.T) {
 				"second judge: group strong",
 				"classifier feedback fallback: llm, group strong",
 				"worker size 4, poll_interval 500ms, lease 2m0s; rate limits shared (job store)",
+			},
+			wantStderr: []string{ // deprecated, still working
+				"warning: roles.extractor.escalation: is deprecated (removal in 2.0)",
+				"warning: roles.second_judge: is deprecated (removal in 2.0)",
+				"warning: roles.judge.feedback_fallback: is deprecated (removal in 2.0)",
 			},
 		},
 		{
