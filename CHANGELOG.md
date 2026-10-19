@@ -6,72 +6,77 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+A smaller service with the same `/v1` API and the same 1.x configuration (v1.1 Lean):
+Go production lines 23,235 → 22,070, tracked files 1,189 → 679, direct dependencies
+17 → 16, linux/amd64 binary 36.1 → 36.0 MB. Every 1.0 configuration file still loads.
+
 ### Changed
 
+- `vde config check` validates exactly as `vde serve` does: the second pass against the
+  JSON Schema and its `error: schema: <key>: <message>` lines are gone. `vde config schema`
+  and the schema are unchanged.
 - Dependencies: `github.com/oklog/ulid/v2` is replaced by a ULID generator on the standard
-  library (same 26-character format of job and request ids, monotonic within a
-  millisecond, `crypto/rand`); `gopkg.in/yaml.v3`, whose repository is archived, by its
-  continuation `go.yaml.in/yaml/v3` v3.0.5 (same API). The only behaviour difference: a
-  YAML file with an unhashable merge key is now a parse error instead of a crash.
-- `vde config check` no longer runs a second pass against the JSON Schema and no longer
-  prints `error: schema: <key>: <message>` lines or "has N schema violation(s)": it
-  validates exactly as `vde serve` does. `vde config schema` and the schema are unchanged.
+  library (same 26-character ids, monotonic within a millisecond, `crypto/rand`);
+  `gopkg.in/yaml.v3` (archived) by its continuation `go.yaml.in/yaml/v3` v3.0.5. Only
+  difference: an unhashable YAML merge key is a parse error instead of a crash.
+- Provider error messages (kinds and statuses unchanged): transport errors of every HTTP
+  adapter read `<adapter>: request failed`, `invalid endpoint URL`, `request rejected`,
+  `reading response failed` or `response body too large` (`openai` and `classifier` had
+  no prefix); on `vertex`, errors of the shared Claude and Gemini code start with
+  `anthropic:` or `gemini:`.
+- Checks and releases run on the owner's machine with `make ci` and `make release`;
+  GitHub hosts the repository and the release artifacts only.
+- Documentation: one home per fact; the job files of v0.1 to v1.0 are collapsed into one
+  `docs/roadmap/vX.Y-history.md` per version.
 
 ### Deprecated
 
-- Configuration values that 1.0 accepted but the schema refuses now warn from
-  `vde config check` and `vde serve` (`vde config check --strict` fails; refused in 2.0):
-  a number, boolean or date where a string is expected (quote it), a negative
-  `limits.feedback_message_chars` (the default is used), `storage.max_open_conns` outside
-  0 to 1000 with `sqlite`, and an unknown `blobs.sse` with `fs`.
-- `debug.log_content` has no effect: the content log sink, which was opened but never
-  written, is removed and no `content.log` file is created. The key is still accepted on any
-  `server.listen` (no longer refused off loopback); `vde config check` and `vde serve` warn
-  when it is `true`, so `vde config check --strict` fails on it. It will be removed in 2.0.
-- `documents.fetch.*` (`enabled`, `allowed_hosts`, `max_bytes`, `timeout`) has no effect,
-  since the document URL it governed is removed (below). The keys are still accepted and
-  validated as in 1.0; setting any of them makes `vde config check` and `vde serve` warn
-  (`vde config check --strict` fails). `timeout` no longer has a default. They will be
-  removed in 2.0.
+Each one still works, warns from `vde config check` and `vde serve`, fails
+`vde config check --strict`, and is removed in 2.0.
+
+- Values 1.0 accepted but the schema refuses: a number, boolean or date where a string is
+  expected (quote it), a negative `limits.feedback_message_chars` (the default is used),
+  `storage.max_open_conns` outside 0 to 1000 with `sqlite`, an unknown `blobs.sse` with
+  `fs`.
+- `debug.log_content`: has no effect, since the content log sink, opened but never
+  written, is removed (no `content.log`). Accepted on any `server.listen`, no longer
+  refused off loopback; warns when `true`.
+- `documents.fetch.*` (`enabled`, `allowed_hosts`, `max_bytes`, `timeout`): no effect,
+  since `document.url` is removed (below); still validated as in 1.0, `timeout` has no
+  default.
 - Escalation (`roles.extractor.escalation`, `roles.judge.escalation`), the second judge
-  (`roles.second_judge`), the classifier judge (`provider: classifier` with
+  (`roles.second_judge`), the classifier judge (`provider: classifier`,
   `models.<model>.questions`) and its feedback fallback (`roles.judge.feedback_fallback`,
-  `roles.judge.feedback_group`) are deprecated, to be removed in 2.0 (proposed in
-  ADR 0011). They work as before and `service_version` is unchanged; `vde config check`
-  and `vde serve` warn once for each one set (`vde config check --strict` fails). Bedrock
-  and Vertex stay.
+  `roles.judge.feedback_group`), as proposed in ADR 0011. They work as before and
+  `service_version` is unchanged. Bedrock and Vertex stay.
 
 ### Removed
 
-- The experimental `document.url` of the JSON submission (`x-stability: experimental`,
-  removable in a minor release under the compatibility policy): the service no longer
-  fetches documents, which also removes its outbound SSRF surface. A JSON body that names
-  `document.url` is now `400 bad_request` ("has a field this service does not define"),
-  like any unknown field; send the document as `data_base64`. The completion webhook,
-  also experimental, stays.
-
-- `vde config check --probe`: no provider had a probe, so it only warned "probe not
-  available". It is now an unknown flag (a usage error); test an endpoint with `vde extract`.
+- The experimental `document.url` of the JSON submission: the service no longer fetches
+  documents (no outbound SSRF surface). A body naming it is `400 bad_request` like any
+  unknown field; send `data_base64`. The experimental completion webhook stays.
+- `vde config check --probe` (no provider had a probe); it is now an unknown flag. Test
+  an endpoint with `vde extract`.
 - `vde eval import-travelinbox`: `vde eval` reads the TravelInbox corpus in place
-  (`testdata/travelinbox/corpus`, linked as `testdata/eval/travelinbox`), so the 50
-  generated `testdata/eval/travelinbox-*` cases are gone; case ids and report numbers are
-  unchanged. A corpus case may now use the TravelInbox layout (`source.*`, `truth.json`),
-  take `extractor.md`, `judge.md`, `schema.json` and `compare.yaml` from its corpus
-  directory, and sit in a nested corpus (`lab/001-cbc` is the case `lab-001-cbc`).
+  (`testdata/eval/travelinbox` links to `testdata/travelinbox/corpus`); case ids and
+  report numbers are unchanged. A corpus case may use the TravelInbox layout (`source.*`,
+  `truth.json`), take `extractor.md`, `judge.md`, `schema.json` and `compare.yaml` from
+  its corpus directory, and sit in a nested corpus (`lab/001-cbc` is `lab-001-cbc`).
+- The Node and Swift example clients (`docs/api/examples/node`, `swift`);
+  `docs/api/examples/submit.sh` stays.
+- The GitHub Actions workflows (`ci.yml`, `release.yml`), Dependabot and the GoReleaser
+  configuration, replaced by `make ci` and `make release`.
 
 ### Fixed
 
 - `DELETE /v1/jobs/{id}` of a queued or running job lowers `vde_jobs_in_progress` at once,
-  as the admin delete already did; before, the gauge stayed high until the next
-  submission or finished job of that application.
-- A running job whose worker was lost, finished by the sweeper as `failed`/`timeout`, now
-  loses its inputs when `force_none` was set on its application over the admin API after
-  submit, as a job the worker finishes already did; before, only the YAML's `force_none`
-  counted there.
+  as the admin delete already did.
+- A job finished by the sweeper after its worker was lost loses its inputs when
+  `force_none` was set on its application over the admin API after submit, as a job the
+  worker finishes already did.
 - The `gemini` adapter refuses the `BLOCKLIST` and `SPII` finish reasons as a permanent
-  failure, as `vertex` already did for Gemini models; before, it returned the blocked
-  answer's text. Claude answers on `vertex` that cannot be used carry no HTTP status, as
-  on `anthropic`.
+  failure, as `vertex` did; before, it returned the blocked answer's text. Unusable
+  Claude answers on `vertex` carry no HTTP status, as on `anthropic`.
 
 ## [1.0.0] - 2026-10-18
 

@@ -1,6 +1,6 @@
 # v1.1 Lean
 
-Status: in progress (epics 00 to 09 done 2026-10-20; closeout 10-01 running) · Depends on: v1.0
+Status: done 2026-10-20 except the `v1.1.0` release, which waits for the owner (00-01 is the owner's; 07-02 and 09-03 dropped) · Depends on: v1.0
 
 ## Goal
 
@@ -69,11 +69,66 @@ Release `v1.1.0` with `make release` when:
   item 17) listed in the CHANGELOG and warned about by `vde config check` and
   `vde serve`.
 
+## Exit criterion check (2026-10-20)
+
+Measured on `8f0a0a9` (after the final review leftovers) with the commands of
+[00-04](00-preparation/04-baseline.md); binary with `GOTOOLCHAIN=go1.26.9`.
+
+| Measure | Baseline (00-04) | Closeout | Change |
+| --- | --- | --- | --- |
+| Go production lines (no `_test.go`) | 23,235 | 22,070 | −1,165 (−5.0 %) |
+| Go test lines | 32,085 | 32,196 | +111 |
+| Tracked files | 1,189 | 679 | −510 |
+| of which testdata / docs | 609 / 237 | 224 / 116 | −385 / −121 |
+| Roadmap | 139 files, 6,818 lines | 67 files, 6,241 lines (incl. v1.2) | −72 files |
+| Direct dependencies (`go.mod`) | 17 | 16 | −1 (`oklog/ulid`) |
+| Binary, linux/amd64, stripped | 36.1 MB | 36.0 MB (35,958,946 bytes) | −0.1 MB |
+| `deadcode ./cmd/...` | 24 | 7 | −17 |
+| Production interfaces (top-level `type … interface`) | 17 | 11 | −6 |
+| Packages with production code | 30 | 30 | `internal/sweeper` merged into `internal/worker`; test-support `internal/provider/providertest` added (04-03) |
+| Longest function | `serveAs` 254 | `printSummary` 89 (`createJob` 81) | −165 |
+| `make ci` | about 8.5 min | 8.2 min (492 s; race suite 129 s per toolchain) | −0.3 min |
+
+Verdict per criterion:
+
+- **`make ci` green, `make eval` equal to the 00-04 reference: met.** `make ci` passed on
+  the final tree (every step); the `always`, `never` and `auto` reports equal the
+  `eval-reports/lean-baseline/` ones in every summary number and per-case result (timings
+  aside). `make scenarios` and `make conformance` green.
+- **Every 1.0 configuration file loads; `TestOpenAPISupersetOfSnapshot` passes: met.**
+  The seven `vde` configuration files at `v1.0.0` (`examples/*.yaml`,
+  `examples/compose/vde.yaml`, `examples/compose/scaled/vde.yaml`, the scenario config)
+  pass `vde config check` with their environment variables set.
+- **No workflow under `.github/`: met** (the directory is gone). **Actions disabled and
+  the release built and uploaded from the owner's machine: not met yet.** Both are owner
+  actions: `main` is not pushed, and the release waits until the owner asks for it.
+- **Production lines −1,800: not met** (−1,165). Splitting long functions (epic 05, about
+  +220), the deprecation warnings (epic 09) and the shared helpers add lines, and many
+  jobs consolidated copies rather than deleted features. The removals ADR 0011 measured
+  (about 590 production and 1,100 test lines) need a major version and are deferred to
+  2.0. **Test lines −1,000: not met** (+111): behaviour-pinning tests were added (OpenAPI
+  superset proof cases, `/metrics` series, the local ULID, drift tests between the merged
+  copies, deprecation warnings) where shared harnesses removed others. **Tracked files
+  −350: met** (−510). **No new dependency, production package or interface: met.**
+- **`deadcode` and single-implementation interfaces: met, with recorded reasons.** The
+  seven remaining `deadcode` entries (`audit.Decode`, `webhook.Verify`, four `fake`
+  helpers, `document.MediaTypes`) are test oracles used across packages
+  ([01-01](01-dead-code/01-test-only-symbols.md)). Besides `Provider`, job `Store` and
+  blob `Store`, the interfaces with one production implementation are test seams kept
+  with their reason in [02-02](02-de-abstraction/02-single-implementation-types.md):
+  `audit.Appender`, `bedrock.ConverseAPI`, `worker.Locker`, `document.PDFEngine` and
+  `PDFDoc` (measured).
+- **Every 2026-10-19 deprecation in the CHANGELOG and warned about by `vde config check`
+  and `vde serve`: met** (CHANGELOG `[Unreleased]`, "Deprecated").
+
+Overall: done except the release and the owner's GitHub actions; the size targets for Go
+lines were not reached and are not pursued further within 1.x.
+
 ## Epics
 
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
-| 00 | [Preparation: skills, local CI and release, baseline](00-preparation/README.md) | none; runs first, merged into `main` before the rest | planned |
+| 00 | [Preparation: skills, local CI and release, baseline](00-preparation/README.md) | none; runs first, merged into `main` before the rest | done (01 is the owner's) |
 | 01 | [Dead code and dead features](01-dead-code/README.md) | 00 | done |
 | 02 | [Remove unneeded abstractions](02-de-abstraction/README.md) | 01 | done |
 | 03 | [One source for each rule](03-single-source/README.md) | 01 | done |
@@ -83,7 +138,7 @@ Release `v1.1.0` with `make release` when:
 | 07 | [Dependencies](07-dependencies-and-build/README.md) | 00 | done (02 dropped) |
 | 08 | [Documentation and example clients](08-docs-and-clients/README.md) | 00; 08-01 last of all docs edits | done |
 | 09 | [Deprecations (owner decisions)](09-deprecations/README.md) | 02, 04 | done (03 dropped) |
-| 10 | [Closeout](10-closeout/README.md) | all | planned |
+| 10 | [Closeout](10-closeout/README.md) | all | done except the release (owner) |
 
 ## Order and parallel waves
 

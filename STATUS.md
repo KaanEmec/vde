@@ -1,6 +1,6 @@
 # STATUS
 
-Where the project stands, as of **2026-10-19** (v1.1 job 08-01, on top of `b4f4026`).
+Where the project stands, as of **2026-10-20** (v1.1 closeout 10-01, on top of `8f0a0a9`).
 How to work here is in [AGENTS.md](AGENTS.md). Job files under [docs/roadmap/](docs/roadmap/README.md) stay the
 source of truth; this page summarizes them and must be updated at the end of every session.
 
@@ -15,20 +15,25 @@ with the fake provider and the conformance suite; real-model evidence is one smo
 TravelInbox live test and a few evaluation runs through one OpenAI-compatible endpoint. The
 owner's comparison of the judge policies on real documents has not been run.
 
-v1.1 Lean (2026-10-19) is done except its closeout (10-01, the `v1.1.0` release): the
-code, tests, testdata and docs are smaller with the `/v1` API and the 1.x configuration
-unchanged. Checks and releases now run on the owner's machine (`make ci`,
-`make release`; `.github/` is gone). Removed: the never-written `debug.log_content` sink and
-`vde config check --probe` (L1), `vde eval import-travelinbox` (L3), the experimental JSON
-`document.url` (L7; `documents.fetch.*` still load, with a warning), the Node and Swift
-example clients (L5), and the per-job files of v0.1 to v1.0, collapsed into one
-`vX.Y-history.md` per version (L6). Deprecated for removal in 2.0, still working with a
-warning: escalation, `roles.second_judge`, the classifier judge and `feedback_fallback`
-(L8, [ADR 0011](docs/architecture/decisions/0011-remove-tiers-and-classifier-judge.md),
-proposed). Measured against the 00-04 baseline: Go production lines 23,235 → 22,085
-(−1,150; the exit criterion asks −1,800), test lines 32,085 → 32,196, direct dependencies
-17 → 16 (`oklog/ulid` replaced), linux/amd64 binary 36.1 → 35.9 MB. Every v1.1 commit
-(since `78b6486`, the last one on `origin`) is on the local `main` only.
+v1.1 Lean is done (2026-10-20) except the `v1.1.0` release, which waits for the owner:
+the code, tests, testdata and docs are smaller with the `/v1` API and the 1.x
+configuration unchanged (every 1.0 configuration file loads, `TestOpenAPISupersetOfSnapshot`
+passes, conformance and the `make eval` numbers equal the 00-04 reference). Checks and
+releases run on the owner's machine (`make ci`, `make release`; `.github/` is gone).
+Removed: the never-written `debug.log_content` sink and `vde config check --probe` (L1),
+`vde eval import-travelinbox` (L3), the experimental JSON `document.url` (L7;
+`documents.fetch.*` still load, with a warning), the Node and Swift example clients (L5),
+and the per-job files of v0.1 to v1.0, collapsed into one `vX.Y-history.md` per version
+(L6). Deprecated for removal in 2.0, still working with a warning: escalation,
+`roles.second_judge`, the classifier judge and `feedback_fallback` (L8,
+[ADR 0011](docs/architecture/decisions/0011-remove-tiers-and-classifier-judge.md),
+proposed), plus the former schema violations. Against the 00-04 baseline
+([exit criterion check](docs/roadmap/v1.1-lean/README.md#exit-criterion-check-2026-10-20)):
+Go production lines 23,235 → 22,070 (−1,165; the criterion asked −1,800, not met), test
+lines 32,085 → 32,196 (+111; asked −1,000, not met), tracked files 1,189 → 679 (−510),
+direct dependencies 17 → 16, binary 36.1 → 36.0 MB, `deadcode` 24 → 7 (each with a
+recorded reason), longest function 254 → 89 lines, `make ci` 8.5 → 8.2 min. Every
+v1.1 commit (since `78b6486`, the last one on `origin`) is on the local `main` only.
 
 ## Versions
 
@@ -39,7 +44,7 @@ proposed). Measured against the 00-04 baseline: Go production lines 23,235 → 2
 | [v0.3 Hardening and extensions](docs/roadmap/v0.3-history.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-history.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
 | [v1.0 Stable](docs/roadmap/v1.0-history.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
-| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | epics 00 to 09 done 2026-10-19 (00-01 is the owner's; 07-02 and 09-03 dropped); closeout 10-01 planned; not pushed | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
+| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | done 2026-10-20 except the `v1.1.0` release (owner); 00-01 is the owner's, 07-02 and 09-03 dropped; not pushed | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
 | [v1.2 Extraction quality](docs/roadmap/v1.2-extraction-quality/README.md) | planned 2026-10-19 (roadmap only) | none | One epic, nine jobs: prompt order and wording, context line and page markers, email section labels, HTML data tables, analysis blocks for extractor and judge, native structured outputs, caller schema guide, multi-pass extraction after ADR 0011; each measured against the previous report |
 
 ## What is verified, and how
@@ -66,8 +71,9 @@ proposed). Measured against the 00-04 baseline: Go production lines 23,235 → 2
 - **v1.1 refactoring**: each code job recorded `make check` and `make ci` green and, where
   the loop, documents or providers changed, `make scenarios` and `make eval` equal to the
   00-04 baseline under `always`, `never` and `auto` (job files, "Result"); conformance and
-  `TestOpenAPISupersetOfSnapshot` unchanged. The closeout re-runs all of it before
-  `v1.1.0`.
+  `TestOpenAPISupersetOfSnapshot` unchanged. The closeout (2026-10-20) re-ran it on the
+  final tree: `make ci` green, `make eval` equal to the 00-04 reports, every 1.0
+  configuration file loads.
 - **Storage and scaling**: Postgres and S3 suites (opt-in env vars); two worker pools run
   100 jobs exactly once and resume a killed pool's job; `examples/compose/scaled` ran
   locally with PostgreSQL 17 and RustFS ([v0.3 check](docs/roadmap/v0.3-history.md#exit-criterion-check-2026-10-17)).
@@ -141,26 +147,28 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
 
 ## Recommended next steps (in order)
 
-1. Owner runs the policy comparison ([quality.md](docs/quality.md#judge-policy) commands) and
-   records the rows; then decide v0.4 criteria 1 to 3 on real models.
-2. Annotate schemas with `x-vde-grounding` (owner suite first; TravelInbox's is their choice)
-   and re-run `auto` to measure judge calls saved.
-3. Make the GHCR package public if `docker pull ghcr.io/kaanemec/vde:1.0.0` needs a
-   login (CONTRIBUTING, "First release only").
-4. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
-   SBOMs first, then the docs site, then the load test), each as its own job.
-5. If the comparison justifies it, the `auto` thresholds of the
-   [backlog](docs/roadmap/backlog.md) (needs an ADR 0009 amendment).
-6. v1.1 Lean ([roadmap](docs/roadmap/v1.1-lean/README.md)): owner actions first: push
-   `main`, turn GitHub Actions off for the repository, install the buildx
+1. v1.1 owner actions: push `main`, turn GitHub Actions off for the repository, run
+   `make hooks` once in this clone (`core.hooksPath` is not set), install the buildx
    plugin, give `gh` `write:packages` (`gh auth refresh -s write:packages`) and log Docker
-   in to `ghcr.io`, and run `make hooks` once in this clone (`core.hooksPath` is not set).
-   Then the closeout (10-01): `make ci`, the exit criterion check and `make release
-   VERSION=v1.1.0`.
-7. v1.2 Extraction quality ([roadmap](docs/roadmap/v1.2-extraction-quality/README.md), planned
-   2026-10-19): starts after `v1.1.0`. Record the baseline report first (epic 01 README,
-   "Measuring"); every job then runs one real-model comparison on 3 to 5 documents (a
-   fixed core set of four) with the owner's key.
+   in to `ghcr.io`. Then ask for the `v1.1.0` release when wanted (`make live`, then
+   `make release VERSION=v1.1.0 DRY_RUN=1`, then without `DRY_RUN`; job 10-01).
+2. Owner runs the policy comparison ([quality.md](docs/quality.md#judge-policy) commands) and
+   records the rows; then decide v0.4 criteria 1 to 3 on real models.
+3. Annotate schemas with `x-vde-grounding` (owner suite first; TravelInbox's is their choice)
+   and re-run `auto` to measure judge calls saved.
+4. Make the GHCR package public if `docker pull ghcr.io/kaanemec/vde:1.0.0` needs a
+   login (CONTRIBUTING, "First release only").
+5. v1.2 Extraction quality ([roadmap](docs/roadmap/v1.2-extraction-quality/README.md),
+   planned 2026-10-19 in another session): starts after `v1.1.0`. Record the baseline
+   report first (epic 01 README, "Measuring"); every job then runs one real-model
+   comparison on 3 to 5 documents (a fixed core set of four) with the owner's key.
+6. The 2.0 removals measured in [ADR 0011](docs/architecture/decisions/0011-remove-tiers-and-classifier-judge.md)
+   (about 590 production and 1,100 test lines, plus the deprecated keys), once the owner
+   accepts the ADR and wants a major version.
+7. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
+   SBOMs first, then the docs site, then the load test), each as its own job.
+8. If the comparison justifies it, the `auto` thresholds of the
+   [backlog](docs/roadmap/backlog.md) (needs an ADR 0009 amendment).
 
 ## How to resume
 
