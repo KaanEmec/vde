@@ -127,3 +127,66 @@ func TestLoadCorpus_malformed(t *testing.T) {
 		})
 	}
 }
+
+// writeCase writes files into dir, creating it.
+func writeCase(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestLoadCorpus_sharedFiles: a case's own extractor.md, judge.md, schema.json and
+// compare.yaml win over the corpus-level ones; a case without them uses the corpus's.
+func TestLoadCorpus_sharedFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	shared := map[string]string{"extractor.md": "e", "judge.md": "j", "schema.json": "{}", "compare.yaml": "default: exact\n"}
+	writeCase(t, filepath.Join(dir, "set"), shared)
+	writeCase(t, filepath.Join(dir, "set", "own"), map[string]string{"document.txt": "x", "expected.json": "{}",
+		"extractor.md": "e", "judge.md": "j", "schema.json": "{}", "compare.yaml": "default: exact\n"})
+	writeCase(t, filepath.Join(dir, "set", "shared"), map[string]string{"document.txt": "x", "expected.json": "{}"})
+	cases, err := eval.LoadCorpus(dir)
+	if err != nil || len(cases) != 2 {
+		t.Fatalf("LoadCorpus() = %d cases, %v; want 2", len(cases), err)
+	}
+	for _, c := range cases {
+		wantDir := filepath.Join(dir, "set")
+		if c.ID == "set-own" {
+			wantDir = filepath.Join(dir, "set", "own")
+		}
+		for name, got := range map[string]string{"extractor.md": c.ExtractorInstructions, "judge.md": c.JudgeInstructions, "schema.json": c.Schema} {
+			if want := filepath.Join(wantDir, name); got != want {
+				t.Errorf("%s: %s = %s, want %s", c.ID, name, got, want)
+			}
+		}
+	}
+}
+
+// TestLoadCorpus_danglingLink: an entry the --cases globs cannot select is not read, so a
+// dangling link beside the selected cases does not fail the load; without globs it does.
+func TestLoadCorpus_danglingLink(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeCase(t, filepath.Join(dir, "set", "c1"), map[string]string{"document.txt": "x", "expected.json": "{}",
+		"extractor.md": "e", "judge.md": "j", "compare.yaml": "default: exact\n"})
+	if err := os.Symlink(filepath.Join(dir, "missing"), filepath.Join(dir, "gone")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "missing"), filepath.Join(dir, "set", "gone")); err != nil {
+		t.Fatal(err)
+	}
+	for _, patterns := range [][]string{{"set-c*"}, {"set-c1"}, {"set-?1", "other-*"}} {
+		if cases, err := eval.LoadCorpus(dir, patterns...); err != nil || len(cases) != 1 || cases[0].ID != "set-c1" {
+			t.Errorf("LoadCorpus(%q) = %d cases, %v; want set-c1", patterns, len(cases), err)
+		}
+	}
+	if _, err := eval.LoadCorpus(dir); err == nil {
+		t.Error("LoadCorpus() of every case succeeded with a dangling link")
+	}
+}

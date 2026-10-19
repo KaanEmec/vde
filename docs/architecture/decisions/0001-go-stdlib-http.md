@@ -29,3 +29,9 @@ installed, single-binary service; the user asked for a lean, not over-abstracted
   API has five routes.
 - OpenAPI is maintained as a document (`api/openapi.yaml`), not generated from code; a test
   compares routes and error codes against it.
+
+## Amendment 2026-10-19
+
+The YAML parser is `go.yaml.in/yaml/v3`, the maintained continuation of the archived
+`gopkg.in/yaml.v3` with the same API, and ULIDs come from the standard library
+(`job.NewULID`) instead of a ULID library (v1.1 job 07-01).

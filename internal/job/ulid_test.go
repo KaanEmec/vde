@@ -71,14 +71,67 @@ func TestNewULID(t *testing.T) {
 	}
 }
 
-func TestIncrement(t *testing.T) {
+// TestNewULIDStep: IDs made within one millisecond increase, but not by one, so the next
+// ID cannot be guessed from the last.
+func TestNewULIDStep(t *testing.T) {
 	t.Parallel()
-	b := []byte{0x00, 0xff, 0xff}
-	if !increment(b) || !slices.Equal(b, []byte{0x01, 0x00, 0x00}) {
-		t.Errorf("increment carried to %x, want 010000", b)
+	consecutive := 0
+	const n = 1000
+	for range n {
+		a, b := NewULID(), NewULID()
+		if a >= b {
+			t.Fatalf("NewULID() = %s then %s, want increasing", a, b)
+		}
+		if a[:10] == b[:10] && decodeRandom(t, b)-decodeRandom(t, a) == 1 {
+			consecutive++
+		}
 	}
-	b = []byte{0xff, 0xff}
-	if increment(b) || !slices.Equal(b, []byte{0x00, 0x00}) {
-		t.Errorf("increment of ffff = %x and no wrap, want 0000 and a wrap", b)
+	if consecutive > 1 { // a step of exactly one has probability 2^-32
+		t.Errorf("%d of %d same-millisecond pairs differ by one, want random steps", consecutive, n)
+	}
+}
+
+// decodeRandom returns the low 64 bits of the random part of id (its last 13 characters
+// hold 65 bits; the top one is dropped).
+func decodeRandom(t *testing.T, id string) uint64 {
+	t.Helper()
+	var v uint64
+	for _, c := range id[13:] {
+		v = v<<5 | uint64(strings.IndexRune(crockford, c))
+	}
+	return v
+}
+
+func TestAdd(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		b        []byte
+		step     uint64
+		want     []byte
+		overflow bool
+	}{
+		{"one", []byte{0x00, 0x00, 0x00}, 1, []byte{0x00, 0x00, 0x01}, false},
+		{"carry", []byte{0x00, 0xff, 0xff}, 1, []byte{0x01, 0x00, 0x00}, false},
+		{"max step", []byte{0, 0, 0, 0, 0, 0}, 1 << 32, []byte{0, 1, 0, 0, 0, 0}, false},
+		{"multi-byte carry", []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0xff}, 0x0000_0001_0000_0001, []byte{0x00, 0x02, 0x00, 0x00, 0x00, 0x00}, false},
+		{"wrap", []byte{0xff, 0xff}, 1, []byte{0x00, 0x00}, true},
+		{"wrap with remainder", []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xf0}, 0x20, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x10}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			b := slices.Clone(tt.b)
+			if ok := add(b, tt.step); ok == tt.overflow || !slices.Equal(b, tt.want) {
+				t.Errorf("add(%x, %#x) = %x, no overflow %t; want %x, no overflow %t", tt.b, tt.step, b, ok, tt.want, !tt.overflow)
+			}
+		})
+	}
+}
+
+func TestRandomStep(t *testing.T) {
+	t.Parallel()
+	for range 1000 {
+		if s := randomStep(); s < 1 || s > 1<<32 {
+			t.Fatalf("randomStep() = %d, want 1 to 2^32", s)
+		}
 	}
 }

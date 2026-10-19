@@ -31,7 +31,7 @@ func TestServeSyncExtractAndWebhook(t *testing.T) {
 		deliveries <- body
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer receiver.Close()
+	t.Cleanup(receiver.Close) // before startServe: cleanups run last-first, so serve stops before the receiver closes
 
 	dataDir := t.TempDir()
 	text := strings.NewReplacer("DATA", dataDir, "APPS", "  - id: app-hook\n    webhook: {url: \""+receiver.URL+

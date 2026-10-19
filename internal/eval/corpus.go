@@ -55,26 +55,16 @@ func ParseCases(list string) ([]string, error) {
 // LoadCorpus loads the cases of dir whose id matches any of patterns (path.Match syntax;
 // none, "" or "*" for all), sorted by id. A subdirectory with expected.json or truth.json
 // is a case; one without is a nested corpus (one level, a symbolic link allowed) whose
-// case ids are prefixed with its name and "-". A case with a missing or malformed file is
-// an error.
+// case ids are prefixed with its name and "-". Entries the patterns cannot select are
+// skipped before they are read, so a dangling link outside the selection does no harm. A
+// selected case with a missing or malformed file is an error.
 func LoadCorpus(dir string, patterns ...string) ([]Case, error) {
 	for _, p := range patterns {
 		if _, err := path.Match(p, ""); err != nil {
 			return nil, fmt.Errorf("cases %q: %w", p, err)
 		}
 	}
-	selected := func(id string) bool {
-		if len(patterns) == 0 {
-			return true
-		}
-		for _, p := range patterns {
-			if ok, _ := path.Match(p, id); ok || p == "" {
-				return true
-			}
-		}
-		return false
-	}
-	cases, err := loadCorpusDir(dir, "", true, selected)
+	cases, err := loadCorpusDir(dir, "", true, selection(patterns))
 	if err != nil {
 		return nil, err
 	}
@@ -82,15 +72,54 @@ func LoadCorpus(dir string, patterns ...string) ([]Case, error) {
 	return cases, nil
 }
 
+// selection is the --cases globs; none selects every case.
+type selection []string
+
+// has reports whether the case id is selected.
+func (s selection) has(id string) bool {
+	if len(s) == 0 {
+		return true
+	}
+	for _, p := range s {
+		if ok, _ := path.Match(p, id); ok || p == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// mayHave reports whether an id beginning with prefix may be selected: some glob's literal
+// part, up to its first special character, agrees with prefix. It errs towards true.
+func (s selection) mayHave(prefix string) bool {
+	if len(s) == 0 {
+		return true
+	}
+	for _, p := range s {
+		lit := p
+		if i := strings.IndexAny(p, `*?[\`); i >= 0 {
+			lit = p[:i]
+		}
+		if p == "" || strings.HasPrefix(prefix, lit) || strings.HasPrefix(lit, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // loadCorpusDir loads the selected cases of dir with ids prefix+name, and those of its
 // nested corpora when nested is set.
-func loadCorpusDir(dir, prefix string, nested bool, selected func(string) bool) ([]Case, error) {
+func loadCorpusDir(dir, prefix string, nested bool, sel selection) ([]Case, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 	var cases []Case
 	for _, e := range entries {
+		id := prefix + e.Name()
+		isCase, isCorpus := sel.has(id), nested && sel.mayHave(id+"-")
+		if !isCase && !isCorpus {
+			continue
+		}
 		sub := filepath.Join(dir, e.Name())
 		fi, err := os.Stat(sub) // follows a symbolic link
 		if err != nil {
@@ -99,15 +128,15 @@ func loadCorpusDir(dir, prefix string, nested bool, selected func(string) bool) 
 		switch {
 		case !fi.IsDir():
 		case fileOf(FileExpected, sub) != "" || fileOf(FileTruth, sub) != "":
-			if id := prefix + e.Name(); selected(id) {
+			if isCase {
 				c, err := loadCase(sub, id, dir)
 				if err != nil {
 					return nil, err
 				}
 				cases = append(cases, c)
 			}
-		case nested:
-			more, err := loadCorpusDir(sub, prefix+e.Name()+"-", false, selected)
+		case isCorpus:
+			more, err := loadCorpusDir(sub, id+"-", false, sel)
 			if err != nil {
 				return nil, err
 			}
