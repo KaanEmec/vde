@@ -6,8 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,8 +19,6 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/kaanemec/vde/internal/config"
-	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 )
 
@@ -151,46 +147,12 @@ blobs: {driver: s3, bucket: %s, endpoint: %q, region: %s, path_style: true, sse:
 	if code, out, stderr := cli("migrate", "--config", path); code != exitOK || !strings.HasPrefix(out, "storage postgres: schema version") {
 		t.Fatalf("migrate = %d, %q, %q", code, out, stderr)
 	}
-	cfg, issues, err := loadConfigEnv(path, false, os.Getenv)
-	if err != nil {
-		t.Fatalf("%v: %v", err, issues)
-	}
 	script, err := fake.Load(filepath.Join(scenarioDir, "accept-first-try.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	sctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- serve(sctx, cfg, ln, nil, slog.New(slog.DiscardHandler),
-			func(*config.Endpoint) (provider.Provider, error) { return script, nil })
-	}()
-	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("serve: %v", err)
-		}
-	})
-	baseURL := "http://" + ln.Addr().String()
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		if resp, err := http.Get(baseURL + "/healthz"); err == nil {
-			resp.Body.Close()
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("service did not answer")
-		}
-	}
-
-	code, token, stderr := cli("token", "create", "--config", path, "--app", "app-a", "--scope", "jobs", "--expires", "1d")
-	if code != exitOK {
-		t.Fatalf("token create = %d: %s", code, stderr)
-	}
-	token = strings.TrimSpace(token)
+	baseURL, _, _ := startServe(t, path, serveOptions{build: serveWith(script), getenv: os.Getenv})
+	token := jobsToken(t, path, "app-a")
 	if code, out, _ := cli("app", "list", "--config", path); code != exitOK || !strings.Contains(out, "app-a") {
 		t.Errorf("app list = %d, %q", code, out)
 	}
@@ -201,21 +163,9 @@ blobs: {driver: s3, bucket: %s, endpoint: %q, region: %s, path_style: true, sse:
 	if err := json.Unmarshal([]byte(resp.body), &created); err != nil || created.ID == "" {
 		t.Fatalf("POST /v1/jobs = %d %s", resp.status, resp.body)
 	}
-	var final struct{ Status, Result json.RawMessage }
-	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		r := call(t, http.MethodGet, baseURL+"/v1/jobs/"+created.ID, token, nil, "")
-		if r.status != http.StatusOK || json.Unmarshal([]byte(r.body), &final) != nil {
-			t.Fatalf("poll = %d %s", r.status, r.body)
-		}
-		if s := string(final.Status); s != `"queued"` && s != `"running"` {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("job still %s", final.Status)
-		}
-	}
-	if string(final.Status) != `"accepted"` || !strings.Contains(string(final.Result), "Jane Example") {
-		t.Errorf("terminal job = %s %s", final.Status, final.Result)
+	if _, final := waitJob(t, baseURL, token, created.ID, 15*time.Second); string(final["status"]) != `"accepted"` ||
+		!strings.Contains(string(final["result"]), "Jane Example") {
+		t.Errorf("terminal job = %s %s", final["status"], final["result"])
 	}
 	var status string
 	if err := admin.QueryRowContext(ctx, `SELECT status FROM `+schema+`.jobs WHERE id = $1`, created.ID).Scan(&status); err != nil || status != "accepted" {

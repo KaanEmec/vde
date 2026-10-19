@@ -24,7 +24,7 @@ func TestAdminEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, admin, stop := startServiceAdmin(t, path, script, true)
+	base, admin, stop := startServe(t, path, serveOptions{build: serveWith(script), admin: true})
 
 	for _, args := range [][]string{
 		{"token", "create", "--config", path, "--admin", "--app", "app-a", "--expires", "1d"},
@@ -108,7 +108,7 @@ func TestAdminEndToEnd(t *testing.T) {
 	stop()
 
 	// The dynamic application persists; the YAML ones are synced as before.
-	base, _, stop = startServiceAdmin(t, path, script, true)
+	base, _, stop = startServe(t, path, serveOptions{build: serveWith(script), admin: true})
 	if r := send(http.MethodGet, base+"/v1/quota", appToken, ""); r.status != http.StatusOK {
 		t.Errorf("dynamic application after a restart = %d, want 200", r.status)
 	}

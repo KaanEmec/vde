@@ -18,10 +18,78 @@ import (
 	"github.com/kaanemec/vde/internal/provider"
 )
 
-// serve is serveAs with every role in the process (--role all).
-func serve(ctx context.Context, cfg *config.Config, ln, adminLn net.Listener, logger *slog.Logger,
-	build func(*config.Endpoint) (provider.Provider, error)) error {
-	return serveAs(ctx, api.RoleAll, cfg, ln, adminLn, logger, build)
+// serveOptions are startServe's choices; the zero value runs every role with the
+// configured providers and no environment, and discards the log.
+type serveOptions struct {
+	role   string                                            // default api.RoleAll
+	build  func(*config.Endpoint) (provider.Provider, error) // default newProvider
+	getenv func(string) string                               // default: nothing set
+	logs   io.Writer                                         // the JSON log; default discarded
+	admin  bool                                              // also serve the admin API
+}
+
+// serveWith answers every endpoint with p.
+func serveWith(p provider.Provider) func(*config.Endpoint) (provider.Provider, error) {
+	return func(*config.Endpoint) (provider.Provider, error) { return p, nil }
+}
+
+// startServe runs vde serve with the configuration at cfgPath on a loopback port (the
+// admin API on a second one with opts.admin) until /healthz answers, so the applications
+// are synced. It returns both base URLs ("" without admin) and a stop that ends serve
+// and checks it returned nil in time; stop also runs at cleanup.
+func startServe(t *testing.T, cfgPath string, opts serveOptions) (base, admin string, stop func()) {
+	t.Helper()
+	if opts.role == "" {
+		opts.role = api.RoleAll
+	}
+	if opts.build == nil {
+		opts.build = newProvider
+	}
+	if opts.getenv == nil {
+		opts.getenv = func(string) string { return "" }
+	}
+	logger := slog.New(slog.DiscardHandler)
+	if opts.logs != nil {
+		logger = slog.New(slog.NewJSONHandler(opts.logs, nil))
+	}
+	cfg, issues, err := loadConfigEnv(cfgPath, false, opts.getenv)
+	if err != nil {
+		t.Fatalf("%v: %v", err, issues)
+	}
+	listen := func() net.Listener {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ln
+	}
+	ln := listen()
+	var adminLn net.Listener
+	if opts.admin {
+		adminLn = listen()
+		admin = "http://" + adminLn.Addr().String()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serveAs(ctx, opts.role, cfg, ln, adminLn, logger, opts.build) }()
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("serve = %v, want nil after shutdown", err)
+				}
+			case <-time.After(e2eWait(10 * time.Second)):
+				t.Error("serve did not return after the context ended")
+			}
+		})
+	}
+	t.Cleanup(stop)
+	base = "http://" + ln.Addr().String()
+	waitHealthz(t, base)
+	return base, admin, stop
 }
 
 func TestCheckListen(t *testing.T) {
@@ -65,22 +133,10 @@ func TestRunServeRefusesPlainNonLoopback(t *testing.T) {
 func TestServeAndShutdown(t *testing.T) {
 	t.Parallel()
 	path := writeConfig(t, noPDFConfig+"server: {data_dir: "+strconv.Quote(t.TempDir())+"}\n")
-	cfg, _, err := loadConfigEnv(path, false, func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	var logs syncBuffer
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- serve(ctx, cfg, ln, nil, slog.New(slog.NewJSONHandler(&logs, nil)), newProvider) }()
-
-	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
+	base, _, stop := startServe(t, path, serveOptions{logs: &logs})
+	resp, err := http.Get(base + "/healthz")
 	if err != nil {
-		cancel()
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(resp.Body)
@@ -91,16 +147,7 @@ func TestServeAndShutdown(t *testing.T) {
 	if resp.Header.Get("X-Request-Id") == "" {
 		t.Error("no X-Request-Id")
 	}
-
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Errorf("serve = %v, want nil after shutdown", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("serve did not return after the context ended")
-	}
+	stop()
 	for _, want := range []string{`"service_version":"vde-`, `"msg":"vde serve stopped"`} {
 		if !strings.Contains(logs.String(), want) {
 			t.Errorf("log lacks %s: %s", want, logs.String())

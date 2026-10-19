@@ -1,6 +1,6 @@
 # Job: Shared e2e harness and test fakes
 
-Version: v1.1 · Epic: 06 Tests and testdata · Status: planned · Depends on: 05-02
+Version: v1.1 · Epic: 06 Tests and testdata · Status: done (test lines −155, short of −300: see Result) · Depends on: 05-02
 
 ## Goal
 
@@ -29,24 +29,24 @@ packages exist once where Go allows it. Tests only.
 
 ## Tasks
 
-- [ ] e2e harness.
+- [x] e2e harness (by hand, no /simplify).
   - Skill: SIMPLIFY.
   - Prompt: "/simplify cmd/vde — replace the six copies of the serve start-up in the
     _test.go files with one startServe(t, cfgPath, opts) helper and one HTTP request
     helper; keep every assertion. Guardrails: skills.md."
-- [ ] Table-drive the largest tests where cases share a body.
+- [x] Table-drive the largest tests where cases share a body (little left: see Result).
   - Skill: SIMPLIFY.
   - Prompt: "/simplify internal/api/submit_test.go internal/document/representation_test.go
     internal/router/router_test.go cmd/vde/config_test.go — turn repeated blocks in the
     largest tests into named table cases; standard testing, no testify; keep every case.
     Guardrails: skills.md."
-- [ ] OpenAPI checkers (only with proof).
+- [x] OpenAPI checkers (only with proof).
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: merge assertSuperset and assertTreeSuperset
     into one checker, and add a test per loss type (enum value, property, header, error
     code, required field) proving the merged checker fails on each. Stop if any loss is
     not caught. Guardrails: skills.md."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW, PRTK.
   - Prompt: `/code-review medium <first>^..<last>`, then
     `/pr-review-toolkit:review-pr tests`.
@@ -55,6 +55,44 @@ packages exist once where Go allows it. Tests only.
 
 - One serve start-up helper in `cmd/vde` tests; total test lines down by at least 300;
   coverage per package not lower than the baseline.
+
+## Result
+
+- **One serve start-up.** `startServe(t, cfgPath, serveOptions{role, build, getenv,
+  logs, admin})` in `cmd/vde/serve_test.go` loads the configuration, listens on loopback
+  (and the admin port), runs `serveAs`, waits for `/healthz` and returns both base URLs
+  and an idempotent `stop` that checks `serveAs` returned nil within `e2eWait(10 s)`
+  (also at cleanup). It replaces `startService`, `startServiceAdmin`, the `serve`
+  wrapper and the copies in `TestServeAndShutdown`, `TestServeRoles`,
+  `TestServeJudgePolicies` (the judge fake is now chosen by its model name instead of by
+  endpoint pointer), `TestServeSyncExtractAndWebhook` and `TestStorageEndToEnd`.
+  `serveWith(p)` answers every endpoint with one provider. Also one `waitJob` (poll a job
+  to its terminal state; four copies) and one `jobsToken` (five copies); `request` is
+  `call` with a small body. `serve_log_e2e_test.go` starts the real binary and keeps its
+  own start-up.
+- **Tables.** `TestSubmitIdempotency`, `TestNoSentinelInLogs`, `TestRunConfigCheck`,
+  `TestSelect`, `TestSelect_pdfPolicy` and `TestGroup_Complete` are already tables or
+  subtests with distinct bodies; only `TestRunConfigCheck`'s three cases on the same file
+  became one. No new shared test package (fakes copied across packages stay; within a
+  package there were no copies).
+- **OpenAPI checkers merged, with proof.** `supersetProblems(base, cur, relaxed)`
+  (`internal/api/openapi_snapshot_test.go`) replaces `assertSuperset` and
+  `assertTreeSuperset`: paths, responses and schemas joined the never-drop collections, a
+  missing HTTP method is a lost operation, the top-level required rule (with `relaxed`)
+  and the error-code comparison moved in, and it returns its findings. It now also
+  checks the TravelInbox document (which passes: fields, headers, enums and error codes
+  of theirs are all in ours, stricter than before). `TestSupersetProblemsCatchLosses`
+  removes, from a copy of the 1.0.0 snapshot, a path, an operation, a response, a
+  schema, a property, a header, an enum value, an error code, an error code's status, a
+  top-level and a nested required field, and adds a required request field: each is
+  reported.
+
+Coverage (`go test -cover`): `cmd/vde` 81.3 % → 81.3 %, `internal/api` 91.3 % → 91.3 %.
+Test lines −155 (+320 −475): `cmd/vde` −188, the OpenAPI merge +33 (its
+proof test). The −300 target assumed table-driving tests that already are tables, or a
+shared test package (declined). `make check` green.
+
+`git diff --stat`: production 0 files; tests 11 files (+320 −475); testdata 0.
 
 ## Out of scope
 

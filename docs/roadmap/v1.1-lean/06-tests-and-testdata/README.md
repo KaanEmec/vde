@@ -10,5 +10,5 @@ a generated copy). Fewer, shared tests with the same coverage.
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [One scenario format and runner](01-one-scenario-runner.md) | done |
-| 02 | [Shared e2e harness and test fakes](02-shared-test-harness.md) | planned |
+| 02 | [Shared e2e harness and test fakes](02-shared-test-harness.md) | done |
 | 03 | [Eval reads the TravelInbox corpus in place](03-eval-corpus-in-place.md) | planned |

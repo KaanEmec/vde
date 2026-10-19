@@ -2,15 +2,11 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"io"
-	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/kaanemec/vde/internal/api"
 )
@@ -41,21 +37,8 @@ func TestServeRoles(t *testing.T) {
 		t.Run(tt.role, func(t *testing.T) {
 			t.Parallel()
 			path := writeConfig(t, noPDFConfig+"server: {data_dir: "+strconv.Quote(t.TempDir())+"}\n")
-			cfg, _, err := loadConfigEnv(path, false, func(string) string { return "" })
-			if err != nil {
-				t.Fatal(err)
-			}
-			ln, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
 			var logs syncBuffer
-			ctx, cancel := context.WithCancel(context.Background())
-			done := make(chan error, 1)
-			go func() {
-				done <- serveAs(ctx, tt.role, cfg, ln, nil, slog.New(slog.NewJSONHandler(&logs, nil)), newProvider)
-			}()
-			base := "http://" + ln.Addr().String()
+			base, _, stop := startServe(t, path, serveOptions{role: tt.role, logs: &logs})
 			get := func(path string) (int, string) {
 				resp, err := http.Get(base + path)
 				if err != nil {
@@ -71,15 +54,7 @@ func TestServeRoles(t *testing.T) {
 			if code, _ := get("/v1/quota"); code != tt.wantQuota {
 				t.Errorf("GET /v1/quota = %d, want %d", code, tt.wantQuota)
 			}
-			cancel()
-			select {
-			case err := <-done:
-				if err != nil {
-					t.Errorf("serve = %v", err)
-				}
-			case <-time.After(10 * time.Second):
-				t.Fatal("serve did not return")
-			}
+			stop()
 			if want := `"process_role":"` + tt.role + `"`; !strings.Contains(logs.String(), want) {
 				t.Errorf("start log lacks %s: %s", want, logs.String())
 			}

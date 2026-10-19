@@ -67,11 +67,7 @@ applications:
 			t.Fatalf("vde serve did not start:\n%s", stderr.String())
 		}
 	}
-	code, token, errOut := cli("token", "create", "--config", path, "--app", "app-a", "--scope", "jobs", "--expires", "1d")
-	if code != exitOK {
-		t.Fatalf("token create = %d: %s", code, errOut)
-	}
-	token = strings.TrimSpace(token)
+	token := jobsToken(t, path, "app-a")
 
 	form, contentType := submission(t)
 	r := call(t, http.MethodPost, base+"/v1/jobs", token, form, contentType)
@@ -79,15 +75,7 @@ applications:
 	if err := json.Unmarshal([]byte(r.body), &created); err != nil || created.ID == "" {
 		t.Fatalf("POST /v1/jobs = %d %s", r.status, r.body)
 	}
-	for deadline := time.Now().Add(e2eWait(20 * time.Second)); ; time.Sleep(50 * time.Millisecond) {
-		r = call(t, http.MethodGet, base+"/v1/jobs/"+created.ID, token, nil, "")
-		if !strings.Contains(r.body, `"queued"`) && !strings.Contains(r.body, `"running"`) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("job still in progress: %s", r.body)
-		}
-	}
+	r, _ = waitJob(t, base, token, created.ID, 20*time.Second)
 	if !strings.Contains(r.body, `"provider_unavailable"`) {
 		t.Fatalf("terminal job = %d %s, want failed with provider_unavailable", r.status, r.body)
 	}

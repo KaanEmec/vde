@@ -143,6 +143,8 @@ func TestRunConfigCheck(t *testing.T) {
 				"application/pdf  native  anthropic/claude",
 				"image/webp       -       cannot read",
 				"service_version",
+				"    policy: always\n", // the default judge policy
+				"pdf: sent as given (a pair reads application/pdf)",
 			},
 		},
 		{
@@ -168,12 +170,6 @@ func TestRunConfigCheck(t *testing.T) {
 			},
 		},
 		{
-			name:       "default judge policy",
-			args:       []string{"config", "check", "--config", good},
-			wantCode:   exitOK,
-			wantStdout: []string{"    policy: always\n"},
-		},
-		{
 			name:     "PDFs rendered or read as text without a native reader",
 			args:     []string{"config", "check", "--config", noPDF},
 			wantCode: exitOK,
@@ -182,12 +178,6 @@ func TestRunConfigCheck(t *testing.T) {
 				"pdf: text layer when every page has 200 characters, else pages rendered at 150 dpi (documents.pdf.mode: auto)",
 				"documents.pdf: mode auto, dpi 150, max_pages 20, min_text_chars_per_page 200, workers 1 (about 500 MB",
 			},
-		},
-		{
-			name:       "PDF readers sent as given",
-			args:       []string{"config", "check", "--config", good},
-			wantCode:   exitOK,
-			wantStdout: []string{"pdf: sent as given (a pair reads application/pdf)"},
 		},
 		{
 			name:       "warnings do not fail",

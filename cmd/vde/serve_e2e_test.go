@@ -2,12 +2,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -35,12 +32,8 @@ func TestServeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, stop := startService(t, path, script)
-	code, token, stderr := cli("token", "create", "--config", path, "--app", "app-a", "--scope", "jobs", "--expires", "1d")
-	if code != exitOK {
-		t.Fatalf("token create = %d: %s", code, stderr)
-	}
-	token = strings.TrimSpace(token)
+	base, _, stop := startServe(t, path, serveOptions{build: serveWith(script)})
+	token := jobsToken(t, path, "app-a")
 
 	if r := call(t, http.MethodGet, base+"/healthz", "", nil, ""); r.status != http.StatusOK ||
 		strings.TrimSpace(r.body) != `{"status":"ok"}` {
@@ -72,23 +65,8 @@ func TestServeEndToEnd(t *testing.T) {
 		t.Fatalf("submit body %s: %v", body, err)
 	}
 
-	var final map[string]json.RawMessage
-	for deadline := time.Now().Add(e2eWait(10 * time.Second)); ; time.Sleep(20 * time.Millisecond) {
-		resp = call(t, http.MethodGet, base+"/v1/jobs/"+created.ID, token, nil, "")
-		body = resp.body
-		if resp.status != http.StatusOK {
-			t.Fatalf("poll = %d %s", resp.status, body)
-		}
-		if err := json.Unmarshal([]byte(body), &final); err != nil {
-			t.Fatal(err)
-		}
-		if s := string(final["status"]); s != `"queued"` && s != `"running"` {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("job still %s after 10 s", final["status"])
-		}
-	}
+	resp, final := waitJob(t, base, token, created.ID, 10*time.Second)
+	body = resp.body
 	if string(final["status"]) != `"accepted"` || !strings.Contains(string(final["result"]), "Jane Example") ||
 		string(final["attempts"]) != "1" || string(final["error"]) != "null" || string(final["feedback"]) != "[]" {
 		t.Errorf("terminal job = %s", body)
@@ -280,41 +258,17 @@ func TestServeJudgePolicies(t *testing.T) {
 	if err := os.WriteFile(path, []byte(strings.ReplaceAll(policyServiceConfig, "DATA", dataDir)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := loadConfigEnv(path, false, func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
 	ext := fake.New(fake.Script{{Answer: `{"guest": "Jane Example", "nights": 3}`, Repeat: true}})
 	judge := fake.New(fake.AlwaysRetryable(503))
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- serve(ctx, cfg, ln, nil, slog.New(slog.DiscardHandler), func(e *config.Endpoint) (provider.Provider, error) {
-			if e == cfg.Endpoints["judge"] {
-				return judge, nil
-			}
-			return ext, nil
-		})
-	}()
-	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("serve: %v", err)
+	base, _, _ := startServe(t, path, serveOptions{build: func(e *config.Endpoint) (provider.Provider, error) {
+		if _, ok := e.Models["judge-model"]; ok {
+			return judge, nil
 		}
-	})
-	base := "http://" + ln.Addr().String()
-	waitHealthz(t, base)
+		return ext, nil
+	}})
 	tokens := map[string]string{}
 	for _, app := range []string{"app-auto", "app-never", "app-always"} {
-		code, token, stderr := cli("token", "create", "--config", path, "--app", app, "--scope", "jobs", "--expires", "1d")
-		if code != exitOK {
-			t.Fatalf("token create = %d: %s", code, stderr)
-		}
-		tokens[app] = strings.TrimSpace(token)
+		tokens[app] = jobsToken(t, path, app)
 	}
 
 	for _, tt := range []struct {
@@ -409,19 +363,37 @@ func submitAndWait(t *testing.T, base, token, file, mediaType string) map[string
 	if err := json.Unmarshal([]byte(resp.body), &created); err != nil || created.ID == "" || resp.status >= 300 {
 		t.Fatalf("POST /v1/jobs %s = %d %s", file, resp.status, resp.body)
 	}
-	for deadline := time.Now().Add(e2eWait(20 * time.Second)); ; time.Sleep(20 * time.Millisecond) {
-		r := call(t, http.MethodGet, base+"/v1/jobs/"+created.ID, token, nil, "")
-		var final map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(r.body), &final); err != nil || r.status != http.StatusOK {
+	_, final := waitJob(t, base, token, created.ID, 20*time.Second)
+	return final
+}
+
+// waitJob polls GET /v1/jobs/{id} until the job is terminal, at most limit (scaled by
+// e2eWait), and returns the last response and its body decoded.
+func waitJob(t *testing.T, base, token, id string, limit time.Duration) (reply, map[string]json.RawMessage) {
+	t.Helper()
+	for deadline := time.Now().Add(e2eWait(limit)); ; time.Sleep(20 * time.Millisecond) {
+		r := call(t, http.MethodGet, base+"/v1/jobs/"+id, token, nil, "")
+		var job map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(r.body), &job); err != nil || r.status != http.StatusOK {
 			t.Fatalf("poll = %d %s", r.status, r.body)
 		}
-		if s := string(final["status"]); s != `"queued"` && s != `"running"` {
-			return final
+		if s := string(job["status"]); s != `"queued"` && s != `"running"` {
+			return r, job
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("job still %s after 20 s", final["status"])
+			t.Fatalf("job still %s after %s", job["status"], limit)
 		}
 	}
+}
+
+// jobsToken creates a jobs token for app with the token CLI.
+func jobsToken(t *testing.T, path, app string) string {
+	t.Helper()
+	code, token, stderr := cli("token", "create", "--config", path, "--app", app, "--scope", "jobs", "--expires", "1d")
+	if code != exitOK {
+		t.Fatalf("token create = %d: %s", code, stderr)
+	}
+	return strings.TrimSpace(token)
 }
 
 // e2eWait scales a wait for the race detector and shared CI runners: pdfium under -race

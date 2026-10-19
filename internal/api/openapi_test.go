@@ -64,12 +64,6 @@ func operations(item map[string]any) []string {
 	return ops
 }
 
-func responses(item map[string]any, method string) map[string]any {
-	op, _ := item[method].(map[string]any)
-	r, _ := op["responses"].(map[string]any)
-	return r
-}
-
 func TestOpenAPIMatchesRoutes(t *testing.T) {
 	t.Parallel()
 	doc, _ := loadDoc(t, spec.OpenAPI)
@@ -164,71 +158,22 @@ func TestOpenAPIDescribesErrorCodes(t *testing.T) {
 	}
 }
 
-// TestOpenAPISupersetOfTravelInbox checks every path, method, response code and required
-// field of TravelInbox's document is in ours (job 03 acceptance).
+// TestOpenAPISupersetOfTravelInbox checks TravelInbox's document against ours with the
+// snapshot's checker: every path, method, response, schema, field, header, enum value,
+// error code and required field of theirs is in ours, SubmitJob.schema relaxed.
 func TestOpenAPISupersetOfTravelInbox(t *testing.T) {
 	t.Parallel()
 	theirsData, err := os.ReadFile(travelInboxDoc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	theirs, _ := loadDoc(t, theirsData)
-	ours, _ := loadDoc(t, spec.OpenAPI)
+	theirs, theirsTree := loadDoc(t, theirsData)
+	_, ours := loadDoc(t, spec.OpenAPI)
 	if len(theirs.Paths) == 0 || len(theirs.Components.Schemas) == 0 {
 		t.Fatal("TravelInbox document parsed empty")
 	}
-	assertSuperset(t, theirs, ours, relaxedRequired)
-}
-
-// requestSchemas are the schemas clients send: a newer document may relax their required
-// fields (listed in relaxed) but never add one.
-var requestSchemas = []string{"SubmitJob", "SubmitJobJSON"}
-
-// assertSuperset checks that every path, method, response code, schema and required field
-// of base is in cur, that a required field stays required unless relaxed names it, and
-// that no request schema gains a required field.
-func assertSuperset(t *testing.T, base, cur openAPIDoc, relaxed map[string][]string) {
-	t.Helper()
-	for path, item := range base.Paths {
-		curItem, ok := cur.Paths[path]
-		if !ok {
-			t.Errorf("path %s missing", path)
-			continue
-		}
-		for _, m := range operations(item) {
-			if _, ok := curItem[m]; !ok {
-				t.Errorf("%s %s missing", strings.ToUpper(m), path)
-				continue
-			}
-			curResponses := responses(curItem, m)
-			for code := range responses(item, m) {
-				if _, ok := curResponses[code]; !ok {
-					t.Errorf("%s %s: response %s missing", strings.ToUpper(m), path, code)
-				}
-			}
-		}
-	}
-	for name, schema := range base.Components.Schemas {
-		c, ok := cur.Components.Schemas[name]
-		if !ok {
-			t.Errorf("schema %s missing", name)
-			continue
-		}
-		for _, field := range schema.Required {
-			if _, ok := c.Properties[field]; !ok {
-				t.Errorf("schema %s: required field %s missing", name, field)
-			}
-			if !slices.Contains(c.Required, field) && !slices.Contains(relaxed[name], field) {
-				t.Errorf("schema %s: field %s is no longer required", name, field)
-			}
-		}
-		if slices.Contains(requestSchemas, name) {
-			for _, field := range c.Required {
-				if !slices.Contains(schema.Required, field) {
-					t.Errorf("request schema %s: field %s is newly required", name, field)
-				}
-			}
-		}
+	for _, p := range supersetProblems(theirsTree, ours, relaxedRequired) {
+		t.Error(p)
 	}
 }
 

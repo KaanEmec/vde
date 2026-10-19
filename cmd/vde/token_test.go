@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"io"
-	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,7 +15,6 @@ import (
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
-	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 )
 
@@ -51,65 +47,6 @@ func writeServiceConfig(t *testing.T, dataDir string, apps ...string) string {
 	return path
 }
 
-// startService runs serve on a loopback port with every endpoint answered by p and
-// returns the base URL and a function that stops it.
-func startService(t *testing.T, path string, p provider.Provider) (string, func()) {
-	t.Helper()
-	base, _, stop := startServiceAdmin(t, path, p, false)
-	return base, stop
-}
-
-// startServiceAdmin is startService that also serves the admin API on a second loopback
-// port when admin is true, and returns its base URL too.
-func startServiceAdmin(t *testing.T, path string, p provider.Provider, admin bool) (string, string, func()) {
-	t.Helper()
-	cfg, _, err := loadConfigEnv(path, false, func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var adminLn net.Listener
-	adminBase := ""
-	if admin {
-		if adminLn, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
-			t.Fatal(err)
-		}
-		adminBase = "http://" + adminLn.Addr().String()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	build := func(*config.Endpoint) (provider.Provider, error) { return p, nil }
-	go func() { done <- serve(ctx, cfg, ln, adminLn, slog.New(slog.DiscardHandler), build) }()
-	stopped := false
-	stop := func() {
-		if stopped {
-			return
-		}
-		stopped = true
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("serve: %v", err)
-		}
-	}
-	t.Cleanup(stop)
-	base := "http://" + ln.Addr().String()
-	for deadline := time.Now().Add(5 * time.Second); ; { // serving means the applications are synced
-		resp, err := http.Get(base + "/healthz")
-		if err == nil {
-			resp.Body.Close()
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("service did not answer: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return base, adminBase, stop
-}
-
 // cli runs a vde command in-process and returns its exit code, stdout and stderr.
 func cli(args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
@@ -117,22 +54,10 @@ func cli(args ...string) (int, string, string) {
 	return code, stdout.String(), stderr.String()
 }
 
+// request sends a small body and returns the status.
 func request(t *testing.T, method, url, token string) int {
 	t.Helper()
-	req, err := http.NewRequest(method, url, strings.NewReader("--x--"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	return resp.StatusCode
+	return call(t, method, url, token, strings.NewReader("--x--"), "").status
 }
 
 // TestAuthEndToEnd is contract §14 item 2 at the HTTP boundary: missing, malformed,
@@ -145,7 +70,7 @@ func TestAuthEndToEnd(t *testing.T) {
 	dataDir := t.TempDir()
 	path := writeServiceConfig(t, dataDir, "app-a", "app-b")
 	provider := fake.New(nil) // any call would be recorded
-	base, stop := startService(t, path, provider)
+	base, _, stop := startServe(t, path, serveOptions{build: serveWith(provider)})
 
 	code, tokenA, stderr := cli("token", "create", "--config", path, "--app", "app-a", "--scope", "jobs",
 		"--expires", "30d", "--label", "ci")
@@ -217,7 +142,7 @@ func TestAuthEndToEnd(t *testing.T) {
 
 	// Restart without app-b: it is disabled and its token stops working.
 	path = writeServiceConfig(t, dataDir, "app-a")
-	base, stop = startService(t, path, provider)
+	base, _, stop = startServe(t, path, serveOptions{build: serveWith(provider)})
 	if got := request(t, http.MethodGet, base+"/v1/quota", tokenB); got != http.StatusUnauthorized {
 		t.Errorf("token of a removed application: GET /v1/quota = %d, want 401", got)
 	}
@@ -333,7 +258,7 @@ func TestTokenUsage(t *testing.T) {
 func TestHealthcheck(t *testing.T) {
 	t.Parallel()
 	path := writeServiceConfig(t, t.TempDir(), "app-a")
-	base, stop := startService(t, path, fake.New(nil))
+	base, _, stop := startServe(t, path, serveOptions{build: serveWith(fake.New(nil))})
 	listen := strings.TrimPrefix(base, "http://")
 	hcConfig := filepath.Join(t.TempDir(), "vde.yaml")
 	if err := os.WriteFile(hcConfig, []byte("server: {listen: \""+listen+"\"}\n"), 0o600); err != nil {

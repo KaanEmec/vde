@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaanemec/vde/internal/config"
-	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
 	"github.com/kaanemec/vde/internal/webhook"
 )
@@ -45,45 +40,15 @@ func TestServeSyncExtractAndWebhook(t *testing.T) {
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := loadConfigEnv(path, false, os.Getenv)
-	if err != nil {
-		t.Fatal(err)
-	}
 	script, err := fake.Load(filepath.Join(scenarioDir, "accept-first-try.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	build := func(*config.Endpoint) (provider.Provider, error) { return script, nil }
-	go func() { done <- serve(ctx, cfg, ln, nil, slog.New(slog.DiscardHandler), build) }()
-	defer func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	base := "http://" + ln.Addr().String()
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) { // serving: applications synced
-		if resp, err := http.Get(base + "/healthz"); err == nil {
-			resp.Body.Close()
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("service did not answer")
-		}
-	}
-	code, token, stderr := cli("token", "create", "--config", path, "--app", "app-hook", "--scope", "jobs", "--expires", "1d")
-	if code != exitOK {
-		t.Fatalf("token create = %d: %s", code, stderr)
-	}
+	base, _, _ := startServe(t, path, serveOptions{build: serveWith(script), getenv: os.Getenv})
+	token := jobsToken(t, path, "app-hook")
 
 	form, contentType := submission(t)
-	resp := call(t, http.MethodPost, base+"/v1/extract", strings.TrimSpace(token), form, contentType)
+	resp := call(t, http.MethodPost, base+"/v1/extract", token, form, contentType)
 	var job struct{ ID, Status string }
 	if err := json.Unmarshal([]byte(resp.body), &job); err != nil || resp.status != http.StatusOK || job.Status != "accepted" {
 		t.Fatalf("POST /v1/extract = %d %s", resp.status, resp.body)
