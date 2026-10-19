@@ -2,8 +2,8 @@
 
 Measured with [`vde eval`](operator/evaluation.md) on the corpus in `testdata/eval`. Each
 run is keyed by `service_version` (release plus role configuration), the models behind the
-roles and the date. Real runs are manual, before releases; CI runs only the mechanics
-(`make eval`, fake provider). Numbers only: no document content.
+roles and the date. Real runs are manual, before releases; `make ci` runs only the
+mechanics (`make eval`, fake provider). Numbers only: no document content.
 
 **False accepts** (accepted, but a compared field differs from the ground truth) are the
 headline: the judge exists to keep them at zero. Rates are fractions of the accepted

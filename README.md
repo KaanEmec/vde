@@ -251,7 +251,7 @@ evaluation harness and multiple replicas (v0.3); judge policies, the grounding c
 PDF preparation in the service (v0.4). v1.0 freezes `/v1` and the configuration schema
 ([compatibility policy](docs/compatibility.md), `vde config schema` for editors), adds a
 queue ceiling and in-flight limits with `503` backpressure, and closes a security review
-(hardening pass, fuzzers in CI, an independent review; [docs/security.md](docs/security.md)).
+(hardening pass, fuzzers in `make ci`, an independent review; [docs/security.md](docs/security.md)).
 A performance baseline and signed releases with SBOMs are deferred.
 
 Not verified yet, so do not treat `vde` as production-ready:

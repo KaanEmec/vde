@@ -11,7 +11,7 @@ make conformance                      # go test ./test/conformance/ -count=1
 
 ## How the suite runs
 
-**Local mode** (the default, and the `conformance` CI job). `TestMain` builds `vde` into a
+**Local mode** (the default, and the `conformance` step of `make ci`). `TestMain` builds `vde` into a
 temporary directory, starts an in-process fake OpenAI-compatible chat completions server,
 writes a `vde.yaml` with two endpoints per role (`primary` and `fallback` for the
 extractor, `judge` and `judge-fallback` for the judge, all `openai_compatible` pointing
@@ -186,7 +186,7 @@ their tests no longer skip; their history and resolution are in the
 | 12.2 | Audit log of token and job events, never content. | not testable automatically, verified by: `internal/audit` TestNoContentInEventsOrLogs and TestJobHelpers; no content in the database file: `TestS10NoContentSurvivesFirstRead` |
 | 12.3 | `vde config check` MUST validate without network calls: groups reference defined endpoints, each endpoint-model pair declares its media types, both roles have a group. | `TestS12ConfigCheck` |
 | 12.4 | Configuration is one YAML file plus environment variables for secrets. | `TestS12DevConfigDocumented`, `TestMain` (one file, keys by `api_key_env`) |
-| 12.5 | One container image with the server as entrypoint; the same binary offers `serve`, `token` and `config check`; the image MUST run on `linux/arm64` and `linux/amd64`. | `TestS12ConfigCheck`, `TestItem02Unauthenticated` (one binary for all three); the image: not testable automatically, verified by: the CI `cross` job (static linux/amd64 and linux/arm64 binaries) and `make image-multiarch` on the release branch |
+| 12.5 | One container image with the server as entrypoint; the same binary offers `serve`, `token` and `config check`; the image MUST run on `linux/arm64` and `linux/amd64`. | `TestS12ConfigCheck`, `TestItem02Unauthenticated` (one binary for all three); the image: not testable automatically, verified by: the `cross` step of `make ci` (static linux/amd64 and linux/arm64 binaries) and `make image-multiarch` on the release branch |
 | 12.6 | A minimal development configuration MUST be documented: one provider, one model for both roles, one application and token, one key in an environment variable. | `TestS12DevConfigDocumented` |
 
 ### SHOULDs also checked

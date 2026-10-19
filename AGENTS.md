@@ -56,7 +56,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 | `examples/` | Example configs, compose (single and `scaled`), synthetic samples ([README](examples/README.md)) |
 | `testdata/` | `scenarios/` (fake-provider scripts), `eval/` (corpus), `travelinbox/` (co-owned assets, [README](testdata/travelinbox/README.md)); `user-docs/` is local only |
 | `FromTravelApp/` | TravelInbox contract, its OpenAPI and schema (read-only input) |
-| `.github/workflows/` | `ci.yml` (test, lint, vulncheck, cross, conformance, eval, storage), `release.yml` (tag → image + GoReleaser) |
+| `.githooks/` | `pre-push` runs `make check` (enable with `make hooks`); every check runs locally with `make ci`, nothing runs on GitHub |
 
 ## Where the specs live
 
@@ -78,7 +78,8 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 
 | Command | What it does |
 | --- | --- |
-| `make check` | `go vet`, `golangci-lint` (v2 config in `.golangci.yml`), `go test -race ./...`, build. Must pass before every commit |
+| `make check` | `golangci-lint` (v2 config in `.golangci.yml`, includes govet), `go test -race ./...`, build. Must pass before every commit |
+| `make ci` | Every check, one summary line per step: tidy, lint, race suite with the `go.mod` toolchain and the local Go, `govulncheck`, `make fuzz`, cross-build with static check, conformance, eval, `make storage` (PostgreSQL and RustFS in Docker). Before merging into `main` |
 | `go test -race ./...` | All unit and e2e tests; fake provider, no network |
 | `make scenarios` | `testdata/scenarios` through the built CLI (`TestScenarios`) |
 | `make conformance` | Builds `vde`, serves it against a fake OpenAI-compatible provider, walks contract §14 items 1 to 9 |
@@ -88,7 +89,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 
 Opt-in suites (skipped unless set): `VDE_TEST_POSTGRES` (DSN) and `VDE_TEST_S3_ENDPOINT`
 (+ `VDE_TEST_S3_SSE`, `VDE_TEST_S3_BUCKET`, `VDE_TEST_S3_REGION`, AWS credentials) for the
-storage drivers, as the CI `storage` job runs them; per-adapter live tests under
+storage drivers, as `make storage` runs them; per-adapter live tests under
 `internal/provider/*/live_test.go` (`VDE_LIVE_BEDROCK_*`, `VDE_LIVE_VERTEX_*`, ...);
 `VDE_USER_DOCS=1 go test ./internal/document -run UserDocs -v` for the owner's documents.
 Conformance against a deployment: `VDE_CONFORMANCE_URL=<base, no /v1>

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs the fast checks before every push; enable with `make hooks`. `make ci` stays manual.
+exec make check

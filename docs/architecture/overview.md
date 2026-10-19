@@ -279,7 +279,7 @@ Concrete choices that the ADRs left open, fixed so parallel work agrees:
 | Topic | Choice |
 | --- | --- |
 | Module path | `github.com/kaanemec/vde` (open question 1 closed; rename is a one-line change) |
-| Go | 1.27 toolchain, `go 1.26` in `go.mod` (required by x/net); pure Go, `CGO_ENABLED=0` everywhere |
+| Go | `toolchain go1.26.9` in `go.mod` (images and release binaries build with it), `go 1.26` in `go.mod` (required by x/net); pure Go, `CGO_ENABLED=0` everywhere |
 | YAML | `gopkg.in/yaml.v3` with `KnownFields(true)` |
 | JSON Schema 2020-12 | `github.com/santhosh-tekuri/jsonschema/v6` |
 | SQLite | `modernc.org/sqlite` via `database/sql`, WAL, one writer |

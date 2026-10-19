@@ -29,19 +29,27 @@ change:
 - Document content, instructions, schemas, candidates, feedback and secrets never appear
   in logs, errors or test output.
 
-## Continuous integration and branch protection
+## Checks
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request: `go mod
-tidy` check, build, `go test -race` (with a coverage artifact), `go vet`, golangci-lint
-(which includes staticcheck), `govulncheck` and a static linux/amd64 and linux/arm64
-cross-build. Dependabot opens grouped weekly updates for Go modules and Actions.
+Every check runs on your machine; GitHub only stores the repository and the release
+artifacts, and runs nothing.
 
-Protect `main` with these settings once a remote exists:
-
-- require a pull request with one approving review before merging;
-- require the status checks `test (go 1.26)`, `test (go stable)`, `lint`, `vulncheck` and
-  `cross-compile` to pass, with the branch up to date;
-- no force pushes to `main`.
+- `make check` (golangci-lint, which includes govet and staticcheck; `go test -race`;
+  build) passes before every commit. `make hooks`, once per clone, points git at
+  `.githooks/`, whose `pre-push` runs `make check`.
+- `make ci` runs everything, in order, stops at the first failure and prints one line per
+  step with its duration: `go mod tidy -diff`; golangci-lint; the race suite
+  (`-shuffle=on`) with the `toolchain` of `go.mod` and again with the local Go;
+  `govulncheck` with the `go.mod` toolchain, which builds images and release binaries (on
+  `PATH`: `go install golang.org/x/vuln/cmd/govulncheck@latest`);
+  `make fuzz` (every fuzz target for `FUZZTIME`, 20 s); the static linux/amd64 and
+  linux/arm64 cross-build; `make conformance`; `make eval`; and `make storage`, which
+  starts PostgreSQL 17 and RustFS in throwaway containers and runs the job, blob and worker
+  suites and the Postgres and S3 tests of `cmd/vde` and `internal/api`. Docker must be
+  running: without it the storage step fails, it never passes silently. Run `make ci`
+  before merging into `main`; `make release` runs it too.
+- `make deps` lists available module updates; run it by hand before a release
+  (`govulncheck` in `make ci` covers known vulnerabilities).
 
 ## Releasing
 
@@ -56,7 +64,7 @@ never moves them. A tag with a suffix (`-rc.1`) becomes a GitHub pre-release.
 
 Procedure:
 
-1. `main` is green in CI and `make check` passes locally.
+1. `make ci` passes on `main`.
 2. Run `make live` with at least one provider key set (see above) and read the output: the
    sample documents must extract through the real provider, and token usage must look sane.
    Do not tag if it fails.

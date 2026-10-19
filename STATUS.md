@@ -6,8 +6,8 @@ source of truth; this page summarizes them and must be updated at the end of eve
 
 ## Summary
 
-v0.1 to v1.0 are implemented and committed on `main` (remote `origin`, public, CI runs
-there): the extractor-judge engine and CLI, the authenticated HTTP service of the
+v0.1 to v1.0 are implemented and committed on `main` (remote `origin`, public; checks
+run locally with `make ci`): the extractor-judge engine and CLI, the authenticated HTTP service of the
 TravelInbox contract, Postgres/S3 storage, more providers, escalation, delivery options, an
 evaluation harness, multi-replica operation, (v0.4) judge policies `always`/`never`/`auto`
 with a deterministic grounding check and PDF preparation in the service, and (v1.0) the
@@ -48,10 +48,10 @@ endpoint); the release workflow built the image and four archives.
   `api/openapi.v1.0.0.yaml` (proven to catch a lost enum value, property, header, error
   code or required field), `internal/config/schema_test.go` (every example validates, the
   struct tree and the schema agree both ways), seven fuzzers clean for 20 to 30 s each and
-  run in the CI `fuzz` job, regression tests for every fixed finding in
+  run by `make fuzz` (part of `make ci`), regression tests for every fixed finding in
   [docs/security.md](docs/security.md), `govulncheck` clean with `toolchain go1.26.9`.
-- **CI on GitHub**: runs on every push to `main`; the flaky timing tests found on the
-  first runs (grounding performance bound, worker heartbeat, pdfium cold start) were fixed
+- **Local CI**: `make ci` replaced GitHub Actions in v1.1/00-02; the flaky timing tests
+  found on the first GitHub runs (grounding performance bound, worker heartbeat, pdfium cold start) were fixed
   on 2026-10-18.
 - **Storage and scaling**: Postgres and S3 suites (opt-in env vars); two worker pools run
   100 jobs exactly once and resume a killed pool's job; `examples/compose/scaled` ran

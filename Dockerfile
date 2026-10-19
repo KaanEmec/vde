@@ -4,7 +4,8 @@
 # Multi-arch builds use `make image-multiarch`; the builder always runs on the build
 # platform and cross-compiles, so no emulation is needed for arm64.
 
-ARG GO_VERSION=1.27
+# The toolchain line of go.mod; the Makefile passes it as a build arg.
+ARG GO_VERSION=1.26.9
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS builder
 ARG TARGETOS
