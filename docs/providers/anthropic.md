@@ -111,7 +111,8 @@ Failures are classified for failover:
 | HTTP 400, 401, 402, 403, 404, 413, other 4xx, an unfollowed 3xx | permanent |
 | `stop_reason: "refusal"` | permanent |
 | A response with no text | permanent |
-| Unreadable or oversized (over 8 MiB) response | permanent |
+| An empty or cut-off 2xx body | retryable |
+| Any other unreadable or oversized (over 8 MiB) response | permanent |
 
 Error messages are fixed text plus, for HTTP errors, the error type the API documents
 (for example `rate_limit_error`). They never include the request, the document, the model's
