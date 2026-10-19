@@ -175,7 +175,7 @@ func (p *Pool) loop(ctx context.Context, workerID string) {
 func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	log := p.opts.Logger.With("job_id", j.ID, "application_id", j.ApplicationID, "worker_id", workerID)
 	deadline := j.CreatedAt.Add(p.cfg.Limits.JobTimeout)
-	app := p.application(ctx, j.ApplicationID)
+	app := application(ctx, p.store, p.apps, j.ApplicationID)
 	remaining := p.maxAttempts(app, j) - j.Attempts
 
 	var out job.Outcome
@@ -371,11 +371,11 @@ func (p *Pool) read(ctx context.Context, jobID, name string) ([]byte, error) {
 // the YAML or created over the admin API, as changed by PATCH) for the attempt limit,
 // the HTML policy and the judge sample rate over the configuration entry, which alone
 // carries delete_blobs_at_terminal and the PDF mode; force_none from either deletes the
-// inputs at the terminal state. When the row cannot be read the configuration entry is
-// used.
-func (p *Pool) application(ctx context.Context, id string) config.Application {
-	a := p.apps[id]
-	if row, err := p.store.GetApplication(ctx, id); err == nil {
+// inputs at the terminal state. When the row cannot be read the configuration entry of
+// apps is used. The pool and the sweeper read it the same way.
+func application(ctx context.Context, store job.Store, apps map[string]config.Application, id string) config.Application {
+	a := apps[id]
+	if row, err := store.GetApplication(ctx, id); err == nil {
 		a.MaxAttempts, a.Documents.HTML, a.Judge.SampleRate = row.MaxAttempts, row.HTMLPolicy, row.JudgeSampleRate
 		a.Retention.ForceNone = a.Retention.ForceNone || row.ForceNone
 	}

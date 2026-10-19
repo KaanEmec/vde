@@ -77,7 +77,7 @@ type Sweeper struct {
 	cfg   *config.Config
 	opts  SweepOptions
 	// apps are the configured applications by id, for the retention of the jobs the
-	// sweeper finishes itself (inputsAtTerminal, as the worker does for the others).
+	// sweeper finishes itself (application and inputsAtTerminal, as for the worker's).
 	apps  map[string]config.Application
 	log   *slog.Logger
 	audit *audit.Recorder
@@ -304,7 +304,7 @@ func (s *Sweeper) stale(ctx context.Context, now time.Time) (int, error) {
 // clearInputs is the terminal-state deletion of contract §10 for a job the worker did
 // not finish.
 func (s *Sweeper) clearInputs(ctx context.Context, j job.Job, now time.Time) error {
-	if !inputsAtTerminal(s.apps[j.ApplicationID], j) {
+	if !inputsAtTerminal(application(ctx, s.store, s.apps, j.ApplicationID), j) {
 		return nil
 	}
 	return deleteInputs(ctx, s.blobs, s.store, j.ID, now)

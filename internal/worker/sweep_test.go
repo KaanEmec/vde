@@ -427,6 +427,36 @@ func TestStaleJobsLoseTheirInputsPerRetention(t *testing.T) {
 	}
 }
 
+// TestStaleJobLosesItsInputsUnderForceNoneOfTheRow: force_none set over the admin API
+// after submit (the stored row, not the YAML) deletes a stale retention: default job's
+// inputs when the sweeper finishes it, as the worker does for the jobs it finishes.
+func TestStaleJobLosesItsInputsUnderForceNoneOfTheRow(t *testing.T) {
+	r := newSweepRig(t)
+	ctx := t.Context()
+	j := r.submit(t, "app", job.RetentionDefault, t0)
+	app, err := r.store.GetApplication(ctx, "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.ForceNone = true
+	if err := r.store.UpdateApplication(ctx, app, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.store.LeaseNextQueued(ctx, "w", t0, t0.Add(time.Minute), nil); err != nil {
+		t.Fatal(err)
+	}
+	if res := mustOnce(t, r.sweeper(), t0.Add(10*time.Minute)); res.Stale != 1 {
+		t.Fatalf("finished %d, want 1", res.Stale)
+	}
+	got, err := r.store.GetJobAny(ctx, j.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.InputsDeletedAt.IsZero() || got.Schema != "" || r.hasBlobs(j.ID) {
+		t.Errorf("inputs kept (deleted at %v, blobs %v), want deleted", got.InputsDeletedAt, r.hasBlobs(j.ID))
+	}
+}
+
 func TestOldQuotaTokensAndAuditRowsAreRemoved(t *testing.T) {
 	r := newSweepRig(t)
 	ctx := t.Context()

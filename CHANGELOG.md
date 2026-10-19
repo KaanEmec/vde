@@ -13,6 +13,13 @@ All notable changes to this project are recorded here, in the format of
   `server.listen` (no longer refused off loopback); `vde config check` and `vde serve` warn
   when it is `true`, so `vde config check --strict` fails on it. It will be removed in 2.0.
 
+### Fixed
+
+- A running job whose worker was lost, finished by the sweeper as `failed`/`timeout`, now
+  loses its inputs when `force_none` was set on its application over the admin API after
+  submit, as a job the worker finishes already did; before, only the YAML's `force_none`
+  counted there.
+
 ### Removed
 
 - `vde config check --probe`: no provider had a probe, so it only warned "probe not
