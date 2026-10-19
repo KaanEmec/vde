@@ -1,6 +1,6 @@
 # Job: Dead feature surfaces: content log sink and `--probe`
 
-Version: v1.1 · Epic: 01 Dead code · Status: planned · Depends on: 01-01; owner decision L1, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
+Version: v1.1 · Epic: 01 Dead code · Status: done (Gate task left to the orchestrator) · Depends on: 01-01; owner decision L1, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -27,7 +27,7 @@ prints "probe not available"), so it is its own job.
 ## Tasks
 
 - [x] Owner decision L1 (2026-10-19): drop the sink and `--probe`.
-- [ ] Remove the content sink; keep the key with a "no effect, deprecated" warning.
+- [x] Remove the content sink; keep the key with a "no effect, deprecated" warning.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode, then Execute mode: delete
     internal/logging/content.go, its tests and the wiring in cmd/vde/serve.go; keep
@@ -37,16 +37,21 @@ prints "probe not available"), so it is its own job.
     and `server.data_dir` rows) and docs/operator/privacy.md. Mark
     docs/roadmap/v0.2-service/06-retention-and-privacy/03-log-redaction.md `dropped` with
     the reason. Guardrails: skills.md."
-- [ ] Remove `--probe` and the `probes` table.
+- [x] Remove `--probe` and the `probes` table.
   - Skill: SIMPLIFY.
   - Prompt: "/simplify cmd/vde/config.go — remove the `--probe` flag, the empty `probes`
     map and their test case; the flag is a stub that always warns. Fix
     docs/operator/README.md 'What is planned'. Add both removals to CHANGELOG
     'Unreleased'. Guardrails: skills.md."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW, SEC.
   - Prompt: `/code-review high <first>^..<last>`, then `/security-review` (the job touches
     the privacy path).
+
+The deprecation warning is a configuration warning (`Validate`), so `vde config check`,
+`vde serve` (and `vde extract`, `vde eval`) print it once; `--strict` makes it blocking like
+every other warning. The loopback refusal stays. `--probe` was removed by hand (no /simplify,
+per the orchestrator).
 
 ## Acceptance criteria
 
@@ -58,3 +63,5 @@ prints "probe not available"), so it is its own job.
 ## Out of scope
 
 - Removing the `debug.log_content` key (2.0).
+
+Result: production code 6 files changed, 5 insertions(+), 140 deletions(-); tests 3 files, +20 −59.

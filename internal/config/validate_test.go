@@ -383,7 +383,8 @@ func TestValidate(t *testing.T) {
 			wantMessage: "must be positive",
 		},
 
-		// debug.log_content with a non-loopback listener is an error.
+		// debug.log_content with a non-loopback listener is an error; on loopback it only
+		// warns that it has no effect (deprecated).
 		{
 			name:        "log content on all interfaces",
 			edit:        func(c *Config) { c.Debug.LogContent = true },
@@ -397,12 +398,18 @@ func TestValidate(t *testing.T) {
 			wantMessage: "not a loopback address",
 		},
 		{
-			name: "log content on loopback",
-			edit: func(c *Config) { c.Debug.LogContent = true; c.Server.Listen = "127.0.0.1:8090" },
+			name:        "log content on loopback",
+			edit:        func(c *Config) { c.Debug.LogContent = true; c.Server.Listen = "127.0.0.1:8090" },
+			wantKey:     "debug.log_content",
+			wantMessage: "has no effect and is deprecated",
+			wantWarning: true,
 		},
 		{
-			name: "log content on localhost",
-			edit: func(c *Config) { c.Debug.LogContent = true; c.Server.Listen = "localhost:8090" },
+			name:        "log content on localhost",
+			edit:        func(c *Config) { c.Debug.LogContent = true; c.Server.Listen = "localhost:8090" },
+			wantKey:     "debug.log_content",
+			wantMessage: "has no effect and is deprecated",
+			wantWarning: true,
 		},
 
 		// Server, documents and logging values.

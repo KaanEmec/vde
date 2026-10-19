@@ -39,7 +39,7 @@ service), [examples](../../examples/README.md) and the [changelog](../../CHANGEL
 | Command | Purpose |
 | --- | --- |
 | `vde serve [--config path] [--role all\|api\|worker]` | Run the service: API, worker pool, expiry sweeper, `/healthz`, `/metrics`; `--role` splits API and workers into separate processes on PostgreSQL and S3 ([operations](operations.md#process-roles)). |
-| `vde config check [--config path] [--strict] [--probe]` | Validate a configuration without network calls and print a summary. |
+| `vde config check [--config path] [--strict]` | Validate a configuration without network calls and print a summary. |
 | `vde token create\|list\|revoke` | Manage access tokens. See [applications and tokens](applications-and-tokens.md). |
 | `vde app list` | List the applications in the database. |
 | `vde migrate [--config path]` | Apply pending database migrations of `storage.driver` and print the schema version (`serve` also migrates at start). See [storage](storage.md#migrations). |
@@ -59,12 +59,8 @@ also uses 2 (rejected), 3 (failed) and 4 (extracted: judge policy `never`, no ju
 
 ## What is planned
 
-Not implemented yet; the guide marks it wherever it comes up:
-
-- Provider reachability probes: `vde config check --probe` reports "probe not available"
-  for every provider (planned for v0.3).
-- The `debug.log_content` sink: `serve` opens the content log file, but nothing writes to it
-  yet.
+Nothing the guide describes is missing. `vde config check --probe` and the
+`debug.log_content` sink were removed in v1.1 (the key is still accepted and has no effect).
 
 The admin HTTP API (`admin.listen`, see [applications-and-tokens.md](applications-and-tokens.md)
 and [../api/admin.md](../api/admin.md)) and `vde audit list` are implemented.

@@ -2,7 +2,6 @@ package main
 
 import (
 	"cmp"
-	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/extract"
@@ -24,7 +22,7 @@ import (
 
 const defaultConfigPath = "vde.yaml"
 
-const configUsage = `Usage: vde config check [--config path] [--strict] [--probe]
+const configUsage = `Usage: vde config check [--config path] [--strict]
        vde config schema
 
 check validates the configuration without network calls, then against the JSON Schema,
@@ -36,13 +34,6 @@ schema prints the JSON Schema of the configuration file (draft 2020-12) for edit
 
 Flags of check:
 `
-
-// probes holds the reachability check of each provider adapter, keyed by provider name.
-// Adapters add theirs here as they land; a probe makes one cheap request (a models list or
-// a one-token completion) and never sends a document.
-var probes = map[string]func(ctx context.Context, e *config.Endpoint) error{}
-
-const probeTimeout = 15 * time.Second
 
 func runConfig(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "schema" {
@@ -68,7 +59,6 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 	}
 	path := fs.String("config", defaultConfigPath, "configuration file")
 	strict := fs.Bool("strict", false, "treat warnings as errors")
-	probe := fs.Bool("probe", false, "also check that each endpoint is reachable (warnings only)")
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -109,9 +99,6 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	printSummary(stdout, *path, cfg)
-	if *probe {
-		probeEndpoints(context.Background(), stdout, stderr, cfg)
-	}
 	return exitOK
 }
 
@@ -311,25 +298,4 @@ func judgeHasClassifier(cfg *config.Config) bool {
 		}
 	}
 	return false
-}
-
-// probeEndpoints reports the reachability of every endpoint as warnings; it never fails
-// the check.
-func probeEndpoints(ctx context.Context, stdout, stderr io.Writer, cfg *config.Config) {
-	for _, name := range slices.Sorted(maps.Keys(cfg.Endpoints)) {
-		e := cfg.Endpoints[name]
-		probe, ok := probes[e.Provider]
-		if !ok {
-			fmt.Fprintf(stderr, "warning: endpoints.%s: probe not available for provider %q yet\n", name, e.Provider)
-			continue
-		}
-		pctx, cancel := context.WithTimeout(ctx, probeTimeout)
-		err := probe(pctx, e)
-		cancel()
-		if err != nil {
-			fmt.Fprintf(stderr, "warning: endpoints.%s: unreachable: %v\n", name, err)
-			continue
-		}
-		fmt.Fprintf(stdout, "probe: endpoints.%s: reachable\n", name)
-	}
 }

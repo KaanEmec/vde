@@ -186,7 +186,7 @@ Logs go to stderr, as JSON (`logging.format: json`, default) or `text`, at `logg
 
 At start the service logs `vde serve starting` (version, listen address, TLS and proxy
 mode), one `application enabled` line per application, and warnings for the risky settings:
-no applications configured, `server.insecure_http`, `debug.log_content`. Each request logs
+no applications configured, `server.insecure_http`. Each request logs
 one `request` line:
 
 ```json
@@ -203,8 +203,8 @@ The logger keeps a fixed vocabulary of attribute keys and **silently drops any o
 string values longer than 256 characters are cut. This is what keeps documents,
 instructions, schemas, answers and credentials out of the logs, even after a coding mistake.
 The keys are listed in [privacy](privacy.md#what-is-logged). If you build a log pipeline,
-expect only those keys. Content can reach a log only through `debug.log_content`, and then
-only into a separate file; see [privacy](privacy.md#the-debug-switch-debuglog_content).
+expect only those keys. No setting sends content to a log; `debug.log_content` is deprecated
+and has no effect (see [privacy](privacy.md#the-debug-switch-debuglog_content)).
 
 ## Audit log
 

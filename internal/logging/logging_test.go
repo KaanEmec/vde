@@ -2,12 +2,9 @@ package logging
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -155,54 +152,5 @@ func TestNewUnknownFormatIsJSON(t *testing.T) {
 	New(&buf, slog.LevelInfo, "").Info("x")
 	if len(lines(t, &buf)) != 1 {
 		t.Errorf("output %q is not JSON", buf.String())
-	}
-}
-
-func TestContentLogger(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "content.log")
-	cl, err := OpenContentLog(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cl.Log(context.Background(), "extractor request", slog.String("job_id", "j1"), slog.String("document", "SECRET-CONTENT"))
-	if err := cl.Close(); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "SECRET-CONTENT") || !strings.Contains(string(data), `"level":"DEBUG"`) {
-		t.Errorf("content log = %q", data)
-	}
-	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
-		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
-	}
-}
-
-func TestContentLoggerRefusesStreams(t *testing.T) {
-	t.Parallel()
-	for _, p := range []string{"", "-", "/dev/stdout", "/dev/stderr", "/dev/fd/1", "/dev/fd/2"} {
-		if cl, err := OpenContentLog(p); err == nil {
-			_ = cl.Close()
-			t.Errorf("OpenContentLog(%q) succeeded", p)
-		}
-	}
-	link := filepath.Join(t.TempDir(), "out")
-	if err := os.Symlink("/dev/stdout", link); err == nil {
-		if cl, err := OpenContentLog(link); err == nil {
-			_ = cl.Close()
-			t.Error("a symlink to stdout was accepted")
-		}
-	}
-}
-
-func TestNilContentLogger(t *testing.T) {
-	t.Parallel()
-	var cl *ContentLogger
-	cl.Log(context.Background(), "x", slog.String("a", "b"))
-	if err := cl.Close(); err != nil {
-		t.Error(err)
 	}
 }

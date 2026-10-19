@@ -1,6 +1,6 @@
 # Epic 06: Retention and privacy
 
-Version: v0.2 · Status: in progress· Depends on: 03, 04
+Version: v0.2 · Status: done · Depends on: 03, 04
 
 Content lives exactly as long as the caller and operator allow, and never appears where it
 should not: logs, metrics, traces or error messages.
@@ -9,4 +9,4 @@ should not: logs, metrics, traces or error messages.
 | --- | --- | --- |
 | 01 | [Retention policies and deletion points](01-retention-policies.md) | done |
 | 02 | [Expiry sweeper](02-expiry-sweeper.md) | done |
-| 03 | [Log redaction and the debug content switch](03-log-redaction.md) | in progress |
+| 03 | [Log redaction and the debug content switch](03-log-redaction.md) | dropped |

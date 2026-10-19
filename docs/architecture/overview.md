@@ -237,8 +237,8 @@ and S3 a second blob implementation. See ADR 0007.
   appear in responses, logs or `config check` output.
 - Logging uses `slog` with a fixed allow-list of fields; a redaction test asserts that
   document bytes, instructions, schema, candidates and feedback never appear in log output.
-- A `debug.log_content` switch exists for local development only, is off by default and
-  refuses to start together with a non-loopback listener.
+- No mode logs content: the `debug.log_content` key is deprecated, has no effect and is
+  removed in 2.0.
 
 ## Versioning
 

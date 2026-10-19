@@ -216,10 +216,16 @@ func TestRunConfigCheck(t *testing.T) {
 			},
 		},
 		{
-			name:       "probe hook without adapters",
+			name:       "probe is not a flag",
 			args:       []string{"config", "check", "--probe", "--config", good},
+			wantCode:   exitUsage,
+			wantStderr: []string{"flag provided but not defined: -probe"},
+		},
+		{
+			name:       "log content has no effect",
+			args:       []string{"config", "check", "--config", writeConfig(t, goodConfig+"debug: {log_content: true}\n")},
 			wantCode:   exitOK,
-			wantStderr: []string{`warning: endpoints.anthropic: probe not available for provider "anthropic" yet`},
+			wantStderr: []string{"warning: debug.log_content: has no effect and is deprecated"},
 		},
 		{
 			name:       "missing file",

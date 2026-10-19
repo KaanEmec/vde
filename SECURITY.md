@@ -34,5 +34,5 @@ In scope: the `vde` binary, its container image and the published documentation.
 service's security model, controls and known limits are described in
 [docs/security.md](docs/security.md); behavior listed there as a non-control is not a
 vulnerability, though improvements are welcome as ordinary issues. Out of scope: flaws in
-model providers or in third-party reverse proxies, and findings that need `debug.log_content`
-or `server.insecure_http` enabled on an untrusted network, which are documented as unsafe.
+model providers or in third-party reverse proxies, and findings that need `server.insecure_http`
+enabled on an untrusted network, which are documented as unsafe.

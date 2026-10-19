@@ -36,7 +36,7 @@ published image with the documented minimal configuration:
 | 03 | [Job store and worker](03-job-store-and-worker/README.md) | v0.1 | done |
 | 04 | [Job submission and retrieval](04-job-submission/README.md) | 01, 02, 03 | done |
 | 05 | [Quota and rate limits](05-quota-and-rate-limits/README.md) | 02, 04 | done |
-| 06 | [Retention and privacy](06-retention-and-privacy/README.md) | 03, 04 | in progress |
+| 06 | [Retention and privacy](06-retention-and-privacy/README.md) | 03, 04 | done |
 | 07 | [Operations](07-operations/README.md) | 01, 03 | done |
 | 08 | [Packaging and deployment](08-packaging-and-deployment/README.md) | 01 | done |
 | 09 | [Contract conformance](09-contract-conformance/README.md) | all above | in progress |
@@ -69,7 +69,7 @@ Checked against a local `vde serve` built from `main` with the fake provider
 | 9 | Repeated `Idempotency-Key` → same job, no model call | `TestItem09` |
 | 10 | TravelInbox evaluation reports a number | `make eval EXTRACTOR=service`: 50 documents, no-correction share flights 33.3 %, lodging 5.9 %; 56 jobs all accepted first attempt, median 23.4 s, p95 61.1 s |
 
-Open after v0.2: the `debug.log_content` sink is opened but not written (06-03), the
+Open after v0.2: the `debug.log_content` sink is opened but not written (06-03; dropped in v1.1), the
 "reviewer tries the docs" acceptance items (10-01, 10-03), container-mode conformance
 (local Docker lacks buildx), provider token usage not exposed (09-02 D1; v0.3 follow-up).
 The low no-correction share is a judge leniency and prompt matter for the evaluation

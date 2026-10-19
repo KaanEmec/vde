@@ -6,6 +6,18 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+### Deprecated
+
+- `debug.log_content` has no effect: the content log sink, which was opened but never
+  written, is removed and no `content.log` file is created. The key is still accepted (and
+  still refused with a non-loopback `server.listen`); `vde config check` and `vde serve`
+  warn when it is `true`. It will be removed in 2.0.
+
+### Removed
+
+- `vde config check --probe`: no provider had a probe, so it only warned "probe not
+  available". It is now an unknown flag (a usage error); test an endpoint with `vde extract`.
+
 ## [1.0.0] - 2026-10-18
 
 The stable release: `/v1` and the configuration schema are frozen under a published

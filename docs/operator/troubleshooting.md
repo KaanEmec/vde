@@ -87,8 +87,7 @@ never the body) and as the job errors above.
 | A model does not accept PDF | If no model of a role lists `application/pdf` in `accepts` (because it cannot read PDFs), a PDF is refused at submission as `unsupported_document` (`415`) unless the caller sends page images; add a PDF-capable pair, or have callers send pages. The reverse mistake, listing `application/pdf` for a model that cannot read it, is accepted at submission and then the provider refuses the document: jobs end `extractor_failed`. Remove the type from `accepts`. |
 | Answers with prose or code fences | The extractor model does not follow the format; the loop gives feedback and retries; persistent cases end `rejected` or `extractor_failed`. Use a stronger model. |
 
-`vde config check --probe` is not implemented yet: no provider has a probe, so it only warns
-"probe not available" for every endpoint and tests nothing (probing is planned for v0.3). To test an endpoint, run `vde extract` with a small document.
+`vde config check` makes no network call. To test an endpoint, run `vde extract` with a small document.
 
 ## Judge policy and PDFs
 
@@ -185,7 +184,8 @@ and carry the line: `config: line 12: endpoints.x.timeout: ...`. Unknown keys ar
 | `server.listen` | `... is not host:port` | Write `127.0.0.1:8090` or `:8090`. |
 | `server.tls` | `cert_file and key_file must be set together` | Set both or neither. |
 | `server.insecure_http` | `must not be true together with server.tls` | Remove one. |
-| `debug.log_content` | `must not be true while server.listen ... is not a loopback address` | Turn it off, or listen on loopback. |
+| `debug.log_content` | `must not be true while server.listen ... is not a loopback address` | Remove the key: it is deprecated and has no effect. |
+| `debug.log_content` (warning) | `has no effect and is deprecated (removal in 2.0)` | Remove the key. |
 | `auth.max_token_ttl` | `must be positive` | |
 | `endpoints` | `at least one endpoint is required` | |
 | `endpoints.<n>.provider` | `"x" is not one of anthropic, openai_compatible, gemini, fake` | |

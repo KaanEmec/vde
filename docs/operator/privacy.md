@@ -53,20 +53,11 @@ a custom provider, keep to that rule.
 
 ## The debug switch: `debug.log_content`
 
-Setting `debug.log_content: true` records content (documents, instructions, candidates,
-provider bodies) for local debugging. It is **unsafe** and off by default.
-
-- It is refused by `vde config check` and `vde serve` unless `server.listen` is a
-  loopback address (`127.0.0.1`, `[::1]` or `localhost`), so it cannot run on a public or
-  shared listener.
-- The service logs a warning at startup when it is on.
-- Content goes to a separate file, created with mode `0600` in the data directory, never
-  to stdout or stderr and never through the routine logger. The file refuses `/dev/stdout`
-  and the other standard streams.
-- Treat that file like the documents themselves: it has no retention schedule, so delete
-  it when you finish, and never ship it to a log aggregator.
-
-Leave the switch off everywhere that handles real documents.
+There is no mode that logs content. `debug.log_content` is deprecated and has no effect; it
+is still accepted so 1.0 configurations keep loading, and it will be removed in 2.0. When it
+is `true`, `vde config check` and `vde serve` print a warning, and both still refuse it
+unless `server.listen` is a loopback address. No `content.log` file is written. Remove the
+key from your configuration.
 
 ## Data residency
 

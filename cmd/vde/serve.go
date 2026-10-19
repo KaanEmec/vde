@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"slices"
 	"syscall"
 	"time"
@@ -24,7 +23,6 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
-	"github.com/kaanemec/vde/internal/logging"
 	"github.com/kaanemec/vde/internal/metrics"
 	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
@@ -207,15 +205,6 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 	if cfg.Server.InsecureHTTP {
 		logger.Warn("SERVER.INSECURE_HTTP IS ON: plain HTTP is accepted from any peer, so tokens and " +
 			"documents cross the network unencrypted; use it only on a trusted private network")
-	}
-	if cfg.Debug.LogContent { // config validation refuses it with a non-loopback listener
-		contentLog, err := logging.OpenContentLog(filepath.Join(cfg.Server.DataDir, "content.log"))
-		if err != nil {
-			return err
-		}
-		defer contentLog.Close()
-		logger.Warn("DEBUG.LOG_CONTENT IS ON: document content, instructions and model answers are " +
-			"written to content.log in server.data_dir; never use it in production")
 	}
 	var auditLogger *slog.Logger
 	if cfg.Audit.Log {

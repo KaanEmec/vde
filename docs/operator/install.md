@@ -105,7 +105,6 @@ read the quota. It also contains an optional Caddy service for TLS and a Prometh
 | --- | --- | --- |
 | `vde.db`, `vde.db-wal`, `vde.db-shm` | SQLite database in WAL mode: applications, tokens, jobs, quota counters, audit events. Shared by `vde serve`, `vde token` and `vde app`. | `0600` |
 | `blobs/` | Documents and page images of jobs, one directory per job. | `0700` / `0600` |
-| `content.log` | Only with `debug.log_content: true`. See [privacy](privacy.md). | `0600` |
 
 The service creates the directory (mode `0700`) and the database on first start and applies
 database migrations itself. Requirements:
@@ -119,7 +118,7 @@ database migrations itself. Requirements:
 - Back it up as described in [operations](operations.md#backups).
 
 With `storage.driver: postgres` and `blobs.driver: s3` the database and the blobs live
-outside the data directory, which then holds only `content.log` when that is on, and several
+outside the data directory, which then holds only the PDF engine's cache, and several
 replicas may run; see [storage](storage.md).
 
 The default `/var/lib/vde` usually needs root to create. Outside a container, set `data_dir`

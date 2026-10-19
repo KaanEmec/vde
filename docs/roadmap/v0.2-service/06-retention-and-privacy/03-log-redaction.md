@@ -1,6 +1,6 @@
 # Job: Log redaction and the debug content switch
 
-Version: v0.2 · Epic: 06 Retention and privacy · Status: in progress (wiring done; provider adapter bodies and content-log call sites open) · Depends on: 01-01
+Version: v0.2 · Epic: 06 Retention and privacy · Status: dropped (v1.1 job 01-02, owner decision L1: redaction is done; the content sink, never written, was removed and `debug.log_content` is deprecated with no effect) · Depends on: 01-01
 
 ## Goal
 

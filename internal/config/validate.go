@@ -100,6 +100,8 @@ func (v *validator) server(c *Config) {
 	}
 	if c.Debug.LogContent && (err != nil || !isLoopback(host)) {
 		v.errorf("debug.log_content", "must not be true while server.listen %q is not a loopback address", c.Server.Listen)
+	} else if c.Debug.LogContent {
+		v.warnf("debug.log_content", "has no effect and is deprecated (removal in 2.0): no content is logged")
 	}
 	if c.Server.InsecureHTTP {
 		if c.Server.TLS.CertFile != "" || c.Server.TLS.KeyFile != "" {

@@ -13,9 +13,8 @@ at start: restart `vde serve` after editing it or after changing a key variable.
 the operator commands (`vde token`, `vde app`, `vde healthcheck`) read are `server`, `auth`
 and `applications`; they decode the file but do not validate it. Messages of the check are
 explained in [troubleshooting](troubleshooting.md#config-check-messages).
-`vde config check --probe` is accepted but not implemented yet: no provider has a probe, so it
-only warns "probe not available" for each endpoint and checks nothing more. Reachability
-probing is planned for v0.3; until then test an endpoint with `vde extract` and a small document.
+`vde config check` makes no network call; to test an endpoint, run `vde extract` with a small
+document.
 
 ## Schema
 
@@ -49,7 +48,7 @@ needs no rewrite: no key changed on the way to 1.0, so there is no migration com
 | `server.tls.key_file` | string | empty | TLS private key. |
 | `server.trusted_proxy` | bool | `false` | A reverse proxy terminates TLS; requests must carry `X-Forwarded-Proto: https`, from loopback too, or answer `400`. The header is believed from any peer, so make the service reachable only through the proxy. |
 | `server.insecure_http` | bool | `false` | Accept plain HTTP from any peer on any listener, for development or containers on a trusted private network only; `serve` logs a warning at start and `config check` warns. Not together with `tls`. |
-| `server.data_dir` | string | `/var/lib/vde` | Directory for the database (`vde.db`, shared by `serve`, `vde token` and `vde app`; not used with `storage.driver: postgres`) and blobs (`blobs/`; not used with `blobs.driver: s3`); also `content.log` when `debug.log_content` is on. Created with mode `0700` when missing. See [install](install.md#the-data-directory). |
+| `server.data_dir` | string | `/var/lib/vde` | Directory for the database (`vde.db`, shared by `serve`, `vde token` and `vde app`; not used with `storage.driver: postgres`) and blobs (`blobs/`; not used with `blobs.driver: s3`). Created with mode `0700` when missing. See [install](install.md#the-data-directory). |
 
 ## `endpoints.<name>`
 
@@ -194,7 +193,7 @@ them. All counts above (`max_attempts`, `quota.limit`, `rate.*`) must be at leas
 | --- | --- | --- | --- |
 | `logging.level` | string | `info` | `debug`, `info`, `warn` or `error`. What is logged: [privacy](privacy.md). |
 | `logging.format` | string | `json` | `json` or `text`. |
-| `debug.log_content` | bool | `false` | Log document content to `content.log` in `server.data_dir` (never stdout), for local development only; `serve` warns at start; refused with a non-loopback `server.listen`. |
+| `debug.log_content` | bool | `false` | Deprecated and without effect (removal in 2.0): no content is logged anywhere. Still accepted; `true` makes `vde config check` and `vde serve` warn, and is refused with a non-loopback `server.listen`. |
 
 ## `worker`, `retention`, `audit` and `metrics` (used by `vde serve`)
 

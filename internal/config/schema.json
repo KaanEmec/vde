@@ -174,7 +174,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "log_content": {"type": "boolean", "description": "Log document content to content.log; loopback listen only."}
+        "log_content": {"type": "boolean", "description": "Deprecated, no effect (removal in 2.0); refused with a non-loopback listen."}
       }
     },
     "metrics": {
