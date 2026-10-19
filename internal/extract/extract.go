@@ -230,6 +230,11 @@ type loop struct {
 	maxChars int
 	log      *slog.Logger // Input.Logger or slog.Default()
 
+	maxAttempts     int    // Input.MaxAttempts or DefaultMaxAttempts
+	extractorSystem string // the role framings (schema or schema-less)
+	judgeSystem     string
+	allowArray      bool // a top-level array answer is accepted
+
 	attempts   int
 	usable     bool            // some attempt produced parseable JSON
 	result     json.RawMessage // the last parseable candidate
@@ -247,10 +252,39 @@ type loop struct {
 	disagreements int
 }
 
+// run is the loop of contract §6: up to the attempt limit, one extractor attempt, then,
+// for a schema-valid candidate, the decision by the judge policy. Every attempt that
+// does not end the job goes on to the next one.
 func (l *loop) run(ctx context.Context) Outcome {
-	maxAttempts := l.in.MaxAttempts
-	if maxAttempts <= 0 {
-		maxAttempts = DefaultMaxAttempts
+	l.resume()
+	for l.attempts < l.maxAttempts {
+		if ctx.Err() != nil {
+			return l.failed(CodeTimeout)
+		}
+		l.attempts++
+		candidate, err := l.extractOnce(ctx)
+		if err != nil {
+			return l.fail(err, "extractor")
+		}
+		if candidate == nil {
+			continue
+		}
+		if out, done := l.decide(ctx, candidate); done {
+			return out
+		}
+	}
+	if !l.usable {
+		return l.failed(CodeExtractorFailed)
+	}
+	return l.outcome(StatusRejected, nil)
+}
+
+// resume sets the loop's limits and framings and takes over the state of an earlier run
+// of the job (Input.Prior*).
+func (l *loop) resume() {
+	l.maxAttempts = l.in.MaxAttempts
+	if l.maxAttempts <= 0 {
+		l.maxAttempts = DefaultMaxAttempts
 	}
 	l.attempts = l.in.PriorAttempts
 	if l.in.PriorCandidate != nil {
@@ -262,128 +296,146 @@ func (l *loop) run(ctx context.Context) Outcome {
 	l.repaired = l.in.PriorRepaired ||
 		slices.ContainsFunc(l.in.PriorFeedback, func(f Feedback) bool { return f.Source == SourceGrounding })
 	schemaless := l.in.Schema == nil
-	extractorSystem, judgeSystem := framings(schemaless)
-	allowArray := schemaless || l.in.Schema.allowArray
+	l.extractorSystem, l.judgeSystem = framings(schemaless)
+	l.allowArray = schemaless || l.in.Schema.allowArray
+}
 
-	for l.attempts < maxAttempts {
-		if ctx.Err() != nil {
-			return l.failed(CodeTimeout)
-		}
-		l.attempts++
-		extractor := at(l.roles.Extractor, l.roles.ExtractorEscalation, l.attempts)
-		resp, _, err := l.call(ctx, extractor, extractorSystem, assembleExtractor(l.in, l.prev, l.next))
-		switch {
-		case err == nil:
-		case errors.Is(err, router.ErrPermanent):
-			// A refusal or bad request: an unusable attempt; the next one gets the same request.
-			l.progress()
-			continue
-		default:
-			return l.fail(err, "extractor")
-		}
-
-		candidate, perr := parseJSON(resp.Text, allowArray)
-		if perr != nil {
-			what := "a single JSON object"
-			if allowArray {
-				what = "a single JSON object or array"
-			}
-			l.prev = nil
-			msg := fmt.Sprintf("The answer was not %s: %s.", what, perr)
-			if resp.Truncated {
-				msg = fmt.Sprintf("The answer was cut off at the output-token limit, so it was not %s. "+
-					"Answer again more compactly: no prose, no repetition, only the JSON.", what)
-			}
-			l.next = []Feedback{schemaFeedback("", msg)}
-			if !l.usable {
-				l.feedback = l.next // nothing parseable yet: report on the whole (null) result
-			}
-			l.progress()
-			continue
-		}
-		answersFeedback := slices.ContainsFunc(l.next, func(f Feedback) bool { return f.Source != SourceGrounding })
-		l.usable, l.result, l.feedback, l.prev = true, candidate, nil, candidate
-
-		if !schemaless {
-			if violations := l.in.Schema.Validate(candidate); len(violations) > 0 {
-				l.feedback = l.capped(violations)
-				l.next = l.feedback
-				l.progress()
-				continue // no judge call
-			}
-		}
-
-		// The candidate validates: ground it, then decide by the judge policy (ADR 0009).
-		grounded, misses := l.ground(candidate)
-		if l.policy == config.JudgeNever {
-			l.decision, l.feedback = DecisionSkipped, misses // advisory
-			return l.outcome(StatusExtracted, nil)
-		}
-		// The one grounding repair: back to the extractor, no judge call. Under always only
-		// for a schema with an x-vde-grounding annotation: an unannotated schema has not
-		// said which values are derivations (a city in English, an IATA code), so its
-		// misses are mostly legitimate and the judge decides without the extra call (ADR
-		// 0009, amendment 2026-10-18). Under auto every miss is repaired.
-		repairable := l.policy == config.JudgeAuto || l.in.Schema.GroundingAnnotated()
-		if grounded.CriticalMissed > 0 && repairable && !l.repaired && l.attempts < maxAttempts {
-			l.repaired = true
-			l.feedback, l.next = misses, misses
-			l.progress()
-			continue
-		}
-		// The auto gate: grounded text, at least one critical leaf checked and every one
-		// grounded (a candidate with nothing to check, such as {} or only nulls, goes to the
-		// judge), and a candidate that does not answer schema or judge feedback (a judge's
-		// rejection is not overruled).
-		gate := l.policy == config.JudgeAuto && grounded.CriticalOK() && !answersFeedback
-		sampled := gate && Sampled(l.in.SampleKey, l.in.SampleRate)
-		switch {
-		case gate && !sampled:
-			l.decision, l.feedback, l.confidence = DecisionGrounded, nil, nil
-			return l.outcome(StatusAccepted, nil)
-		case sampled:
-			l.decision = DecisionSampled
-		case l.decision != DecisionSampled: // a sampled job stays sampled for the metrics
-			l.decision = DecisionJudged
-		}
-		if l.policy != config.JudgeAuto {
-			misses = nil // under always, grounding entries reach only the extractor
-		}
-
-		v, err := l.verdict(ctx, at(l.roles.Judge, l.roles.JudgeEscalation, l.attempts), judgeSystem, candidate)
-		if err != nil {
-			return l.fail(err, "judge")
-		}
-		l.confidence = v.confidence
-		if v.accept && l.roles.SecondJudge != nil {
-			// A second, independent opinion: its accept confirms, its reject feeds the
-			// next attempt, its failure fails the job as the judge's would.
-			second, err := l.verdict(ctx, l.roles.SecondJudge, judgeSystem, candidate)
-			if err != nil {
-				return l.fail(err, "second_judge")
-			}
-			l.confidence = second.confidence
-			if second.accept {
-				second.feedback = slices.Concat(v.feedback, second.feedback) // both judges' advisory entries
-			}
-			v = second
-		}
-		if v.accept {
-			l.feedback = slices.Concat(v.feedback, misses) // advisory entries
-			return l.outcome(StatusAccepted, nil)
-		}
-		if sampled {
-			l.disagreements++ // the judge rejected what grounding alone would have accepted
-		}
-		l.feedback = slices.Concat(v.feedback, misses)
-		l.next = l.feedback
+// extractOnce makes one extractor attempt and returns its candidate when it parses and
+// validates against the schema (when given). Otherwise the candidate is nil, the
+// feedback for the next attempt is set and progress reported; the error is a role call
+// error that ends the job.
+func (l *loop) extractOnce(ctx context.Context) (json.RawMessage, error) {
+	extractor := at(l.roles.Extractor, l.roles.ExtractorEscalation, l.attempts)
+	resp, _, err := l.call(ctx, extractor, l.extractorSystem, assembleExtractor(l.in, l.prev, l.next))
+	switch {
+	case err == nil:
+	case errors.Is(err, router.ErrPermanent):
+		// A refusal or bad request: an unusable attempt; the next one gets the same request.
 		l.progress()
+		return nil, nil
+	default:
+		return nil, err
 	}
 
-	if !l.usable {
-		return l.failed(CodeExtractorFailed)
+	candidate, perr := parseJSON(resp.Text, l.allowArray)
+	if perr != nil {
+		l.notJSON(perr, resp.Truncated)
+		return nil, nil
 	}
-	return l.outcome(StatusRejected, nil)
+	l.usable, l.result, l.feedback, l.prev = true, candidate, nil, candidate
+
+	if l.in.Schema != nil {
+		if violations := l.in.Schema.Validate(candidate); len(violations) > 0 {
+			l.feedback = l.capped(violations)
+			l.next = l.feedback
+			l.progress()
+			return nil, nil // no judge call
+		}
+	}
+	return candidate, nil
+}
+
+// notJSON sets the feedback on an answer that did not parse (perr), or that the output
+// token limit cut off.
+func (l *loop) notJSON(perr error, truncated bool) {
+	what := "a single JSON object"
+	if l.allowArray {
+		what = "a single JSON object or array"
+	}
+	l.prev = nil
+	msg := fmt.Sprintf("The answer was not %s: %s.", what, perr)
+	if truncated {
+		msg = fmt.Sprintf("The answer was cut off at the output-token limit, so it was not %s. "+
+			"Answer again more compactly: no prose, no repetition, only the JSON.", what)
+	}
+	l.next = []Feedback{schemaFeedback("", msg)}
+	if !l.usable {
+		l.feedback = l.next // nothing parseable yet: report on the whole (null) result
+	}
+	l.progress()
+}
+
+// decide decides a schema-valid candidate by the judge policy (ADR 0009): grounding, the
+// one grounding repair, the auto gate and its sample, then the judge. done reports a
+// terminal outcome; otherwise the feedback for the next attempt is set and progress
+// reported. A failed judge call fails the job, never accepts.
+func (l *loop) decide(ctx context.Context, candidate json.RawMessage) (out Outcome, done bool) {
+	grounded, misses := l.ground(candidate)
+	if l.policy == config.JudgeNever {
+		l.decision, l.feedback = DecisionSkipped, misses // advisory
+		return l.outcome(StatusExtracted, nil), true
+	}
+	// The one grounding repair: back to the extractor, no judge call. Under always only
+	// for a schema with an x-vde-grounding annotation: an unannotated schema has not
+	// said which values are derivations (a city in English, an IATA code), so its
+	// misses are mostly legitimate and the judge decides without the extra call (ADR
+	// 0009, amendment 2026-10-18). Under auto every miss is repaired.
+	repairable := l.policy == config.JudgeAuto || l.in.Schema.GroundingAnnotated()
+	if grounded.CriticalMissed > 0 && repairable && !l.repaired && l.attempts < l.maxAttempts {
+		l.repaired = true
+		l.feedback, l.next = misses, misses
+		l.progress()
+		return Outcome{}, false
+	}
+	// The auto gate: grounded text, at least one critical leaf checked and every one
+	// grounded (a candidate with nothing to check, such as {} or only nulls, goes to the
+	// judge), and a candidate that does not answer schema or judge feedback (a judge's
+	// rejection is not overruled). l.next is still the feedback the candidate was asked
+	// to answer.
+	answersFeedback := slices.ContainsFunc(l.next, func(f Feedback) bool { return f.Source != SourceGrounding })
+	gate := l.policy == config.JudgeAuto && grounded.CriticalOK() && !answersFeedback
+	sampled := gate && Sampled(l.in.SampleKey, l.in.SampleRate)
+	switch {
+	case gate && !sampled:
+		l.decision, l.feedback, l.confidence = DecisionGrounded, nil, nil
+		return l.outcome(StatusAccepted, nil), true
+	case sampled:
+		l.decision = DecisionSampled
+	case l.decision != DecisionSampled: // a sampled job stays sampled for the metrics
+		l.decision = DecisionJudged
+	}
+	if l.policy != config.JudgeAuto {
+		misses = nil // under always, grounding entries reach only the extractor
+	}
+
+	v, role, err := l.judged(ctx, candidate)
+	if err != nil {
+		return l.fail(err, role), true
+	}
+	if v.accept {
+		l.feedback = slices.Concat(v.feedback, misses) // advisory entries
+		return l.outcome(StatusAccepted, nil), true
+	}
+	if sampled {
+		l.disagreements++ // the judge rejected what grounding alone would have accepted
+	}
+	l.feedback = slices.Concat(v.feedback, misses)
+	l.next = l.feedback
+	l.progress()
+	return Outcome{}, false
+}
+
+// judged asks the judge for a verdict on candidate and, when it accepts and a second
+// judge is configured, the second judge too: its accept confirms (with both judges'
+// advisory entries), its reject is the verdict. An error names the role that failed.
+func (l *loop) judged(ctx context.Context, candidate json.RawMessage) (verdict, string, error) {
+	v, err := l.verdict(ctx, at(l.roles.Judge, l.roles.JudgeEscalation, l.attempts), l.judgeSystem, candidate)
+	if err != nil {
+		return verdict{}, "judge", err
+	}
+	l.confidence = v.confidence
+	if !v.accept || l.roles.SecondJudge == nil {
+		return v, "", nil
+	}
+	second, err := l.verdict(ctx, l.roles.SecondJudge, l.judgeSystem, candidate)
+	if err != nil {
+		return verdict{}, "second_judge", err
+	}
+	l.confidence = second.confidence
+	if second.accept {
+		second.feedback = slices.Concat(v.feedback, second.feedback) // both judges' advisory entries
+	}
+	return second, "", nil
 }
 
 // ground checks a schema-valid candidate against the document text, when the

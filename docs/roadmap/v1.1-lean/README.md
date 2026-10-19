@@ -78,7 +78,7 @@ Release `v1.1.0` with `make release` when:
 | 02 | [Remove unneeded abstractions](02-de-abstraction/README.md) | 01 | done |
 | 03 | [One source for each rule](03-single-source/README.md) | 01 | done |
 | 04 | [Provider adapters](04-providers/README.md) | 01-03 | done |
-| 05 | [Long functions](05-long-functions/README.md) | 02, 03 | planned |
+| 05 | [Long functions](05-long-functions/README.md) | 02, 03 | in progress |
 | 06 | [Tests and testdata](06-tests-and-testdata/README.md) | 00 | planned |
 | 07 | [Dependencies](07-dependencies-and-build/README.md) | 00 | planned (02 dropped) |
 | 08 | [Documentation and example clients](08-docs-and-clients/README.md) | 00; 08-01 last of all docs edits | planned |

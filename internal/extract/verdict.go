@@ -48,31 +48,8 @@ func parseVerdict(text string, maxChars int) (verdict, error) {
 			return verdict{}, fmt.Errorf("verdict: duplicate key %q", key)
 		}
 		seen[key] = true
-		switch key {
-		case "verdict":
-			if err := dec.Decode(&word); err != nil {
-				return verdict{}, errors.New("verdict: verdict is not a string")
-			}
-		case "feedback":
-			if v.feedback, err = decodeFeedback(dec, maxChars); err != nil {
-				return verdict{}, err
-			}
-		case "confidence":
-			var c json.RawMessage
-			if err := dec.Decode(&c); err != nil {
-				return verdict{}, fmt.Errorf("verdict: %w", err)
-			}
-			var f float64
-			if json.Unmarshal(c, &f) == nil && f >= 0 && f <= 1 {
-				v.confidence = &f
-			} else {
-				v.ignoredConfidence = true
-			}
-		default:
-			var skip json.RawMessage
-			if err := dec.Decode(&skip); err != nil {
-				return verdict{}, fmt.Errorf("verdict: %w", err)
-			}
+		if err := v.decodeMember(dec, key, &word, maxChars); err != nil {
+			return verdict{}, err
 		}
 	}
 	switch word {
@@ -86,6 +63,39 @@ func parseVerdict(text string, maxChars int) (verdict, error) {
 		return verdict{}, errors.New("verdict: verdict is not accept or reject")
 	}
 	return v, nil
+}
+
+// decodeMember decodes the value of the verdict object's member key: the verdict word
+// into word, the feedback and the confidence into v; the values of unknown keys are
+// skipped.
+func (v *verdict) decodeMember(dec *json.Decoder, key string, word *string, maxChars int) error {
+	var err error
+	switch key {
+	case "verdict":
+		if dec.Decode(word) != nil {
+			return errors.New("verdict: verdict is not a string")
+		}
+	case "feedback":
+		v.feedback, err = decodeFeedback(dec, maxChars)
+		return err
+	case "confidence":
+		var c json.RawMessage
+		if err := dec.Decode(&c); err != nil {
+			return fmt.Errorf("verdict: %w", err)
+		}
+		var f float64
+		if json.Unmarshal(c, &f) == nil && f >= 0 && f <= 1 {
+			v.confidence = &f
+		} else {
+			v.ignoredConfidence = true
+		}
+	default:
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return fmt.Errorf("verdict: %w", err)
+		}
+	}
+	return nil
 }
 
 // decodeFeedback reads the feedback object with a token walk, keeping the judge's order.
