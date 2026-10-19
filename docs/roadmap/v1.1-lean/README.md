@@ -1,6 +1,6 @@
 # v1.1 Lean
 
-Status: planned (roadmap written 2026-10-19; no code changed yet) · Depends on: v1.0
+Status: in progress (epics 00 to 09 done 2026-10-20; closeout 10-01 running) · Depends on: v1.0
 
 ## Goal
 

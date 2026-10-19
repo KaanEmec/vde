@@ -78,7 +78,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 
 | Command | What it does |
 | --- | --- |
-| `make check` | `golangci-lint` (v2 config in `.golangci.yml`, includes govet), `go test -race ./...`, build. Must pass before every commit |
+| `make check` | `golangci-lint` (v2 config in `.golangci.yml`, includes govet), `go test -race ./...`, a build that writes no binary (so it never touches `bin/vde`). Must pass before every commit |
 | `make ci` | Every check, one summary line per step: tidy, lint, race suite with the `go.mod` toolchain and the local Go, `govulncheck`, `make fuzz`, cross-build with static check, conformance, eval, `make storage` (PostgreSQL and RustFS in Docker). Before merging into `main` |
 | `go test -race ./...` | All unit and e2e tests; fake provider, no network |
 | `make scenarios` | `testdata/scenarios` through the built CLI (`TestScenarios`) |
@@ -109,8 +109,8 @@ VDE_CONFORMANCE_TOKEN=<jobs token> [VDE_CONFORMANCE_FOREIGN_TOKEN=...] go test .
 - No new dependency without an ADR and a row in the overview's "Implementation decisions".
 - Tests: standard `testing`, table-driven, named subtests, fake provider; no testify.
 - Shared files (overview, CHANGELOG, READMEs, roadmap tables): targeted edits, not rewrites.
-- Never build to `bin/vde` when a `vde serve` from it may be running; use
-  `go run ./cmd/vde` or `go build -o "$TMPDIR/vde" ./cmd/vde`.
+- Never build to `bin/vde` (`make build`) when a `vde serve` from it may be running; use
+  `go run ./cmd/vde` or `go build -o "$TMPDIR/vde" ./cmd/vde`. `make check` writes no binary.
 - Never print document content, instructions, candidates or API keys in output, commits,
   docs or reports. Eval reports carry numbers only.
 - Do not commit anything under `testdata/user-docs/`, `.env`, `/vde.yaml`, `eval-reports/`,

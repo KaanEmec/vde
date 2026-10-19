@@ -912,7 +912,6 @@ func TestValidate_autoWithClassifierJudge(t *testing.T) {
 	}
 }
 
-// addClassifier adds the classifier endpoint jev and the group classify serving it.
 // TestValidate_deprecated: escalation, the second judge, the classifier provider and the
 // feedback fallback keep working in 1.x and warn once each, naming the 2.0 removal.
 func TestValidate_deprecated(t *testing.T) {
@@ -975,6 +974,7 @@ func TestValidate_deprecated(t *testing.T) {
 	}
 }
 
+// addClassifier adds the classifier endpoint jev and the group classify serving it.
 func addClassifier(c *Config) {
 	c.Endpoints["jev"] = &Endpoint{
 		Provider: ProviderClassifier,

@@ -25,7 +25,9 @@ test:
 lint: # golangci-lint's standard set includes govet
 	golangci-lint run ./...
 
-check: lint test build
+# check builds to a throwaway path, never bin/vde, which a running vde serve may use.
+check: lint test
+	CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/vde
 
 # The end-to-end scenarios of testdata/scenarios with the fake provider, verbosely.
 scenarios:
