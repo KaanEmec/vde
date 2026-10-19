@@ -18,10 +18,12 @@ field without its own marker has its operation's. Everything stable is frozen as
 Something experimental may change or be removed in a minor release, announced in the
 CHANGELOG; it becomes stable by changing its marker, never the other way round.
 
+Removed under this rule: `document.url` in the JSON submission (1.1); a body that names
+it is `400 bad_request` like any unknown field.
+
 | Experimental | Why |
 | --- | --- |
 | Completion webhook (`jobFinished` callback: payload, `X-VDE-Event`, `X-VDE-Signature`, retry schedule) | Deliveries are held in memory and can be lost on restart; durable delivery may change the retry schedule and headers. No consumer uses it yet. |
-| `document.url` in the JSON submission (`documents.fetch`) | The v1.0 security review covers the fetch (SSRF); what is fetched and how it is refused may narrow. |
 
 ### The contract's MAYs
 

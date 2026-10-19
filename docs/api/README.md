@@ -22,8 +22,8 @@ error codes in step, and check the superset relation.
 
 `/v1` is frozen at 1.0.0: the [compatibility policy](../compatibility.md) says what is
 promised, what may still be added and how deprecation and `/v2` work. Each operation in the
-API document carries `x-stability: stable` or `experimental`; experimental today are the
-completion webhook and fetching the document by `url`. A test keeps `api/openapi.yaml` a
+API document carries `x-stability: stable` or `experimental`; experimental today is the
+completion webhook (the experimental document `url` was removed in 1.1). A test keeps `api/openapi.yaml` a
 superset of the frozen [`api/openapi.v1.0.0.yaml`](../../api/openapi.v1.0.0.yaml).
 
 ## Routes

@@ -28,8 +28,20 @@ All notable changes to this project are recorded here, in the format of
   written, is removed and no `content.log` file is created. The key is still accepted on any
   `server.listen` (no longer refused off loopback); `vde config check` and `vde serve` warn
   when it is `true`, so `vde config check --strict` fails on it. It will be removed in 2.0.
+- `documents.fetch.*` (`enabled`, `allowed_hosts`, `max_bytes`, `timeout`) has no effect,
+  since the document URL it governed is removed (below). The keys are still accepted and
+  validated as in 1.0; setting any of them makes `vde config check` and `vde serve` warn
+  (`vde config check --strict` fails). `timeout` no longer has a default. They will be
+  removed in 2.0.
 
 ### Removed
+
+- The experimental `document.url` of the JSON submission (`x-stability: experimental`,
+  removable in a minor release under the compatibility policy): the service no longer
+  fetches documents, which also removes its outbound SSRF surface. A JSON body that names
+  `document.url` is now `400 bad_request` ("has a field this service does not define"),
+  like any unknown field; send the document as `data_base64`. The completion webhook,
+  also experimental, stays.
 
 - `vde config check --probe`: no provider had a probe, so it only warned "probe not
   available". It is now an unknown flag (a usage error); test an endpoint with `vde extract`.

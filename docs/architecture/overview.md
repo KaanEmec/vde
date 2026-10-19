@@ -100,7 +100,7 @@ internal/document/       document model, media types, representation selection, 
 internal/pdf/            pdfium on WebAssembly (go-pdfium, wazero): page count, text layer, page rendering; cgo-free, bounded (ADR 0010)
 internal/ground/         deterministic grounding check: normalization, number and date matching, x-vde-grounding rules (ADR 0009)
 internal/extract/        prompt framings, JSON answer parsing, schema validation, judge verdict, loop, escalation, judge policy (grounding repair, auto gate, sampling)
-internal/api/            handlers, middleware (auth, request id, limits), quota windows and rate limiting, errors, admin routes, sync endpoint, JSON submission and URL fetch
+internal/api/            handlers, middleware (auth, request id, limits), quota windows and rate limiting, errors, admin routes, sync endpoint, JSON submission
 internal/auth/           applications, tokens (hashing, expiry, revocation, scopes)
 internal/job/            job model, state machine, JobStore, SQLite and Postgres implementations, migrations and migrations_postgres
 internal/blob/           BlobStore interface, filesystem and S3 implementations

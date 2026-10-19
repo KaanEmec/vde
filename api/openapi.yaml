@@ -63,9 +63,8 @@ paths:
         credential, the request or the quota is not in order. Without a `schema` part
         the job runs schema-less: the judge alone decides acceptance and `result` is any
         JSON object. The same fields may instead be sent as `application/json`
-        (`SubmitJobJSON`, v0.3): the document and pages base64-encoded, or the document by
-        `url` when the operator enabled `documents.fetch`; the limits apply to the decoded
-        bytes and the checks are the multipart ones.
+        (`SubmitJobJSON`, v0.3): the document and pages base64-encoded; the limits apply to
+        the decoded bytes and the checks are the multipart ones.
 
         When the application has a completion webhook (`applications[].webhook`, configured
         by the operator, never per request), the service POSTs the `jobFinished` callback
@@ -521,20 +520,12 @@ components:
           type: object
           additionalProperties: false
           required: [media_type]
-          description: Exactly one of `data_base64` and `url`.
+          description: |
+            `data_base64` is required (a missing one is `400`). The experimental `url` was
+            removed in 1.1 and is refused as an unknown field.
           properties:
             media_type: { type: string, description: "The document's media type, as on the multipart part." }
             data_base64: { type: string, contentEncoding: base64, description: Standard base64 of the document, up to 25 MiB decoded. }
-            url:
-              type: string
-              format: uri
-              x-stability: experimental
-              description: |
-                Only when the operator enabled `documents.fetch`: an `https` URL on one of its
-                `allowed_hosts`. The service fetches it under a size and time limit, follows
-                redirects only to the same host, and refuses hosts that resolve to loopback,
-                private or link-local addresses. A refused URL is `400`, an oversized
-                document `413`. The declared `media_type` is used, not the response's.
             filename: { type: string, description: Informational only. }
         pages:
           type: array

@@ -62,7 +62,6 @@ type server struct {
 	mux    *http.ServeMux
 	limits *rateLimiter // in memory, one per handler (ADR 0003)
 	admin  bool         // the admin API's handler (admin.go)
-	fetch  *fetcher     // document urls of JSON submissions; nil unless documents.fetch.enabled
 	queued queuedCount  // limits.max_queued_jobs, cached count (submit.go)
 	// submits holds one slot per submission being read and prepared, at most
 	// limits.max_submits_in_flight, half of them per application (submit.go).
@@ -98,9 +97,6 @@ func newServerWith(deps Deps, admin bool) *server {
 	s := &server{deps: deps, log: deps.Logger, mux: http.NewServeMux(), limits: newRateLimiter(), admin: admin}
 	if s.log == nil {
 		s.log = slog.Default()
-	}
-	if deps.Config.Documents.Fetch.Enabled {
-		s.fetch = newFetcher(deps.Config.Documents.Fetch, nil, nil)
 	}
 	s.submits = newSubmitSlots(deps.Config.Limits.MaxSubmitsInFlight)
 	routes := s.routes

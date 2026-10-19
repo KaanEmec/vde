@@ -119,15 +119,8 @@ are `400`.
 }
 ```
 
-Instead of `data_base64` the document may be `"url": "https://..."` when the operator turned
-on `documents.fetch`: the service fetches it once, at submit, under a size and time limit.
-Only `https` URLs on the operator's `allowed_hosts` are fetched; redirects are followed only
-to the same host; a host that resolves to a loopback, private or link-local address is
-refused, checked on the connection itself after DNS resolution. The `media_type` you declare
-is used, not the server's `Content-Type`. A refused or failed fetch is `400`, an oversized
-document `413`. The fetch happens before the submission rate limit and quota are applied, so
-each fetch costs one request against the request rate limit only, even when the
-submission is then refused.
+The document always carries `data_base64`. The experimental `document.url` was removed in
+1.1: a body that names one is refused as an unknown field, `400 bad_request`.
 
 ## Synchronous: `POST /v1/extract`
 
@@ -444,8 +437,7 @@ small instructions; use `<file` for anything longer.) For the sample
 ## Stability
 
 What this guide describes is frozen for `/v1` from 1.0.0, except what the API document
-marks `x-stability: experimental`: the [completion webhook](#completion-webhooks) and the
-document by `url`. The [compatibility policy](../compatibility.md) has the details. In
+marks `x-stability: experimental`: the [completion webhook](#completion-webhooks). The [compatibility policy](../compatibility.md) has the details. In
 short, within `/v1` fields, statuses, error codes and headers are only ever added, so a
 client that ignores unknown fields and treats unknown statuses, codes and sources as this
 guide says keeps working. The grounding rules are not part of the promise: a change to

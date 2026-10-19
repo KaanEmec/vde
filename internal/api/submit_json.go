@@ -15,25 +15,19 @@ import (
 // Messages of the JSON submission path.
 const (
 	msgMalformedJSON     = "The JSON body is malformed or has a field this service does not define."
-	msgDocumentSource    = "The document needs exactly one of data_base64 and url."
+	msgDocumentData      = "The document needs data_base64."
 	msgBadBase64         = "The %s data_base64 is not valid standard base64."
 	msgSchemaNotObject   = "The schema must be a JSON object."
-	msgFetchDisabled     = "Document URLs are not enabled on this service."
-	msgFetchRefused      = "The document url is not an https URL on an allowed host."
-	msgFetchFailed       = "The document url could not be fetched."
-	msgFetchedTooLarge   = "The document at the url exceeds its size limit."
 	jsonInstructionsType = "text/plain"
 	jsonSchemaType       = "application/schema+json"
 )
 
 // jsonSubmission is the application/json body of POST /v1/jobs and POST /v1/extract:
-// the multipart parts as fields, the document and pages base64-encoded (or the document
-// by url, documents.fetch).
+// the multipart parts as fields, the document and pages base64-encoded.
 type jsonSubmission struct {
 	Document *struct {
 		MediaType  string  `json:"media_type"`
 		DataBase64 *string `json:"data_base64"`
-		URL        string  `json:"url"`
 		Filename   string  `json:"filename"`
 	} `json:"document"`
 	Pages []struct {
@@ -51,7 +45,7 @@ type jsonSubmission struct {
 // readJSONSubmission decodes a JSON body into the same submission the multipart path
 // builds, with the same limits applied to the decoded bytes, so the checks after it are
 // shared. It returns the refusal of the first violation.
-func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, requestLimit int64) (*submission, error) {
+func readJSONSubmission(r *http.Request, cfg *config.Config, requestLimit int64) (*submission, error) {
 	var in jsonSubmission
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -66,7 +60,7 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 		return nil, newError(codeBadRequest, msgMalformedJSON)
 	}
 	sub := &submission{}
-	if err := s.jsonDocument(sub, &in, cfg.Limits); err != nil {
+	if err := in.documentParts(sub, cfg.Limits); err != nil {
 		return nil, err
 	}
 	if err := in.textParts(sub); err != nil {
@@ -75,28 +69,21 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 	return sub, nil
 }
 
-// jsonDocument sets the document (decoded, or its url to fetch later) and the pages of
-// sub from in, under the limits.
-func (s *server) jsonDocument(sub *submission, in *jsonSubmission, limits config.Limits) error {
+// documentParts sets the decoded document and pages of sub from in, under the limits.
+func (in *jsonSubmission) documentParts(sub *submission, limits config.Limits) error {
 	switch d := in.Document; {
 	case d == nil:
 		return newError(codeBadRequest, msgPartMissing, partDocument)
 	case d.MediaType == "":
 		return newError(codeBadRequest, msgPartNoMediaType, partDocument)
-	case (d.DataBase64 == nil) == (d.URL == ""):
-		return newError(codeBadRequest, msgDocumentSource)
-	case d.DataBase64 != nil:
-		data, err := decodeBase64(partDocument, *d.DataBase64, limits.DocumentBytes)
-		if err != nil {
-			return err
-		}
-		sub.document = newPart(d.MediaType, d.Filename, data)
-	case s.fetch == nil:
-		return newError(codeBadRequest, msgFetchDisabled)
-	default: // fetched after the submission limits (fetchPending)
-		sub.document = &part{mediaType: d.MediaType, filename: d.Filename}
-		sub.documentURL = d.URL
+	case d.DataBase64 == nil:
+		return newError(codeBadRequest, msgDocumentData)
 	}
+	data, err := decodeBase64(partDocument, *in.Document.DataBase64, limits.DocumentBytes)
+	if err != nil {
+		return err
+	}
+	sub.document = newPart(in.Document.MediaType, in.Document.Filename, data)
 	if len(in.Pages) > limits.Pages {
 		return newError(codePayloadTooLarge, msgTooManyPages, limits.Pages)
 	}
@@ -172,26 +159,4 @@ func decodeBase64(name, s string, limit int64) ([]byte, error) {
 
 func newPart(mediaType, filename string, data []byte) *part {
 	return &part{mediaType: mediaType, filename: filename, data: data, sum: sha256.Sum256(data)}
-}
-
-// fetchPending fetches the document url of a JSON submission, if it has one, into
-// sub.document under documents.fetch (fetch.go). createJob's steps call it after the
-// submission limits, so a refused or rate-limited caller makes the service fetch nothing;
-// decoding already refused a url when fetching is disabled.
-func (s *server) fetchPending(r *http.Request, sub *submission, limits config.Limits) error {
-	if sub.documentURL == "" {
-		return nil
-	}
-	data, err := s.fetch.get(r.Context(), sub.documentURL, limits.DocumentBytes)
-	switch {
-	case errors.Is(err, errFetchRefused):
-		return newError(codeBadRequest, msgFetchRefused)
-	case errors.Is(err, errFetchTooLarge):
-		return newError(codePayloadTooLarge, msgFetchedTooLarge)
-	case err != nil:
-		return newError(codeBadRequest, msgFetchFailed)
-	}
-	sub.document = newPart(sub.document.mediaType, sub.document.filename, data)
-	sub.documentURL = ""
-	return nil
 }

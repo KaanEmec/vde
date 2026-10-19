@@ -218,6 +218,13 @@ func TestRunConfigCheck(t *testing.T) {
 			wantStderr: []string{"warning: debug.log_content: has no effect and is deprecated"},
 		},
 		{
+			name: "documents.fetch has no effect",
+			args: []string{"config", "check", "--config",
+				writeConfig(t, goodConfig+"documents: {fetch: {enabled: true, allowed_hosts: [docs.example.com]}}\n")},
+			wantCode:   exitOK,
+			wantStderr: []string{"warning: documents.fetch: has no effect and is deprecated (removal in 2.0)"},
+		},
+		{
 			name:       "missing file",
 			args:       []string{"config", "check", "--config", filepath.Join(t.TempDir(), "nope.yaml")},
 			wantCode:   exitFailure,

@@ -117,10 +117,10 @@ needs no rewrite: no key changed on the way to 1.0, so there is no migration com
 | `documents.pdf.max_pages` | int | `20` | A PDF with more pages is refused (`415 unsupported_document`) unless it is sent as given to a PDF-capable group. 1 to 200. |
 | `documents.pdf.min_text_chars_per_page` | int | `200` | Under `auto`, the characters (after trimming whitespace) every page needs for the PDF to go as text. A PDF's text layer is used for grounding when its pages average at least this many. 0 or more. |
 | `documents.pdf.workers` | int | `1` | pdfium instances per process, 1 to 16. A memory decision: each takes about 230 to 490 MB while it works. Not part of `service_version`. |
-| `documents.fetch.enabled` | bool | `false` | Let JSON submissions name their document by `url` (v0.3). Off by default: a fetch is an outbound request the caller triggers (SSRF risk); turn it on only for hosts you trust. |
-| `documents.fetch.allowed_hosts` | list | empty | Exact host names (or `host:port` for a non-default port) the service may fetch from; required when enabled. Only `https`; redirects only to the same host; hosts resolving to loopback, private, link-local, shared or NAT64 addresses are refused at connect time. |
-| `documents.fetch.max_bytes` | int | `limits.document_bytes` | Largest fetched document; never above `limits.document_bytes`. Over it `413`. |
-| `documents.fetch.timeout` | duration | `10s` | Whole fetch, connect to last byte; positive and at most `1m`. |
+| `documents.fetch.enabled` | bool | `false` | Deprecated and without effect (removal in 2.0): the experimental JSON `document.url` was removed in 1.1, so the service never fetches a document. Still accepted and validated as in 1.0 (`allowed_hosts` required when `true`); setting any `documents.fetch` key makes `vde config check` and `vde serve` warn (and fails `vde config check --strict`). |
+| `documents.fetch.allowed_hosts` | list | empty | Deprecated, no effect (see `documents.fetch.enabled`). |
+| `documents.fetch.max_bytes` | int | `0` | Deprecated, no effect; must not be negative. |
+| `documents.fetch.timeout` | duration | `0` | Deprecated, no effect; at most `1m`, not negative. |
 
 The image policy is part of `service_version`, so changing it changes the version of
 every result. A JPEG is rotated upright from its EXIF orientation tag. `image/webp` is

@@ -12,14 +12,14 @@ type Sync struct {
 	MaxWait time.Duration `yaml:"max_wait"` // longest wait before answering 202; at most MaxSyncWait
 }
 
-// Fetch lets a JSON submission name its document by URL (documents.fetch). Off by
-// default; only HTTPS URLs on AllowedHosts are fetched, and never from a loopback,
-// private or link-local address.
+// Fetch is documents.fetch, deprecated without effect (removal in 2.0): the JSON
+// submission's document url it governed was removed in 1.1. The keys are still parsed
+// and validated as in 1.0, and setting any of them warns.
 type Fetch struct {
 	Enabled      bool          `yaml:"enabled"`
 	AllowedHosts []string      `yaml:"allowed_hosts,omitempty"` // exact host names, no wildcards
 	MaxBytes     int64         `yaml:"max_bytes"`               // 0 means limits.document_bytes
-	Timeout      time.Duration `yaml:"timeout"`                 // the whole fetch
+	Timeout      time.Duration `yaml:"timeout"`                 // at most 1m
 }
 
 // Webhook is an application's completion webhook (applications[].webhook): the operator
@@ -41,15 +41,13 @@ const WebhookJobFinished = "job.finished"
 const (
 	defaultSyncMaxWait = 60 * time.Second
 	// MaxSyncWait caps sync.max_wait.
-	MaxSyncWait         = 120 * time.Second
-	defaultFetchTimeout = 10 * time.Second
-	minWebhookSecret    = 16
+	MaxSyncWait      = 120 * time.Second
+	minWebhookSecret = 16
 )
 
 // resolveDelivery applies the delivery defaults and resolves the webhook secrets.
 func (c *Config) resolveDelivery(getenv func(string) string) {
 	setDefault(&c.Sync.MaxWait, defaultSyncMaxWait)
-	setDefault(&c.Documents.Fetch.Timeout, defaultFetchTimeout)
 	for i := range c.Applications {
 		w := &c.Applications[i].Webhook
 		if w.URL == "" {
@@ -71,11 +69,14 @@ func (v *validator) delivery(c *Config) {
 		v.errorf("sync.max_wait", "%s must be positive and at most %s", c.Sync.MaxWait, MaxSyncWait)
 	}
 	f := c.Documents.Fetch
+	if f.Enabled || len(f.AllowedHosts) > 0 || f.MaxBytes != 0 || f.Timeout != 0 {
+		v.warnf("documents.fetch", "has no effect and is deprecated (removal in 2.0): document urls were removed in 1.1")
+	}
 	if f.Enabled && len(f.AllowedHosts) == 0 {
 		v.errorf("documents.fetch.allowed_hosts", "at least one host is required when fetch is enabled")
 	}
-	if f.MaxBytes < 0 || f.Timeout <= 0 || f.Timeout > time.Minute {
-		v.errorf("documents.fetch", "max_bytes must not be negative and timeout must be positive and at most 1m")
+	if f.MaxBytes < 0 || f.Timeout < 0 || f.Timeout > time.Minute {
+		v.errorf("documents.fetch", "max_bytes must not be negative and timeout must not be negative or above 1m")
 	}
 	for i, a := range c.Applications {
 		w := a.Webhook

@@ -129,8 +129,8 @@ func TestJSONSubmissionRefusals(t *testing.T) {
 		{"unknown field", edit(func(m map[string]any) { m["documents"] = 1 }), 400, codeBadRequest},
 		{"no document", edit(func(m map[string]any) { delete(m, "document") }), 400, codeBadRequest},
 		{"no media type", edit(func(m map[string]any) { delete(doc(m), "media_type") }), 400, codeBadRequest},
-		{"data and url", edit(func(m map[string]any) { doc(m)["url"] = "https://example.com/a" }), 400, codeBadRequest},
-		{"neither data nor url", edit(func(m map[string]any) { delete(doc(m), "data_base64") }), 400, codeBadRequest},
+		{"document url", edit(func(m map[string]any) { doc(m)["url"] = "https://example.com/a" }), 400, codeBadRequest},
+		{"no data", edit(func(m map[string]any) { delete(doc(m), "data_base64") }), 400, codeBadRequest},
 		{"bad base64", edit(func(m map[string]any) { doc(m)["data_base64"] = "!!!" }), 400, codeBadRequest},
 		{"document too large", edit(func(m map[string]any) { doc(m)["data_base64"] = b64(strings.Repeat("a", 65)) }), 413, codePayloadTooLarge},
 		{"too many pages", edit(func(m map[string]any) {
@@ -145,7 +145,7 @@ func TestJSONSubmissionRefusals(t *testing.T) {
 		{"max_attempts zero", edit(func(m map[string]any) { m["max_attempts"] = 0 }), 400, codeBadRequest},
 		{"bad retention", edit(func(m map[string]any) { m["retention"] = "forever" }), 400, codeBadRequest},
 		{"media type refused", edit(func(m map[string]any) { doc(m)["media_type"] = "application/zip" }), 415, codeUnsupportedMediaType},
-		{"url without fetch", edit(func(m map[string]any) {
+		{"document url without data", edit(func(m map[string]any) {
 			delete(doc(m), "data_base64")
 			doc(m)["url"] = "https://example.com/a.txt"
 		}), 400, codeBadRequest},
@@ -160,6 +160,19 @@ func TestJSONSubmissionRefusals(t *testing.T) {
 	}
 	if rg.quotaUsed(t) != 0 || rg.blobJobs(t) != 0 {
 		t.Errorf("quota used %d, blob jobs %d; want nothing stored", rg.quotaUsed(t), rg.blobJobs(t))
+	}
+}
+
+// TestJSONSubmissionDocumentURL: the document url (experimental, removed in 1.1) is
+// refused as any field the service does not define.
+func TestJSONSubmissionDocumentURL(t *testing.T) {
+	t.Parallel()
+	rg := newSubmitRig(t, submitRigOptions{})
+	body := jsonFrom(validParts())
+	body["document"].(map[string]any)["url"] = "https://example.com/a.txt"
+	w := rg.submitJSON(t, "/v1/jobs", body, nil)
+	if e := decodeError(t, w); w.Code != http.StatusBadRequest || e.Code != codeBadRequest || e.Message != msgMalformedJSON {
+		t.Errorf("= %d %s, want 400 %s %q", w.Code, w.Body, codeBadRequest, msgMalformedJSON)
 	}
 }
 

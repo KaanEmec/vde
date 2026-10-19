@@ -236,7 +236,7 @@ type Documents struct {
 	HTML   string `yaml:"html"` // raw_html or visible_text
 	Images Images `yaml:"images"`
 	PDF    PDF    `yaml:"pdf"`   // text layer and page rendering (ADR 0010)
-	Fetch  Fetch  `yaml:"fetch"` // document URLs in JSON submissions (delivery.go)
+	Fetch  Fetch  `yaml:"fetch"` // deprecated, no effect (delivery.go)
 }
 
 // Images is the image conversion policy (v0.3, ADR 0006): images and page images are

@@ -135,14 +135,14 @@
           }
         },
         "fetch": {
-          "description": "Documents named by URL in JSON submissions; off by default.",
+          "description": "Deprecated, no effect (removal in 2.0): document URLs were removed in 1.1; setting a key warns.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": {"type": "boolean", "description": "Allow document URLs; default false."},
-            "allowed_hosts": {"type": "array", "items": {"type": "string"}, "description": "Exact host names fetched from; required when enabled."},
-            "max_bytes": {"type": "integer", "minimum": 0, "description": "Largest fetched document; 0 means limits.document_bytes."},
-            "timeout": {"$ref": "#/$defs/duration", "description": "Whole fetch; default 10s, at most 1m."}
+            "enabled": {"type": "boolean", "description": "Deprecated, no effect (removal in 2.0); allowed_hosts required when true."},
+            "allowed_hosts": {"type": "array", "items": {"type": "string"}, "description": "Deprecated, no effect (removal in 2.0)."},
+            "max_bytes": {"type": "integer", "minimum": 0, "description": "Deprecated, no effect (removal in 2.0)."},
+            "timeout": {"$ref": "#/$defs/duration", "description": "Deprecated, no effect (removal in 2.0); at most 1m."}
           }
         }
       }

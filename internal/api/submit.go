@@ -114,10 +114,7 @@ type part struct {
 
 // submission is the parts of one POST /v1/jobs request; nil means the part was absent.
 type submission struct {
-	// document holds only the media type and filename while documentURL is set: a JSON
-	// submission's url is fetched (fetchPending) after the submission limits.
 	document              *part
-	documentURL           string
 	pages                 []part
 	extractorInstructions *part
 	judgeInstructions     *part
@@ -239,15 +236,14 @@ func refuse(w http.ResponseWriter, r *http.Request, err error) {
 func (s *server) readBody(r *http.Request) (*submission, error) {
 	cfg := s.deps.Config
 	if mediaTypeIn(r.Header.Get("Content-Type"), "", "application/json") {
-		return s.readJSONSubmission(r, cfg, cfg.Limits.RequestBytes)
+		return readJSONSubmission(r, cfg, cfg.Limits.RequestBytes)
 	}
 	return readSubmission(r, cfg.Limits, cfg.Limits.RequestBytes)
 }
 
-// replayKeyed looks up the Idempotency-Key under its lock. A used key is replayed, after
-// the document url fetch (the body hash covers the fetched bytes); an unused one meets the
-// queue ceiling the request skipped before its body was read. It reports true when it
-// has answered.
+// replayKeyed looks up the Idempotency-Key under its lock. A used key is replayed; an
+// unused one meets the queue ceiling the request skipped before its body was read. It
+// reports true when it has answered.
 func (s *server) replayKeyed(w http.ResponseWriter, r *http.Request, app job.Application, key string, sub *submission) bool {
 	existing, found := s.findIdempotent(w, r, app, key)
 	if existing == nil {
@@ -255,26 +251,17 @@ func (s *server) replayKeyed(w http.ResponseWriter, r *http.Request, app job.App
 	}
 	if found {
 		// The replay needs the body hash only: the job was checked when it was created.
-		if err := s.fetchPending(r, sub, s.deps.Config.Limits); err != nil {
-			refuse(w, r, err)
-			return true
-		}
 		s.answerReplay(w, r, *existing, sub.hash())
 		return true
 	}
 	return !s.queueRoom(w, r)
 }
 
-// prepare does the work that costs more than reading, in order: the document url fetch,
-// the document checks and image conversion, the schema compilation and the
-// representation (the PDF engine). done is true when it has refused.
+// prepare does the work that costs more than reading, in order: the document checks and
+// image conversion, the schema compilation and the representation (the PDF engine). done is true when it has refused.
 func (s *server) prepare(w http.ResponseWriter, r *http.Request, app job.Application, sub *submission) (
 	doc *document.Document, schema string, rep document.Representation, done bool) {
 	cfg := s.deps.Config
-	if err := s.fetchPending(r, sub, cfg.Limits); err != nil {
-		refuse(w, r, err)
-		return nil, "", rep, true
-	}
 	pages := make([]document.Page, len(sub.pages))
 	for i, p := range sub.pages {
 		pages[i] = document.Page{MediaType: p.mediaType, Data: p.data}
@@ -757,7 +744,7 @@ func (s *server) answerReplay(w http.ResponseWriter, r *http.Request, existing j
 
 // limitSubmit applies the submission limits that cost no work on the document, in
 // order: submissions per minute, jobs in progress, and a read-only look at the quota, so
-// a spent quota is refused before the document url fetch, the schema and the PDF engine
+// a spent quota is refused before the document checks, the schema and the PDF engine
 // (chargeSubmit charges it after them). It answers 429 (or 503 when the store fails) and
 // reports false when one refuses.
 func (s *server) limitSubmit(w http.ResponseWriter, r *http.Request, app job.Application) bool {

@@ -40,7 +40,7 @@ domain knowledge.
 | Verification | Judge role with an optional second judge; judge policy `always` (default), `auto` or `never` per application; deterministic grounding check steered by `x-vde-grounding` schema annotations; a `verification` field (`judge`, `grounded`, `none`) on every job |
 | Documents | PDF, PNG, JPEG, WebP, HEIC, HTML (raw or visible text), plain text, Markdown, email (`message/rfc822`, attachments listed); PDF text layer or rendered pages prepared in the service (pdfium as WebAssembly); images downscaled and oriented once |
 | Providers | `anthropic`, `openai_compatible` (OpenRouter preset), `gemini`, `bedrock`, `vertex`, `classifier` (judge only); you declare what each model reads; `vde config check` prints how every media type reaches every role |
-| Service | `POST /v1/jobs` (multipart or JSON, optional URL fetch), `GET /v1/jobs/{id}`, synchronous `POST /v1/extract`, signed completion webhooks, idempotency keys, quotas and rate limits, scoped per-application tokens, admin API, OpenAPI at `/v1/openapi.yaml` |
+| Service | `POST /v1/jobs` (multipart or JSON), `GET /v1/jobs/{id}`, synchronous `POST /v1/extract`, signed completion webhooks, idempotency keys, quotas and rate limits, scoped per-application tokens, admin API, OpenAPI at `/v1/openapi.yaml` |
 | Operations | SQLite or PostgreSQL, local files or S3; `serve --role api\|worker` for several replicas; retention sweeper; Prometheus metrics; audit log; container image and compose examples; `vde eval` to measure quality on a corpus |
 
 ## Quick start

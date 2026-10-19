@@ -10,7 +10,7 @@ import (
 func TestDeliveryDefaults(t *testing.T) {
 	t.Parallel()
 	c := validConfig(t)
-	if c.Sync.MaxWait != 60*time.Second || c.Documents.Fetch.Enabled || c.Documents.Fetch.Timeout != 10*time.Second {
+	if c.Sync.MaxWait != 60*time.Second || c.Documents.Fetch.Enabled || c.Documents.Fetch.Timeout != 0 {
 		t.Errorf("sync %+v, fetch %+v", c.Sync, c.Documents.Fetch)
 	}
 	if issues := c.Validate(); issues.Err(true) != nil {
@@ -74,10 +74,15 @@ func TestSyncAndFetchValidate(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		name, yaml, key string
+		warning         bool
 	}{
-		{"max_wait over the cap", "sync: {max_wait: 3m}", "sync.max_wait"},
-		{"fetch without hosts", "documents: {fetch: {enabled: true}}", "documents.fetch.allowed_hosts"},
-		{"fetch timeout too long", "documents: {fetch: {enabled: true, allowed_hosts: [a.example], timeout: 5m}}", "documents.fetch"},
+		{"max_wait over the cap", "sync: {max_wait: 3m}", "sync.max_wait", false},
+		{"fetch without hosts", "documents: {fetch: {enabled: true}}", "documents.fetch.allowed_hosts", false},
+		{"fetch timeout too long", "documents: {fetch: {enabled: true, allowed_hosts: [a.example], timeout: 5m}}", "documents.fetch", false},
+		{"fetch timeout negative", "documents: {fetch: {timeout: -1s}}", "documents.fetch", false},
+		{"fetch is deprecated", "documents: {fetch: {enabled: true, allowed_hosts: [a.example], max_bytes: 1024, timeout: 10s}}",
+			"documents.fetch", true},
+		{"fetch timeout alone is deprecated", "documents: {fetch: {timeout: 10s}}", "documents.fetch", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -87,10 +92,10 @@ func TestSyncAndFetchValidate(t *testing.T) {
 			}
 			found := false
 			for _, i := range c.Validate() {
-				found = found || i.Key == tt.key && !i.Warning
+				found = found || i.Key == tt.key && i.Warning == tt.warning
 			}
 			if !found {
-				t.Errorf("no error on %s: %v", tt.key, c.Validate())
+				t.Errorf("no issue (warning %t) on %s: %v", tt.warning, tt.key, c.Validate())
 			}
 		})
 	}
