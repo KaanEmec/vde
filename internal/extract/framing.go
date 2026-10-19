@@ -10,7 +10,7 @@ import (
 )
 
 // The fixed role framings (contract §6 steps 2 and 5), sent as the system prompt. Each
-// file has one placeholder line filled per mode: with a schema or schema-less (job 06).
+// file has one placeholder line filled per mode: with a schema or schema-less.
 // docs/operator/framings.md documents them; their text is part of service_version.
 var (
 	//go:embed framings/extractor.md

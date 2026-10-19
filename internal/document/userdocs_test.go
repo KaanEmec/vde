@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
-
-	"github.com/kaanemec/vde/internal/config"
 )
 
 // TestUserDocs parses every file under testdata/user-docs (untracked, operator-supplied
@@ -34,7 +32,7 @@ func TestUserDocs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			doc, err := New(Input{MediaType: mt, Data: data, Filename: e.Name()}, config.Limits{})
+			doc, err := New(Input{MediaType: mt, Data: data, Filename: e.Name()}, testLimits)
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}

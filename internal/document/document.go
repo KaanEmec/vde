@@ -8,13 +8,6 @@ import (
 	"github.com/kaanemec/vde/internal/config"
 )
 
-// Contract §4 limits, used when config.Limits leaves a value at zero.
-const (
-	DefaultDocumentBytes = 25 << 20
-	DefaultPageBytes     = 10 << 20
-	DefaultPages         = 20
-)
-
 // Document is one validated document of an accepted media type.
 type Document struct {
 	// MediaType is normalized: lowercase, no parameters, except "; charset=utf-8" on
@@ -47,13 +40,12 @@ type Input struct {
 	Pages     []Page
 }
 
-// New validates in against the accepted media types and limits and returns the
-// document. Binary types must match their sniffed type; text types must decode to valid
+// New validates in against the accepted media types and limits (validated
+// configuration, so every limit is positive) and returns the document. Binary types must match their sniffed type; text types must decode to valid
 // UTF-8; email is parsed. Errors are *Error with the code the API maps to a status.
 func New(in Input, limits config.Limits) (*Document, error) {
-	docLimit := orDefault(limits.DocumentBytes, DefaultDocumentBytes)
-	if int64(len(in.Data)) > docLimit {
-		return nil, refuse(CodePayloadTooLarge, "document exceeds %d bytes", docLimit)
+	if int64(len(in.Data)) > limits.DocumentBytes {
+		return nil, refuse(CodePayloadTooLarge, "document exceeds %d bytes", limits.DocumentBytes)
 	}
 	if len(in.Data) == 0 {
 		return nil, refuse(CodeBadRequest, "document is empty")
@@ -127,11 +119,11 @@ func (d *Document) Text(policy HTMLPolicy) (string, error) {
 }
 
 func validatePages(pages []Page, limits config.Limits) ([]Page, error) {
-	maxPages := orDefault(limits.Pages, DefaultPages)
+	maxPages := limits.Pages
 	if len(pages) > maxPages {
 		return nil, refuse(CodePayloadTooLarge, "more than %d pages", maxPages)
 	}
-	pageLimit := orDefault(limits.PageBytes, DefaultPageBytes)
+	pageLimit := limits.PageBytes
 	out := make([]Page, 0, len(pages))
 	for i, p := range pages {
 		n := i + 1
@@ -160,11 +152,4 @@ func validatePages(pages []Page, limits config.Limits) ([]Page, error) {
 		return nil, nil
 	}
 	return out, nil
-}
-
-func orDefault[T int | int64](v T, def T) T {
-	if v <= 0 {
-		return def
-	}
-	return v
 }

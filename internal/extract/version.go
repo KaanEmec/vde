@@ -105,7 +105,7 @@ type versionedConfig struct {
 	FeedbackJudge       *versionedGroup `json:"feedback_judge,omitempty"`
 	JudgePolicy         string          `json:"judge_policy,omitempty"` // never or auto; always is the default
 	SampleRate          *float64        `json:"sample_rate,omitempty"`  // auto only
-	Grounding           string          `json:"grounding,omitempty"`    // ground.RulesVersion, always set (v0.4)
+	Grounding           string          `json:"grounding,omitempty"`    // ground.RulesVersion, always set
 	PDF                 string          `json:"pdf,omitempty"`          // document.PDFPolicy.String(), when it matters
 }
 

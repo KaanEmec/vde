@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Sync bounds POST /v1/extract (v0.3 epic 05), which holds the request open until the
+// Sync bounds POST /v1/extract, which holds the request open until the
 // job is terminal.
 type Sync struct {
 	MaxWait time.Duration `yaml:"max_wait"` // longest wait before answering 202; at most MaxSyncWait

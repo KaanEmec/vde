@@ -46,7 +46,7 @@ type Config struct {
 	typeIssues Issues // set by Parse, reported by Validate (stringScalars)
 }
 
-// Server configures the HTTP listener (used from v0.2).
+// Server configures the HTTP listener.
 type Server struct {
 	Listen       string `yaml:"listen"`
 	TLS          TLS    `yaml:"tls"`
@@ -220,14 +220,14 @@ type Limits struct {
 	DocumentBytes        int64 `yaml:"document_bytes"`
 	PageBytes            int64 `yaml:"page_bytes"`
 	Pages                int   `yaml:"pages"`
-	RequestBytes         int64 `yaml:"request_bytes"` // whole multipart request body (v0.2)
+	RequestBytes         int64 `yaml:"request_bytes"` // whole multipart request body
 	// MaxQueuedJobs is the global ceiling on queued jobs, all applications together: at
-	// or above it a submission answers 503 unavailable with Retry-After (v1.0). 0 means
-	// no ceiling.
+	// or above it a submission answers 503 unavailable with Retry-After. 0 means no
+	// ceiling.
 	MaxQueuedJobs int `yaml:"max_queued_jobs"`
 	// MaxSubmitsInFlight bounds the submissions (POST /v1/jobs and POST /v1/extract) one
 	// process reads and prepares at a time, each holding up to request_bytes in memory:
-	// over it a submission answers 503 unavailable with Retry-After (v1.0). At least 1.
+	// over it a submission answers 503 unavailable with Retry-After. At least 1.
 	MaxSubmitsInFlight int `yaml:"max_submits_in_flight"`
 }
 
@@ -239,7 +239,7 @@ type Documents struct {
 	Fetch  Fetch  `yaml:"fetch"` // deprecated, no effect (delivery.go)
 }
 
-// Images is the image conversion policy (v0.3, ADR 0006): images and page images are
+// Images is the image conversion policy (ADR 0006): images and page images are
 // downscaled, rotated by their EXIF orientation and re-encoded once at submit, and WebP
 // is converted for endpoints that do not read it. It is part of service_version.
 type Images struct {
@@ -261,7 +261,7 @@ type PDF struct {
 	Workers             int    `yaml:"workers"`                 // pdfium instances, 1 to 16
 }
 
-// Application is one caller with its own limits (used from v0.2).
+// Application is one caller with its own limits.
 type Application struct {
 	ID          string       `yaml:"id"`
 	Name        string       `yaml:"name"`

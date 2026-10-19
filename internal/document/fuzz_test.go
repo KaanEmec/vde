@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 	"unicode/utf8"
-
-	"github.com/kaanemec/vde/internal/config"
 )
 
 // FuzzNew feeds arbitrary HTML and email bytes through validation and both HTML
@@ -22,7 +20,7 @@ func FuzzNew(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		for _, mt := range []string{"message/rfc822", "text/html"} {
-			doc, err := New(Input{MediaType: mt, Data: data}, config.Limits{})
+			doc, err := New(Input{MediaType: mt, Data: data}, testLimits)
 			if err != nil {
 				continue
 			}

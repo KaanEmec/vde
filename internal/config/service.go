@@ -22,7 +22,7 @@ type Metrics struct {
 // Token returns the metrics token resolved from TokenEnv, or "".
 func (m Metrics) Token() string { return m.token }
 
-// Admin configures the admin API (epic 11): /admin/v1 on its own listener, reached with
+// Admin configures the admin API: /admin/v1 on its own listener, reached with
 // admin tokens (vde token create --admin).
 type Admin struct {
 	// Listen is the admin listener (host:port); empty disables the admin API. A

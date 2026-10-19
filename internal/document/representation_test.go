@@ -107,7 +107,7 @@ func TestSelect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			doc, err := New(tt.in, config.Limits{})
+			doc, err := New(tt.in, testLimits)
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
@@ -170,7 +170,7 @@ func TestSelectSamePartsForBothRoles(t *testing.T) {
 		{MediaType: "message/rfc822", Data: readFile(t, "testdata/eml/mixed-pdf.eml")},
 	}
 	for _, in := range inputs {
-		doc, err := New(in, config.Limits{})
+		doc, err := New(in, testLimits)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -230,7 +230,7 @@ func TestHTMLPolicy(t *testing.T) {
 	if HTMLPolicy("").String() != "raw_html" || Native.String() != "native" || Pages.String() != "pages" || Text.String() != "text" {
 		t.Error("names for service_version changed")
 	}
-	doc, err := New(Input{MediaType: "text/plain", Data: []byte("x")}, config.Limits{})
+	doc, err := New(Input{MediaType: "text/plain", Data: []byte("x")}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}

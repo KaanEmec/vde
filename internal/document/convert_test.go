@@ -305,7 +305,7 @@ func webpFixture(t *testing.T) []byte {
 func TestSelectConvertsWebP(t *testing.T) {
 	t.Parallel()
 	webp := webpFixture(t)
-	doc, err := New(Input{MediaType: "image/webp", Data: webp}, config.Limits{})
+	doc, err := New(Input{MediaType: "image/webp", Data: webp}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestSelectImageDocuments(t *testing.T) {
 	jpegOnly := []string{"image/jpeg", "text/plain"}
 	big := encodePNG(t, splitImage(120, 60))
 
-	doc, err := New(Input{MediaType: "image/png", Data: big}, config.Limits{})
+	doc, err := New(Input{MediaType: "image/png", Data: big}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestSelectImageDocuments(t *testing.T) {
 
 	// A small PNG is not re-encoded.
 	small := encodePNG(t, splitImage(40, 20))
-	doc, err = New(Input{MediaType: "image/png", Data: small}, config.Limits{})
+	doc, err = New(Input{MediaType: "image/png", Data: small}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestSelectConvertsPages(t *testing.T) {
 		MediaType: "application/pdf",
 		Data:      pdfData,
 		Pages:     []Page{{Data: big}, {Data: small}},
-	}, config.Limits{})
+	}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestSelectConvertsPages(t *testing.T) {
 		t.Errorf("types = %v", rep.MediaTypes)
 	}
 	// PNG-only groups cannot read the converted JPEG pages: the originals are used.
-	pngPages, err := New(Input{MediaType: "application/pdf", Data: pdfData, Pages: []Page{{Data: big}, {Data: big}}}, config.Limits{})
+	pngPages, err := New(Input{MediaType: "application/pdf", Data: pdfData, Pages: []Page{{Data: big}, {Data: big}}}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}

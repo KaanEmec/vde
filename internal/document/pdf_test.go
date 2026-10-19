@@ -157,7 +157,7 @@ func TestSelect_pdfPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			doc, err := New(Input{MediaType: "application/pdf", Data: pdfData, Pages: tt.pages}, config.Limits{})
+			doc, err := New(Input{MediaType: "application/pdf", Data: pdfData, Pages: tt.pages}, testLimits)
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
@@ -205,7 +205,7 @@ func TestSelect_pdfPolicy(t *testing.T) {
 
 func TestSelect_pdfTextParts(t *testing.T) {
 	t.Parallel()
-	doc, err := New(Input{MediaType: "application/pdf", Data: pdfData}, config.Limits{})
+	doc, err := New(Input{MediaType: "application/pdf", Data: pdfData}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestGroundingText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			doc, err := New(tt.in, config.Limits{})
+			doc, err := New(tt.in, testLimits)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -323,7 +323,7 @@ func TestGroundingText_pdfSentAsGiven(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			doc, err := New(Input{MediaType: "application/pdf", Data: pdfData, Pages: tt.pages}, config.Limits{})
+			doc, err := New(Input{MediaType: "application/pdf", Data: pdfData, Pages: tt.pages}, testLimits)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -368,7 +368,7 @@ func TestSelect_bookingPDF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err := New(Input{MediaType: "application/pdf", Data: data}, config.Limits{})
+	doc, err := New(Input{MediaType: "application/pdf", Data: data}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestSelect_bookingPDF(t *testing.T) {
 
 func TestSelect_imageOnlyPDF(t *testing.T) {
 	t.Parallel()
-	doc, err := New(Input{MediaType: "application/pdf", Data: pdftest.Build(pdftest.Page{Image: true})}, config.Limits{})
+	doc, err := New(Input{MediaType: "application/pdf", Data: pdftest.Build(pdftest.Page{Image: true})}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestPDFEngineBusy(t *testing.T) {
 	t.Parallel()
 	vision := capsFor(t, []string{"image/png"})
 	pdfNative := capsFor(t, []string{"application/pdf"})
-	doc, err := New(Input{MediaType: "application/pdf", Data: pdfData}, config.Limits{})
+	doc, err := New(Input{MediaType: "application/pdf", Data: pdfData}, testLimits)
 	if err != nil {
 		t.Fatal(err)
 	}

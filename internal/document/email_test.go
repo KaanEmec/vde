@@ -26,7 +26,7 @@ func corpusEmail(t *testing.T, name string) *Document {
 
 func newEmail(t *testing.T, path string) *Document {
 	t.Helper()
-	doc, err := New(Input{MediaType: "message/rfc822", Data: readFile(t, path)}, config.Limits{})
+	doc, err := New(Input{MediaType: "message/rfc822", Data: readFile(t, path)}, testLimits)
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
@@ -134,11 +134,11 @@ func TestEmailRefused(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := New(Input{MediaType: "message/rfc822", Data: []byte(tt.data)}, config.Limits{})
+			_, err := New(Input{MediaType: "message/rfc822", Data: []byte(tt.data)}, testLimits)
 			wantCode(t, err, tt.want)
 		})
 	}
-	doc, err := New(Input{MediaType: "message/rfc822", Data: []byte("From: a@example.com\n\nbody")}, config.Limits{DocumentBytes: 5})
+	doc, err := New(Input{MediaType: "message/rfc822", Data: []byte("From: a@example.com\n\nbody")}, config.Limits{DocumentBytes: 5, PageBytes: 10 << 20, Pages: 20})
 	if doc != nil {
 		t.Fatal("over-limit email accepted")
 	}
@@ -215,11 +215,11 @@ func TestEmailMatchesHTMLBody(t *testing.T) {
 	htmlBody := extractHTMLPart(t, raw)
 	caps := capsFor(t, []string{"application/pdf", "text/plain"})
 	for _, policy := range []HTMLPolicy{RawHTML, VisibleText} {
-		emailDoc, err := New(Input{MediaType: "message/rfc822", Data: raw}, config.Limits{})
+		emailDoc, err := New(Input{MediaType: "message/rfc822", Data: raw}, testLimits)
 		if err != nil {
 			t.Fatal(err)
 		}
-		htmlDoc, err := New(Input{MediaType: "text/html; charset=UTF-8", Data: htmlBody}, config.Limits{})
+		htmlDoc, err := New(Input{MediaType: "text/html; charset=UTF-8", Data: htmlBody}, testLimits)
 		if err != nil {
 			t.Fatal(err)
 		}

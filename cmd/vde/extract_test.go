@@ -352,7 +352,7 @@ func checkDocumentParts(t *testing.T, sc scenario, c fake.Call, policy document.
 		t.Errorf("document parts = %v, want %v", types, sc.Expect.DocumentParts)
 	}
 	if sc.Expect.SameTextAs != "" {
-		other := newScenarioDocument(t, sc.Expect.SameTextAs, "", nil, config.Limits{})
+		other := newScenarioDocument(t, sc.Expect.SameTextAs, "", nil, config.Limits{DocumentBytes: 25 << 20, PageBytes: 10 << 20, Pages: 20})
 		want, err := other.Text(policy)
 		if err != nil {
 			t.Fatal(err)
