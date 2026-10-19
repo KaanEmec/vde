@@ -14,6 +14,7 @@ import (
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/metrics"
 )
 
 // Defaults for Options.
@@ -40,18 +41,6 @@ type Locker interface {
 	TryLock(ctx context.Context, key int64) (release func(), ok bool, err error)
 }
 
-// Observer receives the sweeper's metric.
-type Observer interface {
-	// AddSwept counts n expired jobs: their content, blobs included, deleted at
-	// expires_at (or their row removed, for a job whose content the sweeper had not
-	// expired).
-	AddSwept(n int)
-}
-
-type nopObserver struct{}
-
-func (nopObserver) AddSwept(int) {}
-
 // Options configure a Sweeper. Zero values take the defaults.
 type Options struct {
 	Interval time.Duration // between sweeps (retention.sweep_interval)
@@ -65,8 +54,11 @@ type Options struct {
 	AuditRetention     time.Duration // audit.retention
 	Clock              func() time.Time
 	Logger             *slog.Logger
-	Observer           Observer
-	Audit              *audit.Recorder // nil writes no audit events
+	// Metrics counts expired jobs: their content, blobs included, deleted at expires_at
+	// (or their row removed, for a job whose content the sweeper had not expired); nil
+	// counts nothing.
+	Metrics *metrics.Metrics
+	Audit   *audit.Recorder // nil writes no audit events
 	// Lock, when set, is taken (without waiting) around each sweep of Run, so that of
 	// several worker processes one sweeps at a time; a sweep whose lock another process
 	// holds is skipped until the next tick. Once is never locked.
@@ -133,9 +125,6 @@ func New(store job.Store, blobs blob.Store, opts Options) *Sweeper {
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
-	}
-	if opts.Observer == nil {
-		opts.Observer = nopObserver{}
 	}
 	return &Sweeper{
 		store: store, blobs: blobs, opts: opts, log: opts.Logger.With("component", "sweeper"),
@@ -231,9 +220,7 @@ func (s *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			s.lastOrphan = now
 		}
 	}
-	if r.Expired > 0 {
-		s.opts.Observer.AddSwept(r.Expired)
-	}
+	s.opts.Metrics.AddSwept(r.Expired)
 	return r, errors.Join(errs...)
 }
 

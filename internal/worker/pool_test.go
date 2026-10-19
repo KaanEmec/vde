@@ -9,6 +9,8 @@ import (
 	"image"
 	"image/png"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,6 +25,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/metrics"
 	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
@@ -82,44 +85,12 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-type recorder struct {
-	started   chan string
-	mu        sync.Mutex
-	finished  []job.Status
-	decisions []string // "policy/decision/disagreements"
-}
-
-func (r *recorder) JobStarted(app string) {
-	select {
-	case r.started <- app:
-	default:
-	}
-}
-
-func (r *recorder) JobFinished(_ string, status job.Status, _ int, _ time.Duration) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.finished = append(r.finished, status)
-}
-
-func (r *recorder) JudgeDecision(policy, decision string, disagreements int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.decisions = append(r.decisions, fmt.Sprintf("%s/%s/%d", policy, decision, disagreements))
-}
-
-func (r *recorder) judgeDecisions() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return slices.Clone(r.decisions)
-}
-
 type rig struct {
 	store      *job.SQLite
 	blobs      *blob.FS
 	cfg        *config.Config
 	ext, judge *fake.Provider
-	obs        *recorder
+	metrics    *metrics.Metrics
 	logs       *syncBuffer
 	pool       *worker.Pool
 }
@@ -162,7 +133,7 @@ func newRigConfig(t *testing.T, yaml string, ext, judge fake.Script, opts worker
 		}
 	}
 	r := &rig{store: store, blobs: blobs, cfg: cfg, ext: fake.New(ext), judge: fake.New(judge),
-		obs: &recorder{started: make(chan string, 16)}, logs: &syncBuffer{}}
+		metrics: metrics.New(false), logs: &syncBuffer{}}
 	providers := map[*config.Endpoint]provider.Provider{cfg.Endpoints["rev"]: r.judge}
 	roles, err := extract.NewRoles(cfg, func(e *config.Endpoint) (provider.Provider, error) {
 		if p, ok := providers[e]; ok {
@@ -173,7 +144,7 @@ func newRigConfig(t *testing.T, yaml string, ext, judge fake.Script, opts worker
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts.Observer = r.obs
+	opts.Metrics = r.metrics
 	opts.Logger = slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	opts.Audit = audit.New(store, audit.Options{Logger: opts.Logger})
 	r.pool = worker.New(store, blobs, cfg, roles, opts)
@@ -557,13 +528,14 @@ func TestWakeLatency(t *testing.T) {
 	r.submit(t, "app", nil)
 	start := time.Now()
 	r.pool.Wake()
-	select {
-	case <-r.obs.started:
-		if d := time.Since(start); d >= 100*time.Millisecond {
-			t.Errorf("job picked up after %v, want < 100ms", d)
+	for len(r.ext.Calls()) == 0 {
+		if time.Since(start) > 2*time.Second {
+			t.Fatal("job not picked up after Wake")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("job not picked up after Wake")
+		time.Sleep(time.Millisecond)
+	}
+	if d := time.Since(start); d >= 100*time.Millisecond {
+		t.Errorf("job picked up after %v, want < 100ms", d)
 	}
 }
 
@@ -605,7 +577,7 @@ func TestStopWaitsForRunningJobs(t *testing.T) {
 		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{Size: 1})
 	j := r.submit(t, "app", nil)
 	r.start(t)
-	<-r.obs.started
+	r.waitStarted(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -622,7 +594,7 @@ func TestStopAbandonsAfterGrace(t *testing.T) {
 		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{Size: 1})
 	j := r.submit(t, "app", nil)
 	r.start(t)
-	<-r.obs.started
+	r.waitStarted(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
@@ -666,7 +638,7 @@ func TestLeaseLostAbandonsRun(t *testing.T) {
 		worker.Options{Size: 1, Lease: 30 * time.Millisecond})
 	j := r.submit(t, "app", nil)
 	r.start(t)
-	<-r.obs.started
+	r.waitStarted(t)
 	timeout := job.Outcome{Status: job.StatusFailed, Error: json.RawMessage(`{"code":"timeout","message":"m"}`), Feedback: json.RawMessage(`[]`)}
 	if err := r.store.Finish(t.Context(), j.ID, "", timeout, time.Now()); err != nil {
 		t.Fatal(err)
@@ -700,12 +672,12 @@ func TestJudgePolicies(t *testing.T) {
 		wantJudge        int
 		wantDecision     string
 	}{
-		{"always", "always", 0, candidate, job.StatusAccepted, job.VerificationJudge, 1, 1, "always/judged/0"},
-		{"never", "never", 0, candidate, job.StatusExtracted, job.VerificationNone, 1, 0, "never/skipped/0"},
-		{"auto grounded", "auto", 0, candidate, job.StatusAccepted, job.VerificationGrounded, 1, 0, "auto/grounded/0"},
-		{"auto sampled", "auto", 1, candidate, job.StatusAccepted, job.VerificationJudge, 1, 1, "auto/sampled/0"},
+		{"always", "always", 0, candidate, job.StatusAccepted, job.VerificationJudge, 1, 1, `vde_judge_decisions_total{decision="judged",policy="always"} 1`},
+		{"never", "never", 0, candidate, job.StatusExtracted, job.VerificationNone, 1, 0, `vde_judge_decisions_total{decision="skipped",policy="never"} 1`},
+		{"auto grounded", "auto", 0, candidate, job.StatusAccepted, job.VerificationGrounded, 1, 0, `vde_judge_decisions_total{decision="grounded",policy="auto"} 1`},
+		{"auto sampled", "auto", 1, candidate, job.StatusAccepted, job.VerificationJudge, 1, 1, `vde_judge_decisions_total{decision="sampled",policy="auto"} 1`},
 		// Repair, then still ungrounded: the judge decides, never grounding.
-		{"auto ungrounded", "auto", 0, ungrounded, job.StatusAccepted, job.VerificationJudge, 2, 1, "auto/judged/0"},
+		{"auto ungrounded", "auto", 0, ungrounded, job.StatusAccepted, job.VerificationJudge, 2, 1, `vde_judge_decisions_total{decision="judged",policy="auto"} 1`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := newRig(t, fake.Script{{Answer: tt.answer, Repeat: true}}, fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{})
@@ -727,9 +699,10 @@ func TestJudgePolicies(t *testing.T) {
 			if len(r.ext.Calls()) != tt.wantExtractor || len(r.judge.Calls()) != tt.wantJudge {
 				t.Errorf("calls: extractor %d, judge %d; want %d, %d", len(r.ext.Calls()), len(r.judge.Calls()), tt.wantExtractor, tt.wantJudge)
 			}
-			waitFor(t, func() bool { return len(r.obs.judgeDecisions()) == 1 })
-			if d := r.obs.judgeDecisions(); d[0] != tt.wantDecision {
-				t.Errorf("judge decision %v, want %s", d, tt.wantDecision)
+			waitFor(t, func() bool { return strings.Contains(r.scrape(t), "vde_judge_decisions_total{") })
+			if out := r.scrape(t); !strings.Contains(out, tt.wantDecision+"\n") ||
+				!strings.Contains(out, "vde_grounding_disagreements_total 0\n") {
+				t.Errorf("metrics lack %s:\n%s", tt.wantDecision, out)
 			}
 			var feedback []extract.Feedback
 			if err := json.Unmarshal(got.Feedback, &feedback); err != nil {
@@ -781,6 +754,20 @@ func TestTimeoutAfterGroundingRepairDropsEntries(t *testing.T) {
 	if got.Status != job.StatusFailed || errorCode(t, got) != extract.CodeTimeout || string(got.Feedback) != "[]" {
 		t.Errorf("row %s (%s), feedback %s; want failed timeout without grounding entries", got.Status, errorCode(t, got), got.Feedback)
 	}
+}
+
+// waitStarted waits until a worker leased a job and called the extractor.
+func (r *rig) waitStarted(t *testing.T) {
+	t.Helper()
+	waitFor(t, func() bool { return len(r.ext.Calls()) > 0 })
+}
+
+// scrape returns the rig's metrics in the Prometheus text format.
+func (r *rig) scrape(t *testing.T) string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	r.metrics.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	return w.Body.String()
 }
 
 func waitFor(t *testing.T, cond func() bool) {

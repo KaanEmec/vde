@@ -202,4 +202,4 @@ func probeWritable(dir string) bool {
 	return closeErr == nil && removeErr == nil
 }
 
-func healthy(c HealthChecker) bool { return c != nil && c.Healthy() }
+func healthy(c func() bool) bool { return c != nil && c() }

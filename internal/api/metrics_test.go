@@ -50,7 +50,7 @@ func TestMetricsRoute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := metrics.New()
+			m := metrics.New(false)
 			if tt.nilReg {
 				m = nil
 			}
@@ -87,7 +87,7 @@ func TestMetricsHTTPLabels(t *testing.T) {
 	t.Parallel()
 	f := newJobFixture(t)
 	deps := f.s.deps
-	deps.Metrics = metrics.New()
+	deps.Metrics = metrics.New(false)
 	h := handlerOf(newServer(deps))
 	serve(h, http.MethodGet, "/v1/jobs/j_secretid", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+f.token) })
 	serve(h, http.MethodGet, "/no/such/path-secret", nil)
@@ -103,5 +103,31 @@ func TestMetricsHTTPLabels(t *testing.T) {
 	}
 	if strings.Contains(body, "secret") {
 		t.Errorf("metrics carry request data:\n%s", body)
+	}
+}
+
+// TestNewMetrics: the metrics.listen handler serves GET /metrics alone, behind the token
+// when metrics.token_env is set, and counts its own requests.
+func TestNewMetrics(t *testing.T) {
+	t.Parallel()
+	m := metrics.New(false)
+	h := NewMetrics(m, metricsConfig(t, "metrics: {listen: \"127.0.0.1:9090\", token_env: VDE_METRICS_TOKEN}").Metrics)
+	if w := serve(h, http.MethodGet, "/metrics", nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("without the token: %d, want 401", w.Code)
+	}
+	if w := serve(h, http.MethodGet, "/healthz", nil); w.Code != http.StatusNotFound {
+		t.Errorf("GET /healthz: %d, want 404", w.Code)
+	}
+	w := serve(h, http.MethodGet, "/metrics", func(r *http.Request) { r.Header.Set("Authorization", "Bearer scrape-secret") })
+	if w.Code != http.StatusOK {
+		t.Fatalf("with the token: %d, want 200", w.Code)
+	}
+	for _, want := range []string{
+		`vde_http_requests_total{route="GET /metrics",status="401"} 1`,
+		`vde_http_requests_total{route="none",status="404"} 1`,
+	} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("metrics lack %s", want)
+		}
 	}
 }

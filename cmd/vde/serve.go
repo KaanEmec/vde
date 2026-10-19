@@ -165,11 +165,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 			}
 		}
 	}()
-	var metricOpts []metrics.Option
-	if cfg.Metrics.GoRuntime {
-		metricOpts = append(metricOpts, metrics.WithGoRuntime())
-	}
-	m := metrics.New(metricOpts...)
+	m := metrics.New(cfg.Metrics.GoRuntime)
 	roles, err := extract.NewRoles(cfg, build)
 	if err != nil {
 		return err
@@ -259,12 +255,16 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		PollInterval: cfg.Worker.PollInterval,
 		Lease:        cfg.Worker.Lease,
 		WorkerID:     instance,
-		Observer:     progressObserver{Metrics: m, store: store},
+		Metrics:      m,
 		Logger:       logger,
 		Audit:        rec.WithActor(audit.ActorWorker),
 		OnFinish: func(j job.Job) {
 			completions.Notify(j.ID)
 			hooks.JobFinished(j)
+			// vde_jobs_in_progress (queued plus running), one indexed COUNT.
+			if n, err := store.CountInProgress(context.Background(), j.ApplicationID); err == nil {
+				m.SetJobsInProgress(j.ApplicationID, n)
+			}
 		},
 		PDF: document.PDFEngineOf(pdfEngine),
 	})
@@ -273,7 +273,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		JobTimeout:             cfg.Limits.JobTimeout,
 		AuditRetention:         cfg.Audit.Retention,
 		Logger:                 logger,
-		Observer:               m,
+		Metrics:                m,
 		Audit:                  rec.WithActor(audit.ActorSweeper),
 		DeleteInputsAtTerminal: inputsAtTerminal,
 		Lock:                   store, // one worker process sweeps at a time
@@ -284,8 +284,8 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		ServiceVersion:    serviceVersion,
 		AppServiceVersion: appVersion,
 		Logger:            logger,
-		Extractor:         allHealthy(extractorGroups(roles)),
-		Judge:             allHealthy(judgeGroups(roles)),
+		Extractor:         roles.ExtractorHealthy,
+		Judge:             roles.JudgeHealthy,
 		Blobs:             blobs,
 		Metrics:           m,
 		Audit:             rec.WithActor(audit.ActorAPI),
@@ -315,7 +315,7 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		if metricsLn, err = net.Listen("tcp", cfg.Metrics.Listen); err != nil {
 			return fmt.Errorf("metrics.listen: %w", err)
 		}
-		metricsSrv = newHTTPServer(metricsHandler(m, cfg.Metrics), logger)
+		metricsSrv = newHTTPServer(api.NewMetrics(m, cfg.Metrics), logger)
 	}
 
 	// The pool and the sweeper outlive the signal: they stop after the HTTP drain.
@@ -423,48 +423,6 @@ func shutdown(ctx context.Context, srv *http.Server) error {
 	return nil
 }
 
-// metricsHandler serves GET /metrics alone on the metrics.listen listener, behind the
-// metrics token when metrics.token_env is set. Its requests are counted under the route
-// GET /metrics.
-func metricsHandler(m *metrics.Metrics, c config.Metrics) http.Handler {
-	h := m.Handler()
-	if c.TokenEnv != "" {
-		h = metrics.RequireToken(h, c.Token())
-	}
-	mux := http.NewServeMux()
-	mux.Handle("GET /metrics", h)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		mux.ServeHTTP(sw, r)
-		m.ObserveHTTP(r.Pattern, sw.status)
-	})
-}
-
-// progressObserver is the worker pool's observer: the metrics, plus the application's
-// vde_jobs_in_progress gauge refreshed from the store (queued plus running) after each
-// finished job, one indexed COUNT.
-type progressObserver struct {
-	*metrics.Metrics
-	store job.Store
-}
-
-func (o progressObserver) JobFinished(app string, status job.Status, attempts int, d time.Duration) {
-	o.Metrics.JobFinished(app, status, attempts, d)
-	if n, err := o.store.CountInProgress(context.Background(), app); err == nil {
-		o.SetJobsInProgress(app, n)
-	}
-}
-
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-}
-
-func (w *statusRecorder) WriteHeader(status int) {
-	w.status = status
-	w.ResponseWriter.WriteHeader(status)
-}
-
 // meter counts and times every provider call of every group in m by role, group,
 // endpoint id, model id and outcome, with the tokens the provider reported, and counts
 // failovers; nothing from the request or the answer is used.
@@ -500,43 +458,6 @@ func endpointStates(roles extract.Roles) func() []metrics.Endpoint {
 		}
 		return out
 	}
-}
-
-// extractorGroups and judgeGroups split roles.Groups() by the role they serve, for
-// /healthz: the extractor's group and escalation groups; the judge's group, escalation
-// groups, second judge and feedback group. A group serving both is in both.
-func extractorGroups(r extract.Roles) []*router.Group {
-	out := []*router.Group{r.Extractor}
-	for _, e := range r.ExtractorEscalation {
-		out = append(out, e.Group)
-	}
-	return out
-}
-
-func judgeGroups(r extract.Roles) []*router.Group {
-	out := []*router.Group{r.Judge}
-	for _, e := range r.JudgeEscalation {
-		out = append(out, e.Group)
-	}
-	for _, g := range []*router.Group{r.SecondJudge, r.FeedbackJudge} {
-		if g != nil {
-			out = append(out, g)
-		}
-	}
-	return out
-}
-
-// allHealthy is healthy while every group is: a role whose escalation step or second
-// judge has every pair marked down fails the jobs that reach it.
-type allHealthy []*router.Group
-
-func (gs allHealthy) Healthy() bool {
-	for _, g := range gs {
-		if g == nil || !g.Healthy() {
-			return false
-		}
-	}
-	return len(gs) > 0
 }
 
 // instanceID names this process in leases (worker ids) and in the instance label of

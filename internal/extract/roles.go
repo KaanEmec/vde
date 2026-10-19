@@ -127,6 +127,47 @@ func (r Roles) Groups() []*router.Group {
 	return out
 }
 
+// ExtractorHealthy and JudgeHealthy report, for /healthz, whether every group that may
+// serve the role has a pair not marked down: a role whose escalation step or second
+// judge has every pair marked down fails the jobs that reach it.
+func (r Roles) ExtractorHealthy() bool { return allHealthy(r.extractorGroups()) }
+
+// JudgeHealthy: see ExtractorHealthy.
+func (r Roles) JudgeHealthy() bool { return allHealthy(r.judgeGroups()) }
+
+// extractorGroups and judgeGroups split Groups by the role they serve: the extractor's
+// group and escalation groups; the judge's group, escalation groups, second judge and
+// feedback group. A group serving both is in both.
+func (r Roles) extractorGroups() []*router.Group {
+	out := []*router.Group{r.Extractor}
+	for _, e := range r.ExtractorEscalation {
+		out = append(out, e.Group)
+	}
+	return out
+}
+
+func (r Roles) judgeGroups() []*router.Group {
+	out := []*router.Group{r.Judge}
+	for _, e := range r.JudgeEscalation {
+		out = append(out, e.Group)
+	}
+	for _, g := range []*router.Group{r.SecondJudge, r.FeedbackJudge} {
+		if g != nil {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+func allHealthy(gs []*router.Group) bool {
+	for _, g := range gs {
+		if g == nil || !g.Healthy() {
+			return false
+		}
+	}
+	return len(gs) > 0
+}
+
 // at returns the group serving attempt n: the last escalation step whose FromAttempt is
 // at most n, else primary.
 func at(primary *router.Group, steps []Escalation, n int) *router.Group {

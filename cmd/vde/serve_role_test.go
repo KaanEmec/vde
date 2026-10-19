@@ -13,11 +13,6 @@ import (
 	"time"
 
 	"github.com/kaanemec/vde/internal/api"
-	"github.com/kaanemec/vde/internal/config"
-	"github.com/kaanemec/vde/internal/extract"
-	"github.com/kaanemec/vde/internal/provider"
-	"github.com/kaanemec/vde/internal/provider/fake"
-	"github.com/kaanemec/vde/internal/router"
 )
 
 func TestRunServeRejectsUnknownRole(t *testing.T) {
@@ -89,66 +84,5 @@ func TestServeRoles(t *testing.T) {
 				t.Errorf("start log lacks %s: %s", want, logs.String())
 			}
 		})
-	}
-}
-
-// TestHealthCoversEveryGroup: /healthz checks every group a role may use: escalation
-// steps, the second judge and the feedback group, not only the primary groups.
-func TestHealthCoversEveryGroup(t *testing.T) {
-	t.Parallel()
-	cfg, err := config.Parse([]byte(`
-endpoints:
-  a: {provider: fake, models: {m: {accepts: [text/plain]}}}
-  b: {provider: fake, models: {m: {accepts: [text/plain]}}}
-groups:
-  main: {endpoints: [{endpoint: a, model: m}], failover: {max_tries: 1}}
-  strong: {endpoints: [{endpoint: b, model: m}], failover: {max_tries: 1}}
-  second: {endpoints: [{endpoint: b, model: m}], failover: {max_tries: 1}}
-roles:
-  extractor: {group: main, escalation: [{from_attempt: 2, group: strong}]}
-  judge: {group: main}
-  second_judge: {group: second}
-`), func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	down := fake.New(fake.AlwaysRetryable(503))
-	up := fake.New(fake.Script{{Answer: "ok", Repeat: true}})
-	roles, err := extract.NewRoles(cfg, func(e *config.Endpoint) (provider.Provider, error) {
-		if e == cfg.Endpoints["b"] {
-			return down, nil
-		}
-		return up, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	names := func(gs []*router.Group) (out []string) {
-		for _, g := range gs {
-			out = append(out, g.Name())
-		}
-		return out
-	}
-	if got := strings.Join(names(extractorGroups(roles)), ","); got != "main,strong" {
-		t.Errorf("extractor groups = %s, want main,strong", got)
-	}
-	if got := strings.Join(names(judgeGroups(roles)), ","); got != "main,second" {
-		t.Errorf("judge groups = %s, want main,second", got)
-	}
-	extractor, judge := allHealthy(extractorGroups(roles)), allHealthy(judgeGroups(roles))
-	if !extractor.Healthy() || !judge.Healthy() {
-		t.Fatal("unhealthy before any call")
-	}
-	// strong and second (both on endpoint b) fail once and are marked down.
-	for _, g := range []*router.Group{roles.ExtractorEscalation[0].Group, roles.SecondJudge} {
-		if _, _, err := g.Complete(t.Context(), provider.Request{Parts: []provider.Part{{Text: "x"}}}); err == nil {
-			t.Fatal("a failing group answered")
-		}
-	}
-	if extractor.Healthy() || judge.Healthy() {
-		t.Error("an escalation group or the second judge marked down does not make its role unhealthy")
-	}
-	if (allHealthy{}).Healthy() {
-		t.Error("no groups reads as healthy")
 	}
 }

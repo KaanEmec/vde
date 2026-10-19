@@ -3,8 +3,26 @@ package api
 import (
 	"net/http"
 
+	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/metrics"
 )
+
+// NewMetrics returns the handler of the metrics.listen listener: GET /metrics alone,
+// behind the metrics token when metrics.token_env is set. Its requests are counted under
+// the route GET /metrics.
+func NewMetrics(m *metrics.Metrics, c config.Metrics) http.Handler {
+	h := m.Handler()
+	if c.TokenEnv != "" {
+		h = metrics.RequireToken(h, c.Token())
+	}
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", h)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sw := &statusWriter{ResponseWriter: w}
+		mux.ServeHTTP(sw, r)
+		m.ObserveHTTP(r.Pattern, sw.code())
+	})
+}
 
 // metricsRoute is GET /metrics on the main listener (contract §12: protected by network
 // or a separate token). With metrics.token_env set it requires that bearer token; with

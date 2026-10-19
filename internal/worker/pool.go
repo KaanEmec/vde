@@ -19,6 +19,7 @@ import (
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/metrics"
 	"github.com/kaanemec/vde/internal/pdf"
 )
 
@@ -31,31 +32,6 @@ const (
 	finishTimeout       = 10 * time.Second
 )
 
-// Observer receives job metrics. Labels must come from configuration ids.
-type Observer interface {
-	// JobStarted is called when a worker leased a job.
-	JobStarted(applicationID string)
-	// JobFinished is called after the terminal state was written; duration is counted
-	// from created_at, queue time included.
-	JobFinished(applicationID string, status job.Status, attempts int, duration time.Duration)
-	// JudgeDecision is called once per job the loop finished with a decision on a
-	// schema-valid candidate (extract.Decision*), under the job's judge policy, with the
-	// sampled judge calls that rejected a grounded candidate.
-	JudgeDecision(policy, decision string, disagreements int)
-}
-
-// NopObserver discards everything.
-type NopObserver struct{}
-
-// JobStarted implements Observer.
-func (NopObserver) JobStarted(string) {}
-
-// JobFinished implements Observer.
-func (NopObserver) JobFinished(string, job.Status, int, time.Duration) {}
-
-// JudgeDecision implements Observer.
-func (NopObserver) JudgeDecision(string, string, int) {}
-
 // Options configure a Pool. Zero values take the defaults.
 type Options struct {
 	Size         int           // workers; DefaultSize
@@ -67,8 +43,9 @@ type Options struct {
 	// sharing a database need distinct prefixes (vde serve uses its instance id: in a
 	// container every process may be pid 1).
 	WorkerID string
-	Observer Observer
-	Logger   *slog.Logger
+	// Metrics counts finished jobs and their judge decisions; nil counts nothing.
+	Metrics *metrics.Metrics
+	Logger  *slog.Logger
 	// Audit receives job.finished events; nil records none.
 	Audit *audit.Recorder
 	// OnFinish, when set, is called with the job after its terminal state was written,
@@ -118,9 +95,6 @@ func New(store job.Store, blobs blob.Store, cfg *config.Config, roles extract.Ro
 	}
 	if opts.WorkerID == "" {
 		opts.WorkerID = fmt.Sprintf("vde-%d", os.Getpid())
-	}
-	if opts.Observer == nil {
-		opts.Observer = NopObserver{}
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
@@ -230,7 +204,6 @@ func (p *Pool) loop(ctx context.Context, workerID string) {
 // lease is lost, in which case the job is left for the next lease.
 func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	log := p.opts.Logger.With("job_id", j.ID, "application_id", j.ApplicationID, "worker_id", workerID)
-	p.opts.Observer.JobStarted(j.ApplicationID)
 	deadline := j.CreatedAt.Add(p.jobTimeout)
 	app := p.application(ctx, j.ApplicationID)
 	remaining := p.maxAttempts(app, j) - j.Attempts
@@ -267,9 +240,9 @@ func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	j.JudgePolicy = cmp.Or(j.JudgePolicy, job.DefaultJudgePolicy)
 	log.Info("worker: job finished", "status", string(out.Status), "verification", j.Verification, "attempts", out.Attempts,
 		"error_code", errorCode(out), "input_tokens", out.InputTokens, "output_tokens", out.OutputTokens)
-	p.opts.Observer.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
+	p.opts.Metrics.JobFinished(j.ApplicationID, out.Status, out.Attempts, time.Since(j.CreatedAt))
 	if loop.Decision != "" {
-		p.opts.Observer.JudgeDecision(j.JudgePolicy, loop.Decision, loop.Disagreements)
+		p.opts.Metrics.JudgeDecision(j.JudgePolicy, loop.Decision, loop.Disagreements)
 	}
 	p.opts.Audit.JobFinished(fctx, j)
 	p.applyRetention(fctx, log, app, j)

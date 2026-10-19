@@ -155,10 +155,7 @@ func (s *server) accessLog(next http.Handler) http.Handler {
 		fields := &logFields{}
 		r = r.WithContext(context.WithValue(r.Context(), logFieldsKey{}, fields))
 		next.ServeHTTP(sw, r)
-		status := sw.status
-		if !sw.wroteHeader {
-			status = http.StatusOK
-		}
+		status := sw.code()
 		s.log.LogAttrs(r.Context(), slog.LevelInfo, "request",
 			slog.String("method", r.Method),
 			slog.String("route", r.Pattern), // "" when no route matched
@@ -216,6 +213,14 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 		w.status, w.wroteHeader = http.StatusOK, true
 	}
 	return w.ResponseWriter.Write(b)
+}
+
+// code is the status written, 200 when the handler wrote nothing.
+func (w *statusWriter) code() int {
+	if !w.wroteHeader {
+		return http.StatusOK
+	}
+	return w.status
 }
 
 // Unwrap lets http.ResponseController reach the connection's writer.

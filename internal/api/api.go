@@ -17,12 +17,6 @@ import (
 	"github.com/kaanemec/vde/internal/worker"
 )
 
-// HealthChecker reports whether a role's group has a pair not marked down;
-// *router.Group implements it.
-type HealthChecker interface {
-	Healthy() bool
-}
-
 // Process roles of vde serve --role: which parts of the service one process
 // runs. Several processes share the queue through the database.
 const (
@@ -47,9 +41,9 @@ type Deps struct {
 	AppServiceVersion func(job.Application, config.JudgePolicy) string
 	Logger            *slog.Logger     // nil means slog.Default()
 	Now               func() time.Time // nil means time.Now; tests set it
-	// Extractor and Judge are the role groups checked by /healthz. They may be the
-	// same group.
-	Extractor, Judge HealthChecker
+	// Extractor and Judge report for /healthz whether the role's groups have a pair
+	// not marked down (extract.Roles.ExtractorHealthy, JudgeHealthy).
+	Extractor, Judge func() bool
 	// Blobs stores document and page bytes (submit and delete); nil disables
 	// job submission with 503.
 	Blobs blob.Store

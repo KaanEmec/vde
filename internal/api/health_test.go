@@ -53,7 +53,7 @@ func TestHealthz(t *testing.T) {
 	tests := []struct {
 		name             string
 		store            job.Store
-		extractor, judge HealthChecker
+		extractor, judge func() bool
 		wantReasons      []string
 	}{
 		{name: "all up", store: store, extractor: fakeHealth(true), judge: fakeHealth(true)},
@@ -96,7 +96,7 @@ func TestHealthz(t *testing.T) {
 func TestHealthzJudgeRecovery(t *testing.T) {
 	t.Parallel()
 	judge := &switchHealth{}
-	h := New(Deps{Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: judge})
+	h := New(Deps{Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: judge.Healthy})
 	if code, body, _ := getHealth(t, h); code != http.StatusServiceUnavailable || !slices.Equal(body.Reasons, []string{reasonJudgeDown}) {
 		t.Errorf("judge down: %d %v, want 503 [role_judge_down]", code, body.Reasons)
 	}

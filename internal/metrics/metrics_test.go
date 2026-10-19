@@ -10,10 +10,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/metrics"
-	"github.com/kaanemec/vde/internal/worker"
 )
-
-var _ worker.Observer = (*metrics.Metrics)(nil)
 
 func scrape(t *testing.T, h http.Handler) string {
 	t.Helper()
@@ -31,8 +28,7 @@ func scrape(t *testing.T, h http.Handler) string {
 
 func TestSeries(t *testing.T) {
 	t.Parallel()
-	m := metrics.New()
-	m.JobStarted("billing")
+	m := metrics.New(false)
 	m.JobFinished("billing", job.StatusAccepted, 2, 3*time.Second)
 	m.JobFinished("billing", job.StatusAccepted, 1, time.Second)
 	m.JobFinished("billing", job.StatusFailed, 3, 90*time.Second)
@@ -95,17 +91,33 @@ func TestSeries(t *testing.T) {
 
 func TestRuntimeMetricsOptIn(t *testing.T) {
 	t.Parallel()
-	if out := scrape(t, metrics.New().Handler()); strings.Contains(out, "go_goroutines") || strings.Contains(out, "process_") {
+	if out := scrape(t, metrics.New(false).Handler()); strings.Contains(out, "go_goroutines") || strings.Contains(out, "process_") {
 		t.Error("runtime metrics are on by default")
 	}
-	if out := scrape(t, metrics.New(metrics.WithGoRuntime()).Handler()); !strings.Contains(out, "go_goroutines") {
-		t.Error("WithGoRuntime did not expose go_goroutines")
+	if out := scrape(t, metrics.New(true).Handler()); !strings.Contains(out, "go_goroutines") {
+		t.Error("New(true) did not expose go_goroutines")
 	}
+}
+
+// TestNilRecordsNothing: a nil *Metrics is the "no metrics" value of the worker, the
+// sweeper and the API.
+func TestNilRecordsNothing(t *testing.T) {
+	t.Parallel()
+	var m *metrics.Metrics
+	m.JobFinished("billing", job.StatusAccepted, 1, time.Second)
+	m.JudgeDecision("auto", "grounded", 1)
+	m.ObserveHTTP("GET /healthz", 200)
+	m.ObserveProviderCall(metrics.ProviderCall{Role: "extractor"})
+	m.ObserveFailover("extractor", "a", "b")
+	m.SetQuotaRemaining("billing", 1)
+	m.SetJobsInProgress("billing", 1)
+	m.AddSwept(1)
+	m.AuthFailedAuditDropped()
 }
 
 func TestRegistriesAreIndependent(t *testing.T) {
 	t.Parallel()
-	a, b := metrics.New(), metrics.New() // a global registry would panic on the second New
+	a, b := metrics.New(false), metrics.New(false) // a global registry would panic on the second New
 	a.AddSwept(1)
 	if out := scrape(t, b.Handler()); !strings.Contains(out, "vde_swept_jobs_total 0\n") {
 		t.Error("registries share state")
@@ -114,7 +126,7 @@ func TestRegistriesAreIndependent(t *testing.T) {
 
 func TestRequireToken(t *testing.T) {
 	t.Parallel()
-	h := metrics.RequireToken(metrics.New().Handler(), "s3cret")
+	h := metrics.RequireToken(metrics.New(false).Handler(), "s3cret")
 	tests := []struct {
 		name, auth string
 		want       int
@@ -141,7 +153,7 @@ func TestRequireToken(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	req.Header.Set("Authorization", "Bearer ")
-	metrics.RequireToken(metrics.New().Handler(), "").ServeHTTP(rec, req)
+	metrics.RequireToken(metrics.New(false).Handler(), "").ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("an empty configured token let a request through: %d", rec.Code)
 	}
@@ -149,7 +161,7 @@ func TestRequireToken(t *testing.T) {
 
 func TestLoopbackOnly(t *testing.T) {
 	t.Parallel()
-	h := metrics.LoopbackOnly(metrics.New().Handler())
+	h := metrics.LoopbackOnly(metrics.New(false).Handler())
 	tests := []struct {
 		remote string
 		want   int

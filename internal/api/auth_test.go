@@ -202,7 +202,7 @@ func TestAuthFailedAuditCapped(t *testing.T) {
 	store := newTestStore(t, testApp)
 	var mu sync.Mutex
 	now := testNow
-	m := metrics.New()
+	m := metrics.New(false)
 	s := newServer(Deps{
 		Config: &config.Config{}, Store: store, ServiceVersion: testServiceVersion, Metrics: m,
 		Logger: slog.New(slog.DiscardHandler),

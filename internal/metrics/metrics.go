@@ -15,8 +15,8 @@ import (
 // unknown replaces an empty label value (for example the route of an unmatched request).
 const unknown = "none"
 
-// Metrics holds the registry and the series. Its methods are safe for concurrent use.
-// *Metrics implements worker.Observer.
+// Metrics holds the registry and the series. Its methods are safe for concurrent use,
+// and on a nil *Metrics they record nothing.
 type Metrics struct {
 	reg *prometheus.Registry
 
@@ -36,20 +36,10 @@ type Metrics struct {
 	authDropped  prometheus.Counter
 }
 
-// Option configures New.
-type Option func(*Metrics)
-
-// WithGoRuntime also exposes the Go runtime and process collectors, which are off by
-// default.
-func WithGoRuntime() Option {
-	return func(m *Metrics) {
-		m.reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	}
-}
-
 // New returns metrics on a registry of their own, so nothing else in the process
-// registers on the exposed endpoint.
-func New(opts ...Option) *Metrics {
+// registers on the exposed endpoint. goRuntime also exposes the Go runtime and process
+// collectors (metrics.go_runtime).
+func New(goRuntime bool) *Metrics {
 	m := &Metrics{reg: prometheus.NewRegistry()}
 	m.jobs = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "vde_jobs_total", Help: "Jobs that reached a terminal status, by application and status.",
@@ -101,8 +91,8 @@ func New(opts ...Option) *Metrics {
 	})
 	m.reg.MustRegister(m.jobs, m.attempts, m.jobDuration, m.providerCall, m.providerLat, m.tokens,
 		m.failovers, m.quota, m.inProgress, m.httpReqs, m.swept, m.decisions, m.disagreed, m.authDropped)
-	for _, o := range opts {
-		o(m)
+	if goRuntime {
+		m.reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	}
 	return m
 }
@@ -113,21 +103,25 @@ func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.reg, promhttp.HandlerOpts{})
 }
 
-// JobStarted implements worker.Observer. It records nothing: jobs in progress is a gauge
-// the owner of the job store sets with SetJobsInProgress, because a job abandoned at
-// shutdown or on a lost lease never reaches JobFinished and a counter pair would drift.
-func (m *Metrics) JobStarted(string) {}
-
-// JobFinished implements worker.Observer.
+// JobFinished counts a job that reached a terminal status; d is counted from created_at,
+// queue time included. Jobs in progress is a gauge the owner of the job store sets with
+// SetJobsInProgress, because a job abandoned at shutdown or on a lost lease never reaches
+// JobFinished and a counter pair would drift.
 func (m *Metrics) JobFinished(app string, status job.Status, attempts int, d time.Duration) {
+	if m == nil {
+		return
+	}
 	m.jobs.WithLabelValues(label(app), label(string(status))).Inc()
 	m.attempts.Observe(float64(attempts))
 	m.jobDuration.WithLabelValues(label(string(status))).Observe(d.Seconds())
 }
 
-// JudgeDecision implements worker.Observer: one finished job's judge decision under its
-// policy, and the sampled judge rejections of grounded candidates it had.
+// JudgeDecision counts one finished job's judge decision under its policy, and the
+// sampled judge rejections of grounded candidates it had.
 func (m *Metrics) JudgeDecision(policy, decision string, disagreements int) {
+	if m == nil {
+		return
+	}
 	m.decisions.WithLabelValues(label(policy), label(decision)).Inc()
 	if disagreements > 0 {
 		m.disagreed.Add(float64(disagreements))
@@ -136,6 +130,9 @@ func (m *Metrics) JudgeDecision(policy, decision string, disagreements int) {
 
 // ObserveHTTP counts one request. route is the matched mux pattern ("" when none matched).
 func (m *Metrics) ObserveHTTP(route string, status int) {
+	if m == nil {
+		return
+	}
 	m.httpReqs.WithLabelValues(label(route), strconv.Itoa(status)).Inc()
 }
 
@@ -150,6 +147,9 @@ type ProviderCall struct {
 
 // ObserveProviderCall records one provider call: its count, latency and tokens.
 func (m *Metrics) ObserveProviderCall(c ProviderCall) {
+	if m == nil {
+		return
+	}
 	role, group, endpoint, model := label(c.Role), label(c.Group), label(c.Endpoint), label(c.Model)
 	m.providerCall.WithLabelValues(role, group, endpoint, model, label(c.Outcome)).Inc()
 	m.providerLat.WithLabelValues(role, group, endpoint).Observe(c.Duration.Seconds())
@@ -200,22 +200,31 @@ func (c endpointCollector) Collect(ch chan<- prometheus.Metric) {
 
 // ObserveFailover counts a move from endpoint from to endpoint to in a role's group.
 func (m *Metrics) ObserveFailover(role, from, to string) {
+	if m == nil {
+		return
+	}
 	m.failovers.WithLabelValues(label(role), label(from), label(to)).Inc()
 }
 
 // SetQuotaRemaining sets the remaining quota of an application.
 func (m *Metrics) SetQuotaRemaining(app string, n int) {
+	if m == nil {
+		return
+	}
 	m.quota.WithLabelValues(label(app)).Set(float64(n))
 }
 
 // SetJobsInProgress sets the queued and running jobs of an application.
 func (m *Metrics) SetJobsInProgress(app string, n int) {
+	if m == nil {
+		return
+	}
 	m.inProgress.WithLabelValues(label(app)).Set(float64(n))
 }
 
 // AddSwept counts n jobs deleted by the sweeper.
 func (m *Metrics) AddSwept(n int) {
-	if n > 0 {
+	if m != nil && n > 0 {
 		m.swept.Add(float64(n))
 	}
 }
@@ -223,6 +232,9 @@ func (m *Metrics) AddSwept(n int) {
 // AuthFailedAuditDropped counts one refused authentication whose auth.failed audit row
 // the per-listener cap left unwritten.
 func (m *Metrics) AuthFailedAuditDropped() {
+	if m == nil {
+		return
+	}
 	m.authDropped.Inc()
 }
 

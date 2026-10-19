@@ -12,6 +12,8 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +117,7 @@ func TestServeEndToEnd(t *testing.T) {
 		`vde_endpoint_up{endpoint="scripted",group="main",instance="`,
 		`vde_http_requests_total{route="GET /v1/jobs/{id}",status="404"}`,
 		`vde_quota_remaining{app="app-a"} 999`,
+		`vde_jobs_in_progress{app="app-a"} 0`,
 	} {
 		if !strings.Contains(metricsText, want) {
 			t.Errorf("metrics lack %s", want)
@@ -123,7 +126,56 @@ func TestServeEndToEnd(t *testing.T) {
 	if strings.Contains(metricsText, "Jane Example") || strings.Contains(metricsText, created.ID) {
 		t.Error("metrics carry content or a job id")
 	}
+	// The set of series, with their label names, is part of the operator interface.
+	if got, want := seriesNames(metricsText), strings.Join([]string{
+		"vde_audit_auth_failed_dropped_total{}",
+		"vde_endpoint_up{endpoint,group,instance,model}",
+		"vde_grounding_disagreements_total{}",
+		"vde_http_requests_total{route,status}",
+		"vde_job_attempts_bucket{le}",
+		"vde_job_attempts_sum{}",
+		"vde_job_attempts_count{}",
+		"vde_job_duration_seconds_bucket{status,le}",
+		"vde_job_duration_seconds_sum{status}",
+		"vde_job_duration_seconds_count{status}",
+		"vde_jobs_in_progress{app}",
+		"vde_jobs_total{app,status}",
+		"vde_judge_decisions_total{decision,policy}",
+		"vde_provider_calls_total{endpoint,group,model,outcome,role}",
+		"vde_provider_latency_seconds_bucket{endpoint,group,role,le}",
+		"vde_provider_latency_seconds_sum{endpoint,group,role}",
+		"vde_provider_latency_seconds_count{endpoint,group,role}",
+		"vde_provider_tokens_total{endpoint,group,kind,model,role}",
+		"vde_quota_remaining{app}",
+		"vde_swept_jobs_total{}",
+	}, "\n"); got != want {
+		t.Errorf("series on /metrics:\n%s\nwant:\n%s", got, want)
+	}
 	stop()
+}
+
+var labelName = regexp.MustCompile(`(\w+)="`)
+
+// seriesNames lists the distinct series of a Prometheus text scrape as name{label,...},
+// without values, one per line in scrape order.
+func seriesNames(text string) string {
+	var out []string
+	for line := range strings.Lines(text) {
+		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
+			continue
+		}
+		series := line[:strings.LastIndexByte(strings.TrimSpace(line), ' ')] // drop the value
+		name, labels, _ := strings.Cut(series, "{")
+		var keys []string
+		for _, m := range labelName.FindAllStringSubmatch(labels, -1) {
+			keys = append(keys, m[1])
+		}
+		s := name + "{" + strings.Join(keys, ",") + "}"
+		if !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // submission is a retention: none text job with the sample instructions and no schema.

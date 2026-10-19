@@ -17,9 +17,8 @@ import (
 
 const testServiceVersion = "vde-0.0.0-dev+0123abcd"
 
-type fakeHealth bool
-
-func (f fakeHealth) Healthy() bool { return bool(f) }
+// fakeHealth is a role's health that never changes.
+func fakeHealth(up bool) func() bool { return func() bool { return up } }
 
 // newTestServer returns a server with healthy roles and a store holding the enabled
 // application testApp, whose log goes to the returned buffer. testToken issues tokens.

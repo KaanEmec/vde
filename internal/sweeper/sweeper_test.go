@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/job"
+	"github.com/kaanemec/vde/internal/metrics"
 	"github.com/kaanemec/vde/internal/sweeper"
 )
 
@@ -39,23 +42,6 @@ func (s *syncBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.String()
-}
-
-type observer struct {
-	mu    sync.Mutex
-	swept int
-}
-
-func (o *observer) AddSwept(n int) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.swept += n
-}
-
-func (o *observer) total() int {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.swept
 }
 
 // failingBlobs refuses to delete the blobs of the jobs in fail.
@@ -86,7 +72,7 @@ type rig struct {
 	store *job.SQLite
 	blobs *blob.FS
 	fail  *failingBlobs
-	obs   *observer
+	m     *metrics.Metrics
 	logs  *syncBuffer
 	opts  sweeper.Options
 }
@@ -112,9 +98,9 @@ func newRig(t *testing.T) *rig {
 		}
 	}
 	r := &rig{dir: dir, store: store, blobs: blobs, fail: &failingBlobs{Store: blobs, fail: map[string]bool{}},
-		obs: &observer{}, logs: &syncBuffer{}}
+		m: metrics.New(false), logs: &syncBuffer{}}
 	r.opts = sweeper.Options{
-		JobTimeout: 5 * time.Minute, Grace: time.Minute, Observer: r.obs,
+		JobTimeout: 5 * time.Minute, Grace: time.Minute, Metrics: r.m,
 		Logger: slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Audit:  audit.New(store, audit.Options{Clock: func() time.Time { return t0 }}),
 	}
@@ -124,6 +110,13 @@ func newRig(t *testing.T) *rig {
 		}
 	})
 	return r
+}
+
+// scrape returns the rig's metrics in the Prometheus text format.
+func (r *rig) scrape() string {
+	w := httptest.NewRecorder()
+	r.m.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	return w.Body.String()
 }
 
 func (r *rig) sweeper() *sweeper.Sweeper { return sweeper.New(r.store, r.fail, r.opts) }
@@ -209,8 +202,8 @@ func TestExpiredJobsAreRemovedWithTheirBlobs(t *testing.T) {
 	if !r.exists(t, later.ID) || !r.hasBlobs(later.ID) {
 		t.Error("a job not yet due was removed")
 	}
-	if got := r.obs.total(); got != 2 {
-		t.Errorf("observer saw %d swept jobs, want 2", got)
+	if want := "vde_swept_jobs_total 2\n"; !strings.Contains(r.scrape(), want) {
+		t.Errorf("metrics lack %s", want)
 	}
 
 	// Acceptance: no trace of the content in the data directory once everything is due.
@@ -290,8 +283,8 @@ func TestShortRetentionExpiresContentAndKeepsRowForIdempotency(t *testing.T) {
 	if events := r.auditKinds(t, audit.JobExpiredKind); len(events) != 1 || events[0].JobID != j.ID {
 		t.Errorf("job.expired events = %+v, want one for %s", events, j.ID)
 	}
-	if got := r.obs.total(); got != 1 {
-		t.Errorf("observer saw %d swept jobs, want 1", got)
+	if want := "vde_swept_jobs_total 1\n"; !strings.Contains(r.scrape(), want) {
+		t.Errorf("metrics lack %s", want)
 	}
 }
 

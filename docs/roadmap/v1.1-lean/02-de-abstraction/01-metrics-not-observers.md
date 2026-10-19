@@ -1,6 +1,6 @@
 # Job: Metrics instead of observer interfaces
 
-Version: v1.1 · Epic: 02 De-abstraction · Status: planned · Depends on: 01-01
+Version: v1.1 · Epic: 02 De-abstraction · Status: done (Polish and Gate left to the orchestrator) · Depends on: 01-01
 
 ## Goal
 
@@ -28,14 +28,14 @@ Structure only; every metric series keeps its name, labels and values.
 
 ## Tasks
 
-- [ ] Confirm the inventory and that no second production implementation exists.
+- [x] Confirm the inventory and that no second production implementation exists.
   - Skill: GOIFACE, EVID.
   - Prompt: "/golang-structs-interfaces Review worker.Observer, sweeper.Observer,
     api.HealthChecker and metrics.Option against their implementations (use `gopls
     implementation`). For each: production implementations, test fakes, and whether a
     nil-safe concrete type or a func field replaces it. Report only. Guardrails:
     skills.md."
-- [ ] Plan and execute.
+- [x] Plan and execute.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: make *metrics.Metrics methods nil-safe; pass
     it to worker and sweeper instead of their Observer interfaces; delete NopObserver,
@@ -45,13 +45,13 @@ Structure only; every metric series keeps its name, labels and values.
     split onto extract.Roles. Metric names, labels and values must not change; compare
     `curl /metrics` series names before and after in a test. Guardrails: skills.md." Then
     "/golang-refactoring Execute mode: step <n>."
-- [ ] Polish.
+- [ ] Polish (orchestrator).
   - Skill: SIMPLIFIER.
   - Prompt: "Use the code-simplifier agent on internal/metrics, internal/worker,
     internal/sweeper and the metrics wiring in cmd/vde/serve.go (whole files, not only
     recent edits) to remove leftovers of the observer layer. Go project; follow AGENTS.md;
     ignore the JS/React standards. Guardrails: skills.md."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW, PRTK.
   - Prompt: `/code-review high <first>^..<last>`, then
     `/pr-review-toolkit:review-pr errors`.
@@ -65,3 +65,21 @@ Structure only; every metric series keeps its name, labels and values.
 ## Out of scope
 
 - Replacing the Prometheus client library (07-02).
+
+## Result
+
+Inventory: `worker.Observer` and `sweeper.Observer` had one production implementation
+(`*metrics.Metrics`, plus `progressObserver`) and one test recorder each;
+`api.HealthChecker` had `allHealthy` and two test fakes; `metrics.Option` one option and
+one caller. All four are gone: `*metrics.Metrics` is nil-safe and passed as
+`Options.Metrics`; the in-progress gauge refresh is in `OnFinish`; `metrics.New(goRuntime
+bool)`; `api.NewMetrics` serves `metrics.listen` with `statusWriter`;
+`extract.Roles.ExtractorHealthy`/`JudgeHealthy` feed `Deps.Extractor`/`Judge`
+(`func() bool`). `TestServeEndToEnd` now pins the series names and label names of
+`/metrics` (added before the change, unchanged after). `make check`, `make conformance`
+green.
+
+`git diff --stat` (Go): production 9 files, +133 −182 (net −49); tests 10 files, +227
+−162 (net +65: the series-name check, a `NewMetrics` test, a nil-safety test). The
+estimate of −110 was missed because the role split moved to `extract` instead of being
+deleted, and each recording method gained a nil guard.
