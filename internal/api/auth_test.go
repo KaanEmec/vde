@@ -104,10 +104,10 @@ func TestAuthenticateRefusals(t *testing.T) {
 	store := newTestStore(t, testApp, otherApp)
 	var logs bytes.Buffer
 	var calls atomic.Int64 // the handler behind auth stands in for every provider call
-	s := newServer(Deps{
-		Config: &config.Config{}, Store: store, ServiceVersion: testServiceVersion,
+	s := newServer(testDeps(t, Deps{
+		Store: store, ServiceVersion: testServiceVersion,
 		Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Now: func() time.Time { return testNow },
-	})
+	}))
 	h := s.wrap(s.authenticate(auth.ScopeJobs, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusAccepted)
@@ -203,11 +203,11 @@ func TestAuthFailedAuditCapped(t *testing.T) {
 	var mu sync.Mutex
 	now := testNow
 	m := metrics.New(false)
-	s := newServer(Deps{
-		Config: &config.Config{}, Store: store, ServiceVersion: testServiceVersion, Metrics: m,
+	s := newServer(testDeps(t, Deps{
+		Store: store, ServiceVersion: testServiceVersion, Metrics: m,
 		Logger: slog.New(slog.DiscardHandler),
 		Now:    func() time.Time { mu.Lock(); defer mu.Unlock(); return now },
-	})
+	}))
 	h := handlerOf(s)
 	refused := func(n int) {
 		t.Helper()
@@ -266,7 +266,7 @@ func TestAuthenticateScopes(t *testing.T) {
 		{readOnly, http.MethodGet, "/v1/jobs/j_1", http.StatusNotFound}, // past auth: an unknown job
 		{readOnly, http.MethodGet, "/v1/quota", http.StatusOK},
 		{readOnly, http.MethodGet, "/v1/openapi.yaml", http.StatusOK},
-		{full, http.MethodPost, "/v1/jobs", http.StatusServiceUnavailable},
+		{full, http.MethodPost, "/v1/jobs", http.StatusBadRequest}, // past auth: "{}" is not multipart
 		{full, http.MethodDelete, "/v1/jobs/j_1", http.StatusNotFound},
 		{full, http.MethodGet, "/v1/quota", http.StatusOK},
 	}
@@ -292,8 +292,8 @@ func TestAuthenticateContext(t *testing.T) {
 	t.Parallel()
 	store := newTestStore(t, testApp)
 	now := testNow
-	s := newServer(Deps{
-		Config: &config.Config{}, Store: store, Logger: slog.New(slog.DiscardHandler),
+	s := newServer(testDeps(t, Deps{
+		Store: store, Logger: slog.New(slog.DiscardHandler),
 		ServiceVersion: testServiceVersion,
 		AppServiceVersion: func(a job.Application, _ config.JudgePolicy) string {
 			if a.ID == testApp {
@@ -302,7 +302,7 @@ func TestAuthenticateContext(t *testing.T) {
 			return ""
 		},
 		Now: func() time.Time { return now },
-	})
+	}))
 	var gotApp job.Application
 	var gotScopes []string
 	h := s.wrap(http.HandlerFunc(s.dispatch))
@@ -354,10 +354,22 @@ func TestAuthenticateContext(t *testing.T) {
 	}
 }
 
-func TestAuthenticateWithoutStore(t *testing.T) {
+// TestNewRequiresCoreDeps: a wiring mistake fails at start, not on the first request.
+func TestNewRequiresCoreDeps(t *testing.T) {
 	t.Parallel()
-	h := New(Deps{Logger: slog.New(slog.DiscardHandler)})
-	if w := serve(h, http.MethodGet, "/v1/quota", nil); w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 when no store is wired", w.Code)
+	full := testDeps(t, Deps{})
+	for name, d := range map[string]Deps{
+		"config": {Store: full.Store, Blobs: full.Blobs},
+		"store":  {Config: full.Config, Blobs: full.Blobs},
+		"blobs":  {Config: full.Config, Store: full.Store},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Error("New did not panic")
+				}
+			}()
+			New(d)
+		})
 	}
 }

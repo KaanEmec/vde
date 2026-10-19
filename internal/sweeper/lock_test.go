@@ -43,7 +43,7 @@ func TestRunSkipsWithoutTheLock(t *testing.T) {
 	for _, free := range []bool{false, true} {
 		r := newRig(t)
 		r.opts.Clock = func() time.Time { return t0.Add(48 * time.Hour) }
-		r.opts.Interval = 5 * time.Millisecond
+		r.cfg.Retention.SweepInterval = 5 * time.Millisecond
 		l := &locker{free: free}
 		r.opts.Lock = l
 		expired := r.submit(t, "app", job.RetentionNone, t0)

@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-
-	"github.com/kaanemec/vde/internal/config"
 )
 
 const (
@@ -28,10 +26,7 @@ const (
 // limit and quota (ratelimit.go, quota.go), run inside the mux (routes). The admin listener is reached
 // directly, never through the reverse proxy, so server.trusted_proxy does not apply to it.
 func (s *server) wrap(h http.Handler) http.Handler {
-	var srv config.Server
-	if s.deps.Config != nil {
-		srv = s.deps.Config.Server
-	}
+	srv := s.deps.Config.Server
 	return s.recoverPanics(requestID(requireHTTPS(srv.TrustedProxy && !s.admin, srv.InsecureHTTP, s.accessLog(h))))
 }
 
@@ -163,9 +158,7 @@ func (s *server) accessLog(next http.Handler) http.Handler {
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 			slog.String("request_id", requestIDFrom(r.Context())),
 			slog.String("app_id", fields.appID))
-		if s.deps.Metrics != nil {
-			s.deps.Metrics.ObserveHTTP(r.Pattern, status) // the route pattern, never the path
-		}
+		s.deps.Metrics.ObserveHTTP(r.Pattern, status) // the route pattern, never the path
 	})
 }
 

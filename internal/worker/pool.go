@@ -23,22 +23,13 @@ import (
 	"github.com/kaanemec/vde/internal/pdf"
 )
 
-// Defaults for Options.
-const (
-	DefaultSize         = 4
-	DefaultPollInterval = 500 * time.Millisecond
-	DefaultLease        = 2 * time.Minute // config worker.lease; the reasoning is there
-	defaultJobTimeout   = 5 * time.Minute // contract §6
-	finishTimeout       = 10 * time.Second
-)
+// finishTimeout bounds the terminal write, which must happen even when the shutdown
+// grace ends.
+const finishTimeout = 10 * time.Second
 
-// Options configure a Pool. Zero values take the defaults.
+// Options configure a Pool beside its configuration (worker.size, worker.poll_interval,
+// worker.lease, limits.job_timeout).
 type Options struct {
-	Size         int           // workers; DefaultSize
-	PollInterval time.Duration // sleep between empty leases; DefaultPollInterval
-	// Lease is how long a lease lasts without renewal; a running job renews it every
-	// Lease/3, and a crashed worker's job is leased again once it passed.
-	Lease time.Duration
 	// WorkerID is the prefix of the worker ids written to leases; "vde-<pid>". Processes
 	// sharing a database need distinct prefixes (vde serve uses its instance id: in a
 	// container every process may be pid 1).
@@ -72,7 +63,6 @@ type Pool struct {
 	maxInProgress map[string]int
 	extractorCaps []config.Capability
 	judgeCaps     []config.Capability
-	jobTimeout    time.Duration
 
 	wake      chan struct{}
 	stopping  chan struct{} // closed by Stop: lease nothing more
@@ -84,15 +74,6 @@ type Pool struct {
 
 // New returns a pool for cfg (validated) and its roles. Call Start to run it.
 func New(store job.Store, blobs blob.Store, cfg *config.Config, roles extract.Roles, opts Options) *Pool {
-	if opts.Size <= 0 {
-		opts.Size = DefaultSize
-	}
-	if opts.PollInterval <= 0 {
-		opts.PollInterval = DefaultPollInterval
-	}
-	if opts.Lease <= 0 {
-		opts.Lease = DefaultLease
-	}
 	if opts.WorkerID == "" {
 		opts.WorkerID = fmt.Sprintf("vde-%d", os.Getpid())
 	}
@@ -109,12 +90,8 @@ func New(store job.Store, blobs blob.Store, cfg *config.Config, roles extract.Ro
 		maxInProgress: map[string]int{},
 		extractorCaps: extractorCaps,
 		judgeCaps:     judgeCaps,
-		jobTimeout:    cfg.Limits.JobTimeout,
-		wake:          make(chan struct{}, opts.Size),
+		wake:          make(chan struct{}, cfg.Worker.Size),
 		stopping:      make(chan struct{}),
-	}
-	if p.jobTimeout <= 0 {
-		p.jobTimeout = defaultJobTimeout
 	}
 	for _, a := range cfg.Applications {
 		p.apps[a.ID] = a
@@ -130,7 +107,7 @@ func New(store job.Store, blobs blob.Store, cfg *config.Config, roles extract.Ro
 func (p *Pool) Start(ctx context.Context) {
 	p.start.Do(func() {
 		ctx, p.cancelRun = context.WithCancel(ctx)
-		for i := range p.opts.Size {
+		for i := range p.cfg.Worker.Size {
 			id := fmt.Sprintf("%s/%d", p.opts.WorkerID, i)
 			p.wg.Go(func() { p.loop(ctx, id) })
 		}
@@ -169,7 +146,7 @@ func (p *Pool) Stop(ctx context.Context) error {
 }
 
 func (p *Pool) loop(ctx context.Context, workerID string) {
-	timer := time.NewTimer(p.opts.PollInterval)
+	timer := time.NewTimer(p.cfg.Worker.PollInterval)
 	defer timer.Stop()
 	for {
 		select {
@@ -180,7 +157,7 @@ func (p *Pool) loop(ctx context.Context, workerID string) {
 		default:
 		}
 		now := time.Now()
-		j, err := p.store.LeaseNextQueued(ctx, workerID, now, now.Add(p.opts.Lease), p.maxInProgress)
+		j, err := p.store.LeaseNextQueued(ctx, workerID, now, now.Add(p.cfg.Worker.Lease), p.maxInProgress)
 		if err == nil {
 			p.run(ctx, workerID, j)
 			continue
@@ -188,7 +165,7 @@ func (p *Pool) loop(ctx context.Context, workerID string) {
 		if !errors.Is(err, job.ErrNotFound) && ctx.Err() == nil {
 			p.opts.Logger.Error("worker: lease failed", "worker_id", workerID, "error", err)
 		}
-		timer.Reset(p.opts.PollInterval)
+		timer.Reset(p.cfg.Worker.PollInterval)
 		select {
 		case <-p.stopping:
 			return
@@ -204,7 +181,7 @@ func (p *Pool) loop(ctx context.Context, workerID string) {
 // lease is lost, in which case the job is left for the next lease.
 func (p *Pool) run(ctx context.Context, workerID string, j job.Job) {
 	log := p.opts.Logger.With("job_id", j.ID, "application_id", j.ApplicationID, "worker_id", workerID)
-	deadline := j.CreatedAt.Add(p.jobTimeout)
+	deadline := j.CreatedAt.Add(p.cfg.Limits.JobTimeout)
 	app := p.application(ctx, j.ApplicationID)
 	remaining := p.maxAttempts(app, j) - j.Attempts
 
@@ -297,18 +274,18 @@ func (p *Pool) extract(ctx context.Context, log *slog.Logger, workerID string, a
 		}
 	}
 	in.OnAttempt = func(pr extract.Progress) {
-		loseLease(p.store.RecordAttempt(jobCtx, j.ID, workerID, progress(j, pr), time.Now().Add(p.opts.Lease)))
+		loseLease(p.store.RecordAttempt(jobCtx, j.ID, workerID, progress(j, pr), time.Now().Add(p.cfg.Worker.Lease)))
 	}
 	var heartbeat sync.WaitGroup
 	heartbeat.Go(func() {
-		t := time.NewTicker(p.opts.Lease / 3)
+		t := time.NewTicker(p.cfg.Worker.Lease / 3)
 		defer t.Stop()
 		for {
 			select {
 			case <-jobCtx.Done():
 				return
 			case <-t.C:
-				loseLease(p.store.RenewLease(jobCtx, j.ID, workerID, time.Now().Add(p.opts.Lease)))
+				loseLease(p.store.RenewLease(jobCtx, j.ID, workerID, time.Now().Add(p.cfg.Worker.Lease)))
 			}
 		}
 	})
@@ -419,9 +396,6 @@ func (p *Pool) maxAttempts(app config.Application, j job.Job) int {
 	limit := app.MaxAttempts
 	if limit <= 0 {
 		limit = p.cfg.Limits.MaxAttempts
-	}
-	if limit <= 0 {
-		limit = extract.DefaultMaxAttempts
 	}
 	if j.MaxAttempts > 0 && j.MaxAttempts < limit {
 		return j.MaxAttempts

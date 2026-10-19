@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	"github.com/kaanemec/vde/internal/config"
-	"github.com/kaanemec/vde/internal/document"
 )
 
 // Messages of the JSON submission path.
@@ -67,13 +66,7 @@ func (s *server) readJSONSubmission(r *http.Request, cfg *config.Config, request
 		return nil, newError(codeBadRequest, msgMalformedJSON), false
 	}
 	limits := cfg.Limits
-	docLimit, pageLimit, maxPages := documentLimit(limits), limits.PageBytes, limits.Pages
-	if pageLimit <= 0 {
-		pageLimit = document.DefaultPageBytes
-	}
-	if maxPages <= 0 {
-		maxPages = document.DefaultPages
-	}
+	docLimit, pageLimit, maxPages := limits.DocumentBytes, limits.PageBytes, limits.Pages
 	sub := &submission{}
 	switch d := in.Document; {
 	case d == nil:
@@ -165,14 +158,6 @@ func newPart(mediaType, filename string, data []byte) *part {
 	return &part{mediaType: mediaType, filename: filename, data: data, sum: sha256.Sum256(data)}
 }
 
-// documentLimit is limits.document_bytes, or the default when unset.
-func documentLimit(l config.Limits) int64 {
-	if l.DocumentBytes <= 0 {
-		return document.DefaultDocumentBytes
-	}
-	return l.DocumentBytes
-}
-
 // fetchPending fetches the document url of a JSON submission, if it has one, into
 // sub.document under documents.fetch (fetch.go). createJob calls it after the submission
 // limits, so a refused or rate-limited caller makes the service fetch nothing; decoding
@@ -181,7 +166,7 @@ func (s *server) fetchPending(r *http.Request, sub *submission, limits config.Li
 	if sub.documentURL == "" {
 		return newError(codeInternal, msgInternal), true
 	}
-	data, err := s.fetch.get(r.Context(), sub.documentURL, documentLimit(limits))
+	data, err := s.fetch.get(r.Context(), sub.documentURL, limits.DocumentBytes)
 	switch {
 	case errors.Is(err, errFetchRefused):
 		return newError(codeBadRequest, msgFetchRefused), false

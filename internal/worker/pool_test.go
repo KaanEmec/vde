@@ -2,6 +2,7 @@ package worker_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -95,14 +96,16 @@ type rig struct {
 	pool       *worker.Pool
 }
 
-func newRig(t *testing.T, ext, judge fake.Script, opts worker.Options) *rig {
+func newRig(t *testing.T, ext, judge fake.Script, opts worker.Options, w ...config.Worker) *rig {
 	t.Helper()
-	return newRigConfig(t, testConfig, ext, judge, opts)
+	return newRigConfig(t, testConfig, ext, judge, opts, w...)
 }
 
 // newRigConfig is newRig on another configuration with the endpoints ext and rev; every
 // other endpoint answers with the ext fake.
-func newRigConfig(t *testing.T, yaml string, ext, judge fake.Script, opts worker.Options) *rig {
+// The non-zero fields of w replace the worker settings after validation, which refuses
+// the short leases and polls some tests need.
+func newRigConfig(t *testing.T, yaml string, ext, judge fake.Script, opts worker.Options, w ...config.Worker) *rig {
 	t.Helper()
 	cfg, err := config.Parse([]byte(yaml), func(string) string { return "" })
 	if err != nil {
@@ -110,6 +113,11 @@ func newRigConfig(t *testing.T, yaml string, ext, judge fake.Script, opts worker
 	}
 	if err := cfg.Validate().Err(false); err != nil {
 		t.Fatal(err)
+	}
+	for _, w := range w {
+		cfg.Worker.Size = cmp.Or(w.Size, cfg.Worker.Size)
+		cfg.Worker.PollInterval = cmp.Or(w.PollInterval, cfg.Worker.PollInterval)
+		cfg.Worker.Lease = cmp.Or(w.Lease, cfg.Worker.Lease)
 	}
 	dir := t.TempDir()
 	store, err := job.Open(filepath.Join(dir, "vde.db"))
@@ -521,7 +529,7 @@ func TestExhaustedAtLease(t *testing.T) {
 
 func TestWakeLatency(t *testing.T) {
 	ext, judge := accepting()
-	r := newRig(t, ext, judge, worker.Options{Size: 2, PollInterval: time.Hour})
+	r := newRig(t, ext, judge, worker.Options{}, config.Worker{Size: 2, PollInterval: time.Hour})
 	r.pool.Start(t.Context())
 	time.Sleep(50 * time.Millisecond) // the workers found nothing and sleep for an hour
 
@@ -541,7 +549,7 @@ func TestWakeLatency(t *testing.T) {
 
 func TestMaxInProgress(t *testing.T) {
 	r := newRig(t, fake.Script{{Answer: candidate, Delay: 50 * time.Millisecond, Repeat: true}},
-		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{Size: 3, PollInterval: 10 * time.Millisecond})
+		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{}, config.Worker{Size: 3, PollInterval: 10 * time.Millisecond})
 	var ids []string
 	for range 3 {
 		ids = append(ids, r.submit(t, "tight", nil).ID)
@@ -574,7 +582,7 @@ func TestMaxInProgress(t *testing.T) {
 
 func TestStopWaitsForRunningJobs(t *testing.T) {
 	r := newRig(t, fake.Script{{Answer: candidate, Delay: 200 * time.Millisecond, Repeat: true}},
-		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{Size: 1})
+		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{}, config.Worker{Size: 1})
 	j := r.submit(t, "app", nil)
 	r.start(t)
 	r.waitStarted(t)
@@ -591,7 +599,7 @@ func TestStopWaitsForRunningJobs(t *testing.T) {
 
 func TestStopAbandonsAfterGrace(t *testing.T) {
 	r := newRig(t, fake.Script{{Answer: candidate, Delay: time.Minute, Repeat: true}},
-		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{Size: 1})
+		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}}, worker.Options{}, config.Worker{Size: 1})
 	j := r.submit(t, "app", nil)
 	r.start(t)
 	r.waitStarted(t)
@@ -619,7 +627,7 @@ func TestHeartbeatKeepsLease(t *testing.T) {
 	// -race on a shared runner; the job outlives several leases.
 	r := newRig(t, fake.Script{{Answer: candidate, Delay: 1500 * time.Millisecond, Repeat: true}},
 		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}},
-		worker.Options{Size: 2, PollInterval: 10 * time.Millisecond, Lease: 600 * time.Millisecond})
+		worker.Options{}, config.Worker{Size: 2, PollInterval: 10 * time.Millisecond, Lease: 600 * time.Millisecond})
 	j := r.submit(t, "app", nil)
 	r.start(t)
 	if got := r.waitTerminal(t, j.ID); got.Status != job.StatusAccepted {
@@ -635,7 +643,7 @@ func TestHeartbeatKeepsLease(t *testing.T) {
 func TestLeaseLostAbandonsRun(t *testing.T) {
 	r := newRig(t, fake.Script{{Answer: candidate, Delay: time.Minute, Repeat: true}},
 		fake.Script{{Answer: fake.AcceptVerdict, Repeat: true}},
-		worker.Options{Size: 1, Lease: 30 * time.Millisecond})
+		worker.Options{}, config.Worker{Size: 1, Lease: 30 * time.Millisecond})
 	j := r.submit(t, "app", nil)
 	r.start(t)
 	r.waitStarted(t)

@@ -22,7 +22,6 @@ import (
 	spec "github.com/kaanemec/vde/api"
 	"github.com/kaanemec/vde/internal/auth"
 	"github.com/kaanemec/vde/internal/blob"
-	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
 )
 
@@ -46,15 +45,14 @@ func newJobFixture(t *testing.T) *jobFixture {
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
-	s := newServer(Deps{
-		Config:         &config.Config{},
+	s := newServer(testDeps(t, Deps{
 		Store:          store,
 		ServiceVersion: testServiceVersion,
 		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
 		Extractor:      fakeHealth(true),
 		Judge:          fakeHealth(true),
 		Blobs:          blobs,
-	})
+	}))
 	return &jobFixture{s: s, h: handlerOf(s), store: store, blobs: blobs, blobDir: dir,
 		token: testToken(t, s, auth.ScopeJobs), logs: &logs}
 }

@@ -1,6 +1,6 @@
 # Job: Defaults and required dependencies from the configuration
 
-Version: v1.1 · Epic: 02 De-abstraction · Status: planned · Depends on: 02-02
+Version: v1.1 · Epic: 02 De-abstraction · Status: done (PRTK and Gate left to the orchestrator) · Depends on: 02-02
 
 ## Goal
 
@@ -34,14 +34,14 @@ instead of tolerating nil. Structure only: a configuration produces the same beh
 
 ## Tasks
 
-- [ ] Map every default to its single source.
+- [x] Map every default to its single source.
   - Skill: EVID.
   - Prompt: "List every constant or literal in internal/api, internal/worker,
     internal/sweeper and internal/document that duplicates a default in
     internal/config (defaults(), service.go, config.go), with both locations and values;
     list every `== nil` guard on api.Deps fields with the tests that rely on it. Report
     only."
-- [ ] Plan and execute in three steps: config test helper; api; worker and sweeper.
+- [x] Plan and execute in three steps: config test helper; api; worker and sweeper.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: (1) add one test helper that returns a
     validated default configuration; (2) make api.New require Config, Store and Blobs,
@@ -49,12 +49,12 @@ instead of tolerating nil. Structure only: a configuration produces the same beh
     worker and sweeper read their values from config only, turning never-set knobs into
     constants. Behaviour for a validated configuration must not change. Guardrails:
     skills.md." Then "/golang-refactoring Execute mode: step <n>."
-- [ ] Check for lost error paths.
+- [ ] Check for lost error paths (orchestrator).
   - Skill: PRTK (`silent-failure-hunter`).
   - Prompt: "Use the silent-failure-hunter agent on the diff of this job: report any
     error that is now ignored or any path where a missing dependency would panic instead
     of failing at start."
-- [ ] Gate.
+- [ ] Gate (orchestrator; `make conformance` ran green).
   - Skill: REVIEW.
   - Prompt: `/code-review high <first>^..<last>`, then `make conformance`.
 
@@ -67,3 +67,34 @@ instead of tolerating nil. Structure only: a configuration produces the same beh
 ## Out of scope
 
 - Changing any default value.
+
+## Result
+
+- Test helper: `testConfig(t, yaml)` and `testDeps(t, d)` in `internal/api/api_test.go`
+  (`config.Parse` applies every default; no new production function). The sweeper rig
+  parses `{}` the same way; the worker rigs already parse a full configuration.
+- `internal/api`: `New` and `NewAdmin` panic without `Config`, `Store` or `Blobs`
+  (`TestNewRequiresCoreDeps`); their nil guards, the `Metrics` guards (nil-safe since
+  02-01), `defaultRequestBytes`, `defaultSubmitsInFlight`, the `document.Default*`
+  fallbacks, `documentLimit` and the unreachable 503 "Job submission is not configured"
+  (and its line in `docs/operator/troubleshooting.md`) are gone; `Deps` shrank from 41
+  to 30 lines. Optional stay `Wake`, `Completions`, `PDF`, `Metrics`,
+  `Audit`, `AppServiceVersion`, `Logger`, `Now`.
+- `internal/worker`: `Options.Size`, `PollInterval`, `Lease` and `DefaultSize`,
+  `DefaultPollInterval`, `DefaultLease`, `defaultJobTimeout` removed; the pool reads
+  `cfg.Worker` and `cfg.Limits.JobTimeout`; `maxAttempts` lost its second fallback
+  (`extract.DefaultMaxAttempts`).
+- `internal/sweeper`: `New(store, blobs, cfg, opts)` reads `retention.sweep_interval`,
+  `limits.job_timeout`, `audit.retention` and the applications' retention (the
+  `DeleteInputsAtTerminal` map moved from `serve.go`); `Grace`, `QuotaWindowsToKeep`,
+  `TokenRetention` are constants; `Batch` and `Clock` stay as test knobs; the seven
+  `Default*` constants are gone.
+- `grep -rn 'Default' internal/api internal/worker internal/sweeper` shows no copy of a
+  configuration default. A validated configuration behaves as before; an unvalidated
+  one with zero worker or sweep intervals would now panic in `time.NewTicker` instead of
+  taking a default (only `vde serve` builds these, after `Validate`).
+
+`make check` and `make conformance` green.
+
+`git diff --stat` (Go): production 15 files, +115 −259 (net −144); tests 13 files, +146
+−104 (net +42).

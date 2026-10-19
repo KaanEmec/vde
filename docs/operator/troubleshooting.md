@@ -35,7 +35,7 @@ never quote a document.
 | 429 | `quota_exhausted` | The application spent `quota.limit` for the window; `X-Quota-Remaining: 0`, `X-Quota-Reset` says when it resets. Raise `quota.limit` or `quota.window` if intended. |
 | 500 | `internal` | A failure inside the service, or "The service's document configuration is not usable." Look up the request id in the logs (`level` `ERROR` or a `handler panic` line with a stack). |
 | 502 | `provider_unavailable` | Reserved for provider failures; in v0.2 these appear as a failed job, not as a submit response. See [job errors](#job-errors). |
-| 503 | `unavailable` | "The job could not be stored; submit it again.": the database or disk failed on that request; check disk space, permissions and `/healthz`. "Job submission is not configured on this service.": the process was built without its job store; should not occur with `vde serve`. On `/healthz`, see [below](#healthz-503). |
+| 503 | `unavailable` | "The job could not be stored; submit it again.": the database or disk failed on that request; check disk space, permissions and `/healthz`. On `/healthz`, see [below](#healthz-503). |
 | 504 | `timeout` | Reserved; a job that hits its time limit is a failed job with code `timeout`. |
 
 ### 401 unauthorized

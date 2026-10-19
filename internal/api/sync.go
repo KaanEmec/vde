@@ -28,8 +28,8 @@ func (s *server) extractSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	maxWait := config.MaxSyncWait
-	if c := s.deps.Config; c != nil && c.Sync.MaxWait > 0 {
-		maxWait = min(c.Sync.MaxWait, config.MaxSyncWait)
+	if w := s.deps.Config.Sync.MaxWait; w > 0 {
+		maxWait = min(w, config.MaxSyncWait)
 	}
 	// The body is read: keep the server's ReadTimeout (whose background read would
 	// cancel the request) and WriteTimeout from ending the wait. Unsupported writers

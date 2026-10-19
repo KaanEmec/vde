@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
 )
 
@@ -62,12 +61,11 @@ func TestHealthz(t *testing.T) {
 		{name: "shared group down", store: store, extractor: fakeHealth(false), judge: fakeHealth(false), wantReasons: []string{reasonExtractorDown, reasonJudgeDown}},
 		{name: "roles not configured", store: store, wantReasons: []string{reasonExtractorDown, reasonJudgeDown}},
 		{name: "database down", store: brokenStore{store}, extractor: fakeHealth(true), judge: fakeHealth(true), wantReasons: []string{reasonDB}},
-		{name: "no store", extractor: fakeHealth(true), judge: fakeHealth(true), wantReasons: []string{reasonDB}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			h := New(Deps{Store: tt.store, Logger: slog.New(slog.DiscardHandler), Extractor: tt.extractor, Judge: tt.judge})
+			h := New(testDeps(t, Deps{Store: tt.store, Logger: slog.New(slog.DiscardHandler), Extractor: tt.extractor, Judge: tt.judge}))
 			code, body, raw := getHealth(t, h)
 			if tt.wantReasons == nil {
 				if code != http.StatusOK || strings.TrimSpace(raw) != `{"status":"ok"}` {
@@ -96,7 +94,7 @@ func TestHealthz(t *testing.T) {
 func TestHealthzJudgeRecovery(t *testing.T) {
 	t.Parallel()
 	judge := &switchHealth{}
-	h := New(Deps{Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: judge.Healthy})
+	h := New(testDeps(t, Deps{Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: judge.Healthy}))
 	if code, body, _ := getHealth(t, h); code != http.StatusServiceUnavailable || !slices.Equal(body.Reasons, []string{reasonJudgeDown}) {
 		t.Errorf("judge down: %d %v, want 503 [role_judge_down]", code, body.Reasons)
 	}
@@ -117,10 +115,12 @@ func TestHealthzDataDir(t *testing.T) {
 	}
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return now }
-	h := New(Deps{
-		Config: &config.Config{Server: config.Server{DataDir: dir}}, Store: newTestStore(t),
+	cfg := testConfig(t, "")
+	cfg.Server.DataDir = dir
+	h := New(testDeps(t, Deps{
+		Config: cfg, Store: newTestStore(t),
 		Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true), Now: clock,
-	})
+	}))
 	if code, _, raw := getHealth(t, h); code != http.StatusOK {
 		t.Fatalf("writable data dir: %d %s", code, raw)
 	}
@@ -167,7 +167,7 @@ func TestHealthzDatabaseRate(t *testing.T) {
 	var mu sync.Mutex
 	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
 	advance := func(d time.Duration) { mu.Lock(); defer mu.Unlock(); now = now.Add(d) }
-	h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true), Now: clock})
+	h := New(testDeps(t, Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true), Now: clock}))
 	for i := range 100 {
 		if code, _, raw := getHealth(t, h); code != http.StatusOK {
 			t.Fatalf("request %d: %d %s, want 200", i, code, raw)
@@ -226,7 +226,7 @@ func TestHealthzContextErrors(t *testing.T) {
 	t.Run("cancelled request", func(t *testing.T) {
 		t.Parallel()
 		store := &ctxStore{Store: newTestStore(t)}
-		h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true)})
+		h := New(testDeps(t, Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true)}))
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		w := serve(h, http.MethodGet, "/healthz", func(r *http.Request) { *r = *r.WithContext(ctx) })
@@ -243,8 +243,8 @@ func TestHealthzContextErrors(t *testing.T) {
 		t.Parallel()
 		now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC) // fixed: no refill
 		store := &ctxStore{Store: newTestStore(t)}
-		h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true),
-			Now: func() time.Time { return now }})
+		h := New(testDeps(t, Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true),
+			Now: func() time.Time { return now }}))
 		if code, _, raw := getHealth(t, h); code != http.StatusOK {
 			t.Fatalf("first check: %d %s, want 200", code, raw)
 		}
@@ -273,7 +273,7 @@ func TestHealthzSlowDatabaseDoesNotQueue(t *testing.T) {
 		}
 		return nil
 	}}
-	h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true)})
+	h := New(testDeps(t, Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Extractor: fakeHealth(true), Judge: fakeHealth(true)}))
 	if code, _, raw := getHealth(t, h); code != http.StatusOK {
 		t.Fatalf("first check: %d %s", code, raw)
 	}

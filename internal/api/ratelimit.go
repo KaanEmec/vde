@@ -107,7 +107,7 @@ func (l *rateLimiter) takeBucket(key bucketKey, capacity, perSecond float64, now
 // the store, still holds) and is logged. perMinute <= 0 means no limit.
 func (s *server) takeRate(ctx context.Context, app string, kind bucketKind, perMinute int, now time.Time) (time.Duration, bool) {
 	storeKind, shareable := map[bucketKind]string{bucketRequests: job.RateRequests, bucketSubmits: job.RateSubmits}[kind]
-	if perMinute <= 0 || !shareable || s.deps.Config == nil || !s.deps.Config.Rate.Shared || s.deps.Store == nil {
+	if perMinute <= 0 || !shareable || !s.deps.Config.Rate.Shared {
 		return s.limits.take(app, kind, perMinute, now)
 	}
 	start := now.UTC().Truncate(time.Minute)

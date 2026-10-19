@@ -77,9 +77,7 @@ func (s *server) chargeQuota(ctx context.Context, app job.Application, q quotaSt
 func (s *server) setQuotaHeaders(h http.Header, app job.Application, q quotaState) {
 	h.Set(headerQuotaRemaining, strconv.Itoa(q.Remaining))
 	h.Set(headerQuotaReset, formatTime(q.Reset))
-	if s.deps.Metrics != nil {
-		s.deps.Metrics.SetQuotaRemaining(app.ID, q.Remaining)
-	}
+	s.deps.Metrics.SetQuotaRemaining(app.ID, q.Remaining)
 }
 
 // quotaHeaders is the first half of the limit step: it puts the quota headers on the

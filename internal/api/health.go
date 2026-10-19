@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -150,9 +149,6 @@ func (h *health) dbCheck(ctx context.Context) (int64, bool) {
 // queueAge is the database check of an API-only process: the age in whole seconds of the
 // oldest queued job (one MIN over the queue index), 0 when none waits.
 func (h *health) queueAge(ctx context.Context) (int64, error) {
-	if h.s.deps.Store == nil {
-		return 0, errNoStore
-	}
 	oldest, err := h.s.deps.Store.OldestQueuedAt(ctx)
 	if err != nil || oldest.IsZero() {
 		return 0, err
@@ -162,19 +158,14 @@ func (h *health) queueAge(ctx context.Context) (int64, error) {
 
 // dbOK runs a one-row query on the jobs table, the queue.
 func (h *health) dbOK(ctx context.Context) error {
-	if h.s.deps.Store == nil {
-		return errNoStore
-	}
 	_, err := h.s.deps.Store.CountRunning(ctx, "")
 	return err
 }
 
-var errNoStore = errors.New("no job store")
-
 // dataDirOK reports whether a file can be created in server.data_dir, rechecking at most
-// every 30 s. Without a data directory (tests) there is nothing to check.
+// every 30 s. An empty server.data_dir has nothing to check.
 func (h *health) dataDirOK() bool {
-	if h.s.deps.Config == nil || h.s.deps.Config.Server.DataDir == "" {
+	if h.s.deps.Config.Server.DataDir == "" {
 		return true
 	}
 	now := h.s.now()

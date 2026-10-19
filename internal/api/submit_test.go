@@ -194,7 +194,8 @@ func newSubmitRig(t *testing.T, o submitRigOptions) *submitRig {
 		if err != nil {
 			t.Fatal(err)
 		}
-		popts := worker.Options{Size: 2, PollInterval: 20 * time.Millisecond, Logger: logger, PDF: o.pdf}
+		cfg.Worker.Size, cfg.Worker.PollInterval = 2, 20*time.Millisecond
+		popts := worker.Options{Logger: logger, PDF: o.pdf}
 		if o.notify {
 			n := worker.NewNotifier()
 			deps.Completions = n
@@ -817,22 +818,6 @@ func (c *countWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestSubmitWithoutBlobStore(t *testing.T) {
-	t.Parallel()
-	s, _ := newTestServer(t, false)
-	token := testToken(t, s, auth.ScopeJobs)
-	body, ct := multipartBody(t, validParts())
-	w := serve(handlerOf(s), http.MethodPost, "/v1/jobs", func(r *http.Request) {
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		r.ContentLength = int64(len(body))
-		r.Header.Set("Content-Type", ct)
-		r.Header.Set("Authorization", "Bearer "+token)
-	})
-	if w.Code != http.StatusServiceUnavailable || decodeError(t, w).Code != codeUnavailable {
-		t.Errorf("status = %d, want 503 unavailable", w.Code)
-	}
-}
-
 // failingBlobs fails the second Put, after one blob was written.
 type failingBlobs struct {
 	blob.Store
@@ -1079,7 +1064,7 @@ func TestSubmitIdempotency(t *testing.T) {
 			body, ct := multipartBody(t, parts)
 			r := httptest.NewRequest(http.MethodPost, "/v1/jobs", bytes.NewReader(body))
 			r.Header.Set("Content-Type", ct)
-			sub, _, ok := readSubmission(r, config.Limits{}, 1<<20)
+			sub, _, ok := readSubmission(r, testConfig(t, "").Limits, 1<<20)
 			if !ok {
 				t.Fatal("submission refused")
 			}

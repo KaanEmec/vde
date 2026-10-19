@@ -18,6 +18,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/audit"
 	"github.com/kaanemec/vde/internal/blob"
+	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/metrics"
 	"github.com/kaanemec/vde/internal/sweeper"
@@ -74,6 +75,7 @@ type rig struct {
 	fail  *failingBlobs
 	m     *metrics.Metrics
 	logs  *syncBuffer
+	cfg   *config.Config // the defaults; tests change fields
 	opts  sweeper.Options
 }
 
@@ -99,10 +101,15 @@ func newRig(t *testing.T) *rig {
 	}
 	r := &rig{dir: dir, store: store, blobs: blobs, fail: &failingBlobs{Store: blobs, fail: map[string]bool{}},
 		m: metrics.New(false), logs: &syncBuffer{}}
+	cfg, err := config.Parse([]byte("{}"), func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.cfg = cfg
 	r.opts = sweeper.Options{
-		JobTimeout: 5 * time.Minute, Grace: time.Minute, Metrics: r.m,
-		Logger: slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
-		Audit:  audit.New(store, audit.Options{Clock: func() time.Time { return t0 }}),
+		Metrics: r.m,
+		Logger:  slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Audit:   audit.New(store, audit.Options{Clock: func() time.Time { return t0 }}),
 	}
 	t.Cleanup(func() {
 		if logs := r.logs.String(); strings.Contains(logs, sentinel) {
@@ -119,7 +126,7 @@ func (r *rig) scrape() string {
 	return w.Body.String()
 }
 
-func (r *rig) sweeper() *sweeper.Sweeper { return sweeper.New(r.store, r.fail, r.opts) }
+func (r *rig) sweeper() *sweeper.Sweeper { return sweeper.New(r.store, r.fail, r.cfg, r.opts) }
 
 // submit stores a job with a document blob and two pages, created at created.
 func (r *rig) submit(t *testing.T, app string, retention job.Retention, created time.Time) job.Job {
@@ -407,7 +414,7 @@ func TestStaleRunningJobsAreFinishedAsTimeout(t *testing.T) {
 // would have done it is gone.
 func TestStaleJobsLoseTheirInputsPerRetention(t *testing.T) {
 	r := newRig(t)
-	r.opts.DeleteInputsAtTerminal = map[string]bool{"hourly": true}
+	r.cfg.Applications = []config.Application{{ID: "hourly", Retention: config.Retention{DeleteBlobsAtTerminal: true}}}
 	ctx := t.Context()
 	none := r.submit(t, "app", job.RetentionNone, t0)
 	kept := r.submit(t, "app", job.RetentionDefault, t0.Add(time.Second))
@@ -442,8 +449,6 @@ func TestOldQuotaTokensAndAuditRowsAreRemoved(t *testing.T) {
 	r := newRig(t)
 	ctx := t.Context()
 	now := t0.Add(10 * 24 * time.Hour)
-	r.opts.TokenRetention = 90 * 24 * time.Hour
-	r.opts.AuditRetention = 365 * 24 * time.Hour
 
 	// Daily windows: starts at now-3d, now-2d-1ms (just too old), now-2d, now-1d, now.
 	day := 24 * time.Hour
@@ -565,7 +570,7 @@ func TestRunSweepsRepeatedlyUntilCancelled(t *testing.T) {
 		return now
 	}
 	r.opts.Clock = clock
-	r.opts.Interval = 5 * time.Millisecond
+	r.cfg.Retention.SweepInterval = 5 * time.Millisecond
 	first := r.submit(t, "app", job.RetentionNone, t0)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -638,7 +643,7 @@ func TestLogsCarryCountsNeverContent(t *testing.T) {
 func TestDefaults(t *testing.T) {
 	r := newRig(t)
 	r.opts = sweeper.Options{}
-	s := sweeper.New(r.store, r.blobs, r.opts)
+	s := sweeper.New(r.store, r.blobs, r.cfg, r.opts)
 	j := r.submit(t, "app", job.RetentionNone, t0)
 	if res, err := s.Once(t.Context(), t0.Add(25*time.Hour)); err != nil || res.Expired != 1 || r.exists(t, j.ID) {
 		t.Errorf("default sweeper: %+v, %v", res, err)

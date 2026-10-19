@@ -36,11 +36,9 @@ func (s *server) deleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := context.WithoutCancel(r.Context())
-	if s.deps.Blobs != nil {
-		if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
-			s.jobError(w, r, j, "job blobs not deleted", err)
-			return
-		}
+	if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
+		s.jobError(w, r, j, "job blobs not deleted", err)
+		return
 	}
 	switch err := s.deps.Store.DeleteJob(ctx, j.ID); {
 	case errors.Is(err, job.ErrNotFound): // a concurrent DELETE won
@@ -97,11 +95,10 @@ func (s *server) clearFirstRead(r *http.Request, j job.Job) error {
 	if err := s.deps.Store.MarkContentDeleted(ctx, j.ID, job.ContentAll, s.now()); err != nil {
 		return err
 	}
-	if s.deps.Blobs != nil { // normally gone at the terminal state already
-		if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
-			s.log.LogAttrs(ctx, slog.LevelWarn, "job blobs not deleted; the sweeper retries at expiry",
-				slog.String("request_id", requestIDFrom(ctx)), slog.String("job_id", j.ID), slog.String("error", err.Error()))
-		}
+	// The blobs are normally gone at the terminal state already.
+	if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
+		s.log.LogAttrs(ctx, slog.LevelWarn, "job blobs not deleted; the sweeper retries at expiry",
+			slog.String("request_id", requestIDFrom(ctx)), slog.String("job_id", j.ID), slog.String("error", err.Error()))
 	}
 	s.auditDeleted(ctx, j, audit.DeletedFirstRead)
 	return nil

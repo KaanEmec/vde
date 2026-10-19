@@ -225,12 +225,6 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		}
 		return extract.ApplicationServiceVersion(cfg, app, policy, version.Version)
 	}
-	inputsAtTerminal := map[string]bool{}
-	for _, a := range cfg.Applications {
-		if a.Retention.ForceNone || a.Retention.DeleteBlobsAtTerminal {
-			inputsAtTerminal[a.ID] = true
-		}
-	}
 	apps, err := store.ListApplications(ctx)
 	if err != nil {
 		return err
@@ -251,13 +245,10 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 	completions := worker.NewNotifier()
 	hooks := webhook.New(webhookTargets(cfg), webhook.Options{Audit: rec, Logger: logger})
 	pool := worker.New(store, blobs, cfg, roles, worker.Options{
-		Size:         cfg.Worker.Size,
-		PollInterval: cfg.Worker.PollInterval,
-		Lease:        cfg.Worker.Lease,
-		WorkerID:     instance,
-		Metrics:      m,
-		Logger:       logger,
-		Audit:        rec.WithActor(audit.ActorWorker),
+		WorkerID: instance,
+		Metrics:  m,
+		Logger:   logger,
+		Audit:    rec.WithActor(audit.ActorWorker),
 		OnFinish: func(j job.Job) {
 			completions.Notify(j.ID)
 			hooks.JobFinished(j)
@@ -268,15 +259,11 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		},
 		PDF: document.PDFEngineOf(pdfEngine),
 	})
-	sweep := sweeper.New(store, blobs, sweeper.Options{
-		Interval:               cfg.Retention.SweepInterval,
-		JobTimeout:             cfg.Limits.JobTimeout,
-		AuditRetention:         cfg.Audit.Retention,
-		Logger:                 logger,
-		Metrics:                m,
-		Audit:                  rec.WithActor(audit.ActorSweeper),
-		DeleteInputsAtTerminal: inputsAtTerminal,
-		Lock:                   store, // one worker process sweeps at a time
+	sweep := sweeper.New(store, blobs, cfg, sweeper.Options{
+		Logger:  logger,
+		Metrics: m,
+		Audit:   rec.WithActor(audit.ActorSweeper),
+		Lock:    store, // one worker process sweeps at a time
 	})
 	deps := api.Deps{
 		Config:            cfg,

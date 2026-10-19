@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	spec "github.com/kaanemec/vde/api"
 	"github.com/kaanemec/vde/internal/auth"
+	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
 )
 
@@ -20,20 +22,61 @@ const testServiceVersion = "vde-0.0.0-dev+0123abcd"
 // fakeHealth is a role's health that never changes.
 func fakeHealth(up bool) func() bool { return func() bool { return up } }
 
+// testConfig is the configuration of yaml with every default applied (config.Parse),
+// server.data_dir in a temporary directory and VDE_METRICS_TOKEN set to scrape-secret.
+func testConfig(t *testing.T, yaml string) *config.Config {
+	t.Helper()
+	if yaml == "" {
+		yaml = "{}"
+	}
+	cfg, err := config.Parse([]byte(yaml), func(k string) string {
+		if k == "VDE_METRICS_TOKEN" {
+			return "scrape-secret"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Server.DataDir = t.TempDir()
+	return cfg
+}
+
+// testDeps completes d with what New requires and d leaves out: the default
+// configuration, an empty store and blobs in a temporary directory.
+func testDeps(t *testing.T, d Deps) Deps {
+	t.Helper()
+	if d.Config == nil {
+		d.Config = testConfig(t, "")
+	}
+	if d.Store == nil {
+		d.Store = newTestStore(t)
+	}
+	if d.Blobs == nil {
+		b, err := blob.NewFS(filepath.Join(t.TempDir(), "blobs"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.Blobs = b
+	}
+	return d
+}
+
 // newTestServer returns a server with healthy roles and a store holding the enabled
 // application testApp, whose log goes to the returned buffer. testToken issues tokens.
 func newTestServer(t *testing.T, trustedProxy bool) (*server, *bytes.Buffer) {
 	t.Helper()
 	var logs bytes.Buffer
-	cfg := &config.Config{Server: config.Server{TrustedProxy: trustedProxy}}
-	return newServer(Deps{
+	cfg := testConfig(t, "")
+	cfg.Server.TrustedProxy = trustedProxy
+	return newServer(testDeps(t, Deps{
 		Config:         cfg,
 		Store:          newTestStore(t, testApp),
 		ServiceVersion: testServiceVersion,
 		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
 		Extractor:      fakeHealth(true),
 		Judge:          fakeHealth(true),
-	}), &logs
+	})), &logs
 }
 
 func handlerOf(s *server) http.Handler { return s.wrap(http.HandlerFunc(s.dispatch)) }
@@ -300,11 +343,11 @@ func TestPlaceholderRoutes(t *testing.T) {
 		t.Run(tt.method+" "+tt.target, func(t *testing.T) {
 			t.Parallel()
 			w := serve(h, tt.method, tt.target, func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+token) })
-			if w.Code != http.StatusServiceUnavailable {
-				t.Fatalf("status = %d, want 503", w.Code)
+			if w.Code != http.StatusBadRequest { // no multipart body
+				t.Fatalf("status = %d, want 400", w.Code)
 			}
-			if e := decodeError(t, w); e.Code != codeUnavailable {
-				t.Errorf("code = %q, want unavailable", e.Code)
+			if e := decodeError(t, w); e.Code != codeBadRequest {
+				t.Errorf("code = %q, want bad_request", e.Code)
 			}
 			got := w.Header().Get("X-Service-Version")
 			if tt.serviceVersion && got != testServiceVersion {

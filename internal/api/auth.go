@@ -35,10 +35,6 @@ func ApplicationFrom(ctx context.Context) (job.Application, bool) {
 func (s *server) authenticate(need string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		if s.deps.Store == nil { // a wiring mistake: fail closed
-			writeError(w, r, newError(codeInternal, msgInternal))
-			return
-		}
 		now := s.now()
 		token, ok := bearerToken(r.Header)
 		var p auth.Principal
@@ -53,7 +49,7 @@ func (s *server) authenticate(need string, next http.Handler) http.Handler {
 		case errors.As(err, &refused):
 			if s.limits.allowAuthFailedAudit(now) {
 				s.recordAudit(ctx, refused.ApplicationID, "", audit.AuthFailed{Reason: string(refused.Reason)})
-			} else if s.deps.Metrics != nil {
+			} else {
 				s.deps.Metrics.AuthFailedAuditDropped()
 			}
 			closeIfBodyPending(w, r)

@@ -101,7 +101,7 @@ func TestAdminScopes(t *testing.T) {
 	t.Parallel()
 	rg := newAdminRig(t)
 	appToken := issueToken(t, rg.store, testApp, []string{auth.ScopeJobs}, time.Now().Add(time.Hour))
-	for _, rt := range newServerWith(Deps{}, true).adminRoutes() {
+	for _, rt := range newServerWith(testDeps(t, Deps{}), true).adminRoutes() {
 		method, path, _ := strings.Cut(rt.pattern, " ")
 		path = strings.ReplaceAll(strings.ReplaceAll(path, "{id}", testApp), "{$}", "")
 		if w := do(rg.admin, method, path, appToken, ""); w.Code != http.StatusForbidden || decodeError(t, w).Code != codeForbidden {

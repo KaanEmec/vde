@@ -12,5 +12,5 @@ jobs all touch `internal/api` or `cmd/vde/serve.go` and run one after another.
 | --- | --- | --- |
 | 01 | [Metrics instead of observer interfaces](01-metrics-not-observers.md) | done |
 | 02 | [Single-implementation interfaces and wrapper types](02-single-implementation-types.md) | done |
-| 03 | [Defaults and required dependencies from the configuration](03-defaults-from-config.md) | planned |
+| 03 | [Defaults and required dependencies from the configuration](03-defaults-from-config.md) | done |
 | 04 | [API error plumbing](04-api-error-plumbing.md) | planned |

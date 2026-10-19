@@ -25,18 +25,15 @@ const (
 	RoleWorker = "worker" // the worker pool and the sweeper; HTTP serves /healthz and /metrics only
 )
 
-// Deps is what the handlers need.
+// Deps is what the handlers need. Config, Store and Blobs are required (New panics
+// without them); a nil optional field turns its feature off.
 type Deps struct {
 	Config *config.Config // validated; the handlers never change it
-	// Store holds applications, tokens, jobs and the audit trail. Every /v1 request
-	// reads its token from it; nil refuses every /v1 request with 500.
-	Store job.Store
-	// ServiceVersion is sent as X-Service-Version on every /v1/jobs response
-	// (contract §11). AppServiceVersion, when set, gives it per application and judge
-	// policy for authenticated requests and new jobs (extract.ApplicationServiceVersion
-	// over the application's stored row, so admin API changes count at once); "" falls
-	// back to ServiceVersion. Authenticated requests carry the version of the
-	// application's own policy; a submission's response, that of the job's policy.
+	Store  job.Store      // applications, tokens, jobs and the audit trail
+	Blobs  blob.Store     // document and page bytes
+	// ServiceVersion is X-Service-Version (contract §11). AppServiceVersion, when set,
+	// gives it per application and judge policy over the stored row; "" falls back to
+	// ServiceVersion.
 	ServiceVersion    string
 	AppServiceVersion func(job.Application, config.JudgePolicy) string
 	Logger            *slog.Logger     // nil means slog.Default()
@@ -44,26 +41,18 @@ type Deps struct {
 	// Extractor and Judge report for /healthz whether the role's groups have a pair
 	// not marked down (extract.Roles.ExtractorHealthy, JudgeHealthy).
 	Extractor, Judge func() bool
-	// Blobs stores document and page bytes (submit and delete); nil disables
-	// job submission with 503.
-	Blobs blob.Store
-	// Wake is called after a job is created so the worker pool leases it at once; nil is
-	// allowed (the pool then polls).
-	Wake func()
-	// Metrics receives HTTP, quota and in-progress observations; nil means none.
-	Metrics *metrics.Metrics
-	// Audit records job events; nil records nothing.
-	Audit *audit.Recorder
-	// Completions wakes POST /v1/extract when the pool finished its job; nil leaves it
-	// to poll the store (sync.go).
+	Wake             func()           // wakes the in-process pool after a submission; nil: it polls
+	Metrics          *metrics.Metrics // nil-safe; nil also answers GET /metrics 404
+	Audit            *audit.Recorder  // nil-safe
+	// Completions wakes POST /v1/extract when the in-process pool finished its job;
+	// nil polls the store (sync.go).
 	Completions *worker.Notifier
-	// PDF prepares PDFs that no group reads natively (ADR 0010): at submit it opens them
-	// to count pages and measure the text layer. nil leaves such PDFs needing caller
-	// pages. It must be the workers' engine configuration.
+	// PDF is the workers' PDF engine (ADR 0010), used at submit to count pages and
+	// measure the text layer; nil leaves PDFs that no group reads natively needing
+	// caller pages.
 	PDF document.PDFEngine
-	// Role is the process role, RoleAll when "". With RoleAPI, /healthz reports the
-	// queue age instead of the role groups (no provider is called here); with RoleWorker
-	// only /healthz and /metrics are served.
+	// Role is the process role, RoleAll when "": RoleAPI reports the queue age on
+	// /healthz instead of the role groups; RoleWorker serves only /healthz and /metrics.
 	Role string
 }
 
@@ -103,18 +92,17 @@ func NewAdmin(deps Deps) http.Handler {
 func newServer(deps Deps) *server { return newServerWith(deps, false) }
 
 func newServerWith(deps Deps, admin bool) *server {
+	if deps.Config == nil || deps.Store == nil || deps.Blobs == nil {
+		panic("api: Deps.Config, Deps.Store and Deps.Blobs are required")
+	}
 	s := &server{deps: deps, log: deps.Logger, mux: http.NewServeMux(), limits: newRateLimiter(), admin: admin}
 	if s.log == nil {
 		s.log = slog.Default()
 	}
-	if c := deps.Config; c != nil && c.Documents.Fetch.Enabled {
-		s.fetch = newFetcher(c.Documents.Fetch, nil, nil)
+	if deps.Config.Documents.Fetch.Enabled {
+		s.fetch = newFetcher(deps.Config.Documents.Fetch, nil, nil)
 	}
-	inFlight := defaultSubmitsInFlight
-	if c := deps.Config; c != nil && c.Limits.MaxSubmitsInFlight > 0 {
-		inFlight = c.Limits.MaxSubmitsInFlight
-	}
-	s.submits = newSubmitSlots(inFlight)
+	s.submits = newSubmitSlots(deps.Config.Limits.MaxSubmitsInFlight)
 	routes := s.routes
 	if admin {
 		routes = s.adminRoutes

@@ -29,7 +29,6 @@ import (
 // Limits of contract §4 that the configuration does not carry; the document, page and
 // request limits come from config.Limits.
 const (
-	defaultRequestBytes    = 128 << 20 // limits.request_bytes when unset
 	maxInstructionsBytes   = 64 << 10
 	maxSchemaBytes         = 256 << 10
 	maxOptionBytes         = 32 // retention and max_attempts
@@ -44,11 +43,10 @@ const (
 	// queuedCountTTL is how long a count of the queued jobs is reused, so a flood of
 	// submissions costs one count query per second and process.
 	queuedCountTTL = time.Second
-	// defaultSubmitsInFlight is limits.max_submits_in_flight when unset, and
-	// submitsBusyRetryAfter the Retry-After of a submission refused over it (503
-	// unavailable): a slot frees when another submission has been read and stored.
-	defaultSubmitsInFlight = 16
-	submitsBusyRetryAfter  = 5 * time.Second
+	// submitsBusyRetryAfter is the Retry-After of a submission refused over
+	// limits.max_submits_in_flight (503 unavailable): a slot frees when another
+	// submission has been read and stored.
+	submitsBusyRetryAfter = 5 * time.Second
 )
 
 const (
@@ -71,7 +69,6 @@ const (
 
 // Messages of the submit path (errors.go explains the rules).
 const (
-	msgSubmitDisabled         = "Job submission is not configured on this service."
 	msgNotMultipart           = "The request must be multipart/form-data with a boundary."
 	msgMalformedMultipart     = "The multipart body is malformed."
 	msgUnknownPart            = "The request has a part this service does not define."
@@ -160,15 +157,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	ctx := r.Context()
 	app, _ := ApplicationFrom(ctx)
 	cfg := s.deps.Config
-	if s.deps.Blobs == nil || cfg == nil {
-		closeIfBodyPending(w, r)
-		writeError(w, r, newError(codeUnavailable, msgSubmitDisabled))
-		return nil, true
-	}
 	requestLimit := cfg.Limits.RequestBytes
-	if requestLimit <= 0 {
-		requestLimit = defaultRequestBytes
-	}
 	r.Body = &limitedBody{ReadCloser: http.MaxBytesReader(w, r.Body, requestLimit)}
 	// Every refusal first reads what is left of the body, up to the request limit, so
 	// the client sees the status instead of a reset connection.
@@ -418,9 +407,6 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 		return nil, newError(codeBadRequest, msgNotMultipart), false
 	}
 	maxPages := limits.Pages
-	if maxPages <= 0 {
-		maxPages = document.DefaultPages
-	}
 	sub := &submission{}
 	for {
 		p, err := mr.NextPart()
@@ -436,9 +422,6 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 		switch name {
 		case partDocument:
 			slot, limit = &sub.document, limits.DocumentBytes
-			if limit <= 0 {
-				limit = document.DefaultDocumentBytes
-			}
 			if p.Header.Get("Content-Type") == "" {
 				return nil, newError(codeBadRequest, msgPartNoMediaType, partDocument), false
 			}
@@ -447,9 +430,6 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 				return nil, newError(codePayloadTooLarge, msgTooManyPages, maxPages), false
 			}
 			limit = limits.PageBytes
-			if limit <= 0 {
-				limit = document.DefaultPageBytes
-			}
 		case partExtractorInstructions, partJudgeInstructions:
 			slot, limit = &sub.extractorInstructions, maxInstructionsBytes
 			if name == partJudgeInstructions {
@@ -867,9 +847,6 @@ func (s *server) serviceVersionFor(app job.Application, policy config.JudgePolic
 // refreshInProgress sets the application's vde_jobs_in_progress gauge from the store
 // (queued plus running), after a submission or a deletion.
 func (s *server) refreshInProgress(ctx context.Context, appID string) {
-	if s.deps.Metrics == nil {
-		return
-	}
 	if n, err := s.deps.Store.CountInProgress(ctx, appID); err == nil {
 		s.deps.Metrics.SetJobsInProgress(appID, n)
 	}

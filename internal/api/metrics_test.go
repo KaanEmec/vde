@@ -3,7 +3,6 @@ package api
 import (
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -11,18 +10,10 @@ import (
 	"github.com/kaanemec/vde/internal/metrics"
 )
 
+// metricsConfig is testConfig with server.insecure_http, so remote peers reach the route.
 func metricsConfig(t *testing.T, yaml string) *config.Config {
 	t.Helper()
-	cfg, err := config.Parse([]byte("server: {insecure_http: true, data_dir: "+strconv.Quote(t.TempDir())+"}\n"+yaml), func(k string) string {
-		if k == "VDE_METRICS_TOKEN" {
-			return "scrape-secret"
-		}
-		return ""
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cfg
+	return testConfig(t, "server: {insecure_http: true}\n"+yaml)
 }
 
 func TestMetricsRoute(t *testing.T) {
@@ -54,8 +45,8 @@ func TestMetricsRoute(t *testing.T) {
 			if tt.nilReg {
 				m = nil
 			}
-			h := New(Deps{Config: metricsConfig(t, tt.yaml), Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler),
-				Extractor: fakeHealth(true), Judge: fakeHealth(true), Metrics: m})
+			h := New(testDeps(t, Deps{Config: metricsConfig(t, tt.yaml), Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler),
+				Extractor: fakeHealth(true), Judge: fakeHealth(true), Metrics: m}))
 			serve(h, http.MethodGet, "/healthz", nil) // one observed request
 			w := serve(h, http.MethodGet, "/metrics", func(r *http.Request) {
 				if tt.remote != "" {

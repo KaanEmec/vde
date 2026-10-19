@@ -17,15 +17,13 @@ import (
 	"github.com/kaanemec/vde/internal/metrics"
 )
 
-// Defaults for Options.
 const (
-	DefaultInterval           = time.Minute
-	DefaultBatch              = 100
-	DefaultJobTimeout         = 5 * time.Minute // the worker's default (contract §6)
-	DefaultGrace              = time.Minute
-	DefaultQuotaWindowsToKeep = 2
-	DefaultTokenRetention     = 90 * 24 * time.Hour
-	DefaultAuditRetention     = 365 * 24 * time.Hour
+	defaultBatch = 100 // jobs per store round trip
+	// grace: a job still running limits.job_timeout plus grace after created_at is
+	// finished as failed/timeout; the margin is for the worker's own finish.
+	grace              = time.Minute
+	quotaWindowsToKeep = 2                   // per application, the current one included
+	tokenRetention     = 90 * 24 * time.Hour // how long revoked or expired tokens are kept
 
 	orphanInterval = 24 * time.Hour
 	// rateWindowsKept: shared rate windows are one minute long; the current and the
@@ -34,26 +32,20 @@ const (
 )
 
 // Locker serializes sweeps across processes sharing a database: *job.DB takes a
-// PostgreSQL advisory lock, *job.DB grants it at once (one process).
+// PostgreSQL advisory lock, or grants it at once on SQLite (one process). The tests
+// fake a lock another process holds.
 type Locker interface {
 	// TryLock returns release and ok true when this process holds key, ok false at once
 	// when another one does.
 	TryLock(ctx context.Context, key int64) (release func(), ok bool, err error)
 }
 
-// Options configure a Sweeper. Zero values take the defaults.
+// Options configure a Sweeper beside its configuration (retention.sweep_interval,
+// limits.job_timeout, audit.retention, the applications' retention).
 type Options struct {
-	Interval time.Duration // between sweeps (retention.sweep_interval)
-	Batch    int           // jobs per store round trip
-	// JobTimeout and Grace: a job still running this long after created_at is finished as
-	// failed/timeout (limits.job_timeout plus a margin for the worker's own finish).
-	JobTimeout         time.Duration
-	Grace              time.Duration
-	QuotaWindowsToKeep int           // quota windows kept per application, the current one included
-	TokenRetention     time.Duration // how long revoked or expired tokens are kept
-	AuditRetention     time.Duration // audit.retention
-	Clock              func() time.Time
-	Logger             *slog.Logger
+	Batch  int              // jobs per store round trip; tests set it, 0 means 100
+	Clock  func() time.Time // the time of each sweep of Run; nil means time.Now
+	Logger *slog.Logger
 	// Metrics counts expired jobs: their content, blobs included, deleted at expires_at
 	// (or their row removed, for a job whose content the sweeper had not expired); nil
 	// counts nothing.
@@ -63,12 +55,6 @@ type Options struct {
 	// several worker processes one sweeps at a time; a sweep whose lock another process
 	// holds is skipped until the next tick. Once is never locked.
 	Lock Locker
-	// DeleteInputsAtTerminal lists the applications whose retention: default jobs lose
-	// their document, pages, instructions and schema at the terminal state: those with
-	// retention.delete_blobs_at_terminal or retention.force_none. The sweeper applies it to
-	// the jobs it finishes itself, as the worker does for the others. retention: none
-	// jobs are always cleared.
-	DeleteInputsAtTerminal map[string]bool
 }
 
 // Result counts what one sweep removed or finished.
@@ -89,36 +75,25 @@ type Result struct {
 type Sweeper struct {
 	store job.Store
 	blobs blob.Store
+	cfg   *config.Config
 	opts  Options
-	log   *slog.Logger
-	audit *audit.Recorder
+	// deleteInputs lists the applications whose retention: default jobs lose their
+	// document, pages, instructions and schema at the terminal state: those with
+	// retention.delete_blobs_at_terminal or retention.force_none. The sweeper applies it
+	// to the jobs it finishes itself, as the worker does for the others. retention: none
+	// jobs are always cleared.
+	deleteInputs map[string]bool
+	log          *slog.Logger
+	audit        *audit.Recorder
 
 	mu         sync.Mutex // serializes sweeps; guards lastOrphan
 	lastOrphan time.Time
 }
 
-// New returns a sweeper. Call Run, or Once from a test.
-func New(store job.Store, blobs blob.Store, opts Options) *Sweeper {
-	if opts.Interval <= 0 {
-		opts.Interval = DefaultInterval
-	}
+// New returns a sweeper for cfg (validated). Call Run, or Once from a test.
+func New(store job.Store, blobs blob.Store, cfg *config.Config, opts Options) *Sweeper {
 	if opts.Batch <= 0 {
-		opts.Batch = DefaultBatch
-	}
-	if opts.JobTimeout <= 0 {
-		opts.JobTimeout = DefaultJobTimeout
-	}
-	if opts.Grace <= 0 {
-		opts.Grace = DefaultGrace
-	}
-	if opts.QuotaWindowsToKeep <= 0 {
-		opts.QuotaWindowsToKeep = DefaultQuotaWindowsToKeep
-	}
-	if opts.TokenRetention <= 0 {
-		opts.TokenRetention = DefaultTokenRetention
-	}
-	if opts.AuditRetention <= 0 {
-		opts.AuditRetention = DefaultAuditRetention
+		opts.Batch = defaultBatch
 	}
 	if opts.Clock == nil {
 		opts.Clock = time.Now
@@ -126,16 +101,22 @@ func New(store job.Store, blobs blob.Store, opts Options) *Sweeper {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
+	deleteInputs := map[string]bool{}
+	for _, a := range cfg.Applications {
+		if a.Retention.ForceNone || a.Retention.DeleteBlobsAtTerminal {
+			deleteInputs[a.ID] = true
+		}
+	}
 	return &Sweeper{
-		store: store, blobs: blobs, opts: opts, log: opts.Logger.With("component", "sweeper"),
-		audit: opts.Audit.WithActor(audit.ActorSweeper),
+		store: store, blobs: blobs, cfg: cfg, opts: opts, deleteInputs: deleteInputs,
+		log: opts.Logger.With("component", "sweeper"), audit: opts.Audit.WithActor(audit.ActorSweeper),
 	}
 }
 
 // Run sweeps at once and then every Interval until ctx is done. A failed sweep is
 // logged and retried at the next tick.
 func (s *Sweeper) Run(ctx context.Context) {
-	ticker := time.NewTicker(s.opts.Interval)
+	ticker := time.NewTicker(s.cfg.Retention.SweepInterval)
 	defer ticker.Stop()
 	for {
 		s.lockedOnce(ctx)
@@ -207,11 +188,11 @@ func (s *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		return int(n), err
 	})
 	step("tokens", &r.Tokens, func() (int, error) {
-		n, err := s.store.DeleteTokensBefore(ctx, now.Add(-s.opts.TokenRetention))
+		n, err := s.store.DeleteTokensBefore(ctx, now.Add(-tokenRetention))
 		return int(n), err
 	})
 	step("audit events", &r.AuditEvents, func() (int, error) {
-		n, err := s.store.DeleteAuditBefore(ctx, now.Add(-s.opts.AuditRetention))
+		n, err := s.store.DeleteAuditBefore(ctx, now.Add(-s.cfg.Audit.Retention))
 		return int(n), err
 	})
 	if s.lastOrphan.IsZero() || !now.Before(s.lastOrphan.Add(orphanInterval)) {
@@ -311,7 +292,7 @@ const timeoutMessage = "The job's time limit expired."
 // stale finishes the running jobs whose time limit and grace are over: their worker is
 // lost. The persisted candidate and feedback are kept.
 func (s *Sweeper) stale(ctx context.Context, now time.Time) (int, error) {
-	cutoff := now.Add(-(s.opts.JobTimeout + s.opts.Grace))
+	cutoff := now.Add(-(s.cfg.Limits.JobTimeout + grace))
 	var (
 		total int
 		errs  []error
@@ -350,7 +331,7 @@ func (s *Sweeper) stale(ctx context.Context, now time.Time) (int, error) {
 // clearInputs is the terminal-state deletion of contract §10 for a job the worker did
 // not finish: the blobs, then the instruction and schema columns.
 func (s *Sweeper) clearInputs(ctx context.Context, j job.Job, now time.Time) error {
-	if j.Retention != job.RetentionNone && !s.opts.DeleteInputsAtTerminal[j.ApplicationID] {
+	if j.Retention != job.RetentionNone && !s.deleteInputs[j.ApplicationID] {
 		return nil
 	}
 	if err := s.blobs.DeleteAll(ctx, j.ID); err != nil {
@@ -388,7 +369,7 @@ func (s *Sweeper) quota(ctx context.Context, now time.Time) (int, error) {
 			errs = append(errs, fmt.Errorf("application %s: %w", a.ID, err))
 			continue
 		}
-		n, err := s.store.DeleteQuotaBefore(ctx, a.ID, now.Add(-time.Duration(s.opts.QuotaWindowsToKeep)*window))
+		n, err := s.store.DeleteQuotaBefore(ctx, a.ID, now.Add(-quotaWindowsToKeep*window))
 		total += int(n)
 		if err != nil {
 			errs = append(errs, err)

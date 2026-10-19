@@ -148,10 +148,9 @@ func (s *scaled) pool(t *testing.T, id string, lease time.Duration) (stop func()
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := worker.New(store, s.blobs, s.cfg, roles, worker.Options{
-		Size: 4, PollInterval: 20 * time.Millisecond, Lease: lease, WorkerID: id,
-		Logger: slog.New(slog.DiscardHandler),
-	})
+	cfg := *s.cfg // one process's worker settings
+	cfg.Worker = config.Worker{Size: 4, PollInterval: 20 * time.Millisecond, Lease: lease}
+	p := worker.New(store, s.blobs, &cfg, roles, worker.Options{WorkerID: id, Logger: slog.New(slog.DiscardHandler)})
 	ctx, cancel := context.WithCancel(context.Background())
 	p.Start(ctx)
 	var once sync.Once
@@ -211,8 +210,8 @@ func TestTwoPoolsProcessEachJobOnce(t *testing.T) {
 	for i := range jobs {
 		ids[i] = s.submit(t, i).ID
 	}
-	s.pool(t, "proc-a", worker.DefaultLease)
-	s.pool(t, "proc-b", worker.DefaultLease)
+	s.pool(t, "proc-a", 2*time.Minute)
+	s.pool(t, "proc-b", 2*time.Minute)
 
 	byProcess := map[string]int{}
 	for i, id := range ids {

@@ -167,9 +167,6 @@ func appToResponse(a job.Application) appResponse {
 // checkApp applies the YAML defaults to st and validates it like an applications[]
 // entry (config.CheckApplication), returning the row to store or the refusal.
 func (s *server) checkApp(id string, st appSettings) (job.Application, apiError, bool) {
-	if s.deps.Config == nil {
-		return job.Application{}, newError(codeInternal, msgInternal), false
-	}
 	c := config.Application{ID: id, Name: st.Name, MaxAttempts: st.MaxAttempts}
 	c.Quota.Limit, c.Quota.Window = st.Quota.Limit, st.Quota.Window
 	c.Rate.RequestsPerMinute, c.Rate.SubmitsPerMinute, c.Rate.MaxInProgress =
@@ -396,10 +393,7 @@ func (s *server) adminCreateToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, newError(codeBadRequest, msgAdminInvalidField, "expires"))
 		return
 	}
-	var maxTTL time.Duration
-	if s.deps.Config != nil {
-		maxTTL = s.deps.Config.Auth.MaxTokenTTL
-	}
+	maxTTL := s.deps.Config.Auth.MaxTokenTTL
 	// auth.Create checks the same; checked here first to name the field.
 	switch {
 	case !expires.After(now) || expires.Sub(now) > maxTTL:
@@ -545,11 +539,9 @@ func (s *server) adminDeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := context.WithoutCancel(r.Context())
-	if s.deps.Blobs != nil {
-		if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
-			s.jobError(w, r, j, "job blobs not deleted", err)
-			return
-		}
+	if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
+		s.jobError(w, r, j, "job blobs not deleted", err)
+		return
 	}
 	switch err := s.deps.Store.DeleteJob(ctx, j.ID); {
 	case errors.Is(err, job.ErrNotFound):

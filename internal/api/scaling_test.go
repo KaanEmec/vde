@@ -35,8 +35,8 @@ func TestHealthzAPIRole(t *testing.T) {
 	t.Parallel()
 	store := newTestStore(t, "app")
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
-	h := New(Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Role: RoleAPI, Now: func() time.Time { return now },
-		Extractor: fakeHealth(false), Judge: fakeHealth(false)})
+	h := New(testDeps(t, Deps{Store: store, Logger: slog.New(slog.DiscardHandler), Role: RoleAPI, Now: func() time.Time { return now },
+		Extractor: fakeHealth(false), Judge: fakeHealth(false)}))
 	get := func() (int, queueAgeResponse, string) {
 		w := serve(h, http.MethodGet, "/healthz", nil)
 		var body queueAgeResponse
@@ -56,7 +56,7 @@ func TestHealthzAPIRole(t *testing.T) {
 	if code, body, raw := get(); code != http.StatusOK || body.QueueAgeSeconds == nil || *body.QueueAgeSeconds != 90 {
 		t.Errorf("one job queued 90 s ago: %d %s, want 200 with queue_age_seconds 90", code, raw)
 	}
-	broken := New(Deps{Store: brokenStore{store}, Logger: slog.New(slog.DiscardHandler), Role: RoleAPI})
+	broken := New(testDeps(t, Deps{Store: brokenStore{store}, Logger: slog.New(slog.DiscardHandler), Role: RoleAPI}))
 	if code, body, _ := getHealth(t, broken); code != http.StatusServiceUnavailable || !slices.Equal(body.Reasons, []string{reasonDB}) {
 		t.Errorf("database down: %d %v, want 503 [db]", code, body.Reasons)
 	}
@@ -65,8 +65,8 @@ func TestHealthzAPIRole(t *testing.T) {
 // TestWorkerRoleRoutes: a worker process serves /healthz and /metrics, not the API.
 func TestWorkerRoleRoutes(t *testing.T) {
 	t.Parallel()
-	h := New(Deps{Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler), Role: RoleWorker,
-		Extractor: fakeHealth(true), Judge: fakeHealth(true)})
+	h := New(testDeps(t, Deps{Store: newTestStore(t), Logger: slog.New(slog.DiscardHandler), Role: RoleWorker,
+		Extractor: fakeHealth(true), Judge: fakeHealth(true)}))
 	if code, _, raw := getHealth(t, h); code != http.StatusOK {
 		t.Errorf("/healthz = %d %s, want 200", code, raw)
 	}
@@ -105,12 +105,13 @@ func checkSharedRate(t *testing.T, store job.Store, shared bool) {
 		t.Fatal(err)
 	}
 	token := issueToken(t, store, app, []string{auth.ScopeJobs}, time.Now().Add(365*24*time.Hour))
-	cfg := &config.Config{Rate: config.ServiceRate{Shared: shared}}
+	cfg := testConfig(t, "")
+	cfg.Rate.Shared = shared
 	now := time.Date(2026, 10, 16, 12, 0, 10, 0, time.UTC)
 	replicas := make([]http.Handler, 2)
 	for i := range replicas {
-		replicas[i] = New(Deps{Config: cfg, Store: store, Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return now },
-			Extractor: fakeHealth(true), Judge: fakeHealth(true)})
+		replicas[i] = New(testDeps(t, Deps{Config: cfg, Store: store, Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return now },
+			Extractor: fakeHealth(true), Judge: fakeHealth(true)}))
 	}
 	admitted := 0
 	var last *http.Response

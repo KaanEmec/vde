@@ -33,16 +33,13 @@ func (s *server) metricsRoute() http.Handler {
 	if s.deps.Metrics == nil {
 		return http.HandlerFunc(routeNotFound)
 	}
-	var cfg struct{ tokenEnv, token, listen string }
-	if c := s.deps.Config; c != nil {
-		cfg.tokenEnv, cfg.token, cfg.listen = c.Metrics.TokenEnv, c.Metrics.Token(), c.Metrics.Listen
-	}
+	c := s.deps.Config.Metrics
 	h := s.deps.Metrics.Handler()
 	switch {
-	case cfg.listen != "":
+	case c.Listen != "":
 		return http.HandlerFunc(routeNotFound)
-	case cfg.tokenEnv != "":
-		return metrics.RequireToken(h, cfg.token) // an unset variable refuses everyone
+	case c.TokenEnv != "":
+		return metrics.RequireToken(h, c.Token()) // an unset variable refuses everyone
 	default:
 		return notProxied(metrics.LoopbackOnly(h))
 	}

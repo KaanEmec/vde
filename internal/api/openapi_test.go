@@ -79,7 +79,7 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 			documented[strings.ToUpper(m)+" "+path] = true
 		}
 	}
-	for _, rt := range newServer(Deps{}).routes() {
+	for _, rt := range newServer(testDeps(t, Deps{})).routes() {
 		method, path, _ := strings.Cut(rt.pattern, " ")
 		p, root := docPath(path)
 		key := method + " " + p
@@ -109,7 +109,7 @@ func TestAdminOpenAPIMatchesRoutes(t *testing.T) {
 			documented[strings.ToUpper(m)+" "+path] = true
 		}
 	}
-	routes := newServerWith(Deps{}, true).adminRoutes()
+	routes := newServerWith(testDeps(t, Deps{}), true).adminRoutes()
 	if len(routes) == 0 {
 		t.Fatal("no admin routes")
 	}
