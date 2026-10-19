@@ -1,6 +1,6 @@
 # Job: Eval reads the TravelInbox corpus in place
 
-Version: v1.1 · Epic: 06 Tests and testdata · Status: planned · Depends on: 00-02; owner decision L3 ([open questions](../../open-questions.md#open))
+Version: v1.1 · Epic: 06 Tests and testdata · Status: planned · Depends on: 00-02; owner decision L3, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -26,9 +26,7 @@ the same. Removes `vde eval import-travelinbox` (an operator CLI change).
 
 ## Tasks
 
-- [ ] Owner decision L3 (CLI subcommand goes away).
-  - Skill: none.
-  - Prompt: none; record the answer.
+- [x] Owner decision L3 (2026-10-19): read the corpus in place.
 - [ ] Plan and execute.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: teach internal/eval LoadCorpus/LoadCase to

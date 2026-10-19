@@ -1,6 +1,6 @@
 # Job: Prometheus text exposition without the client library
 
-Version: v1.1 · Epic: 07 Dependencies and build · Status: planned · Depends on: 02-01; owner decision L4 ([open questions](../../open-questions.md#open))
+Version: v1.1 · Epic: 07 Dependencies and build · Status: dropped (owner decision L4, 2026-10-19: keep the client library) · Depends on: 02-01; owner decision L4, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -23,9 +23,7 @@ among them). Every series name, label and value served on `/metrics` stays.
 
 ## Tasks
 
-- [ ] Owner decision L4.
-  - Skill: none.
-  - Prompt: none.
+- [x] Owner decision L4 (2026-10-19): keep the client library.
 - [ ] Freeze the current output as a golden file.
   - Skill: none (test).
   - Prompt: "Add a test that serves /metrics with fixed values for every vde_* family

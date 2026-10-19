@@ -1,13 +1,13 @@
 # Job: One configuration validator
 
-Version: v1.1 · Epic: 03 Single source · Status: planned · Depends on: 01-01; owner decision L2 ([open questions](../../open-questions.md#open))
+Version: v1.1 · Epic: 03 Single source · Status: planned · Depends on: 01-01; owner decision L2, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
 `vde config check` validates with the same code as `vde serve` (`config.Validate`), not
 additionally with `schema.json`; `schema.json` stays what `vde config schema` prints and
 what tests compare with the structs. This changes `config check` output for files that
-only the schema refuses, so it waits for the owner.
+only the schema refuses, so it needed the owner's agreement (L2, given 2026-10-19).
 
 ## Context
 
@@ -29,7 +29,7 @@ only the schema refuses, so it waits for the owner.
   - Prompt: "Run every case of TestCheckSchemaViolations and TestCheckSchemaInput through
     config.Parse plus Validate only; list the cases that Validate accepts but the schema
     refuses. Report only."
-- [ ] Close the gaps found, in `Validate`, then owner decision L2.
+- [ ] Close the gaps found, in `Validate`.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Execute mode: for each case the schema refuses and
     Validate accepts, add the check to the validators in internal/config with a test.

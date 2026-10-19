@@ -1,6 +1,6 @@
 # Job: Example clients: Node (web) and Swift (mobile)
 
-Version: v1.1 · Epic: 08 Docs and clients · Status: planned · Depends on: owner decision L5 ([open questions](../../open-questions.md#open))
+Version: v1.1 · Epic: 08 Docs and clients · Status: planned · Depends on: owner decision L5, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -18,25 +18,16 @@ Every example client in the repository is either run by a test or gone.
 - Options: (a) delete Node and Swift, keep `submit.sh` (default); (b) keep them and run
   each against the fake-provider service in the conformance job (adds CI cost and
   toolchains); (c) keep only `submit.sh` and a short request/response walkthrough in
-  `docs/api/guide.md`.
+  `docs/api/guide.md`. **Decided (L5): (a).**
 
 ## Tasks
 
-- [ ] Owner decision L5.
-  - Skill: none.
-  - Prompt: none.
-- [ ] If (a) or (c): delete and repoint links.
+- [x] Owner decision L5 (2026-10-19): delete Node and Swift, keep `submit.sh`.
+- [ ] Delete and repoint links.
   - Skill: none (Edit).
   - Prompt: "Delete docs/api/examples/node and docs/api/examples/swift; update
     docs/api/README.md and any link (grep for client.mjs and VDEClient); add a CHANGELOG
     line. Keep submit.sh. Guardrails: skills.md."
-- [ ] If (b): simplify and test them.
-  - Skill: SIMPLIFY.
-  - Prompt: "/simplify docs/api/examples — reduce each client to submit, poll and
-    delete with an Idempotency-Key, no retries beyond Retry-After; then add one step to
-    the existing conformance job that runs submit.sh and the Node client against the
-    built binary (no Swift toolchain in CI: compile-check only if a macOS runner already
-    exists). Guardrails: skills.md."
 - [ ] Gate.
   - Skill: REVIEW.
   - Prompt: `/code-review low <first>^..<last>`.

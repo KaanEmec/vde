@@ -1,6 +1,6 @@
 # Epic 09: Deprecations (owner decisions)
 
-Version: v1.1 · Status: planned · Depends on: owner decisions L7 to L9; 02 and 04 done
+Version: v1.1 · Status: planned · Depends on: owner decisions L7 to L9 (taken 2026-10-19); 02 and 04 done
 
 The largest possible cuts are features nobody uses yet: they are speculative, but they
 sit behind the 1.x compatibility promise. Under [docs/compatibility.md](../../../compatibility.md):
@@ -13,11 +13,11 @@ sit behind the 1.x compatibility promise. Under [docs/compatibility.md](../../..
   gets its own version folder only after the owner decides.
 - **CLI surfaces** are operator surfaces, not frozen: removal is a CHANGELOG entry.
 
-Nothing in this epic starts before its decision is recorded in
-[open-questions.md](../../open-questions.md#open).
+The decisions (2026-10-19) are recorded in
+[open-questions.md](../../open-questions.md#decided).
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [Experimental API parts: completion webhook and `document.url`](01-experimental-api.md) | planned |
+| 01 | [Remove the experimental `document.url`](01-experimental-api.md) | planned |
 | 02 | [Unverified providers and model tiers](02-unverified-providers-and-tiers.md) | planned |
-| 03 | [`vde eval --url`](03-eval-url.md) | planned |
+| 03 | [`vde eval --url`](03-eval-url.md) | dropped (L9) |

@@ -1,6 +1,6 @@
 # Job: Dead feature surfaces: content log sink and `--probe`
 
-Version: v1.1 · Epic: 01 Dead code · Status: planned · Depends on: 01-01; owner decision L1 ([open questions](../../open-questions.md#open))
+Version: v1.1 · Epic: 01 Dead code · Status: planned · Depends on: 01-01; owner decision L1, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -26,9 +26,7 @@ prints "probe not available"), so it is its own job.
 
 ## Tasks
 
-- [ ] Owner decision L1: drop the sink and `--probe` (default), or finish them.
-  - Skill: none.
-  - Prompt: none; record the answer in open-questions.md and here.
+- [x] Owner decision L1 (2026-10-19): drop the sink and `--probe`.
 - [ ] Remove the content sink; keep the key with a "no effect, deprecated" warning.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode, then Execute mode: delete

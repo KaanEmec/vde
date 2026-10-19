@@ -1,6 +1,6 @@
 # Job: History of the done versions
 
-Version: v1.1 · Epic: 08 Docs and clients · Status: planned · Depends on: owner decision L6 ([open questions](../../open-questions.md#open))
+Version: v1.1 · Epic: 08 Docs and clients · Status: planned · Depends on: owner decision L6, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -20,14 +20,18 @@ record of what was decided and delivered.
   `vX.Y-history.md` keeping, per job, the header line, Goal, acceptance criteria and the
   commit, about −4,000 lines, full text in git under tags `v0.3.0`, `v0.4.0`, `v1.0.0`;
   (d) delete job files and keep the epic tables. Default: (a), or (c) if the dashboard
-  generator can read the new format.
+  generator can read the new format. **Decided (L6): (c).**
 
 ## Tasks
 
-- [ ] Owner decision L6, after checking the dashboard generator's input format.
-  - Skill: none.
-  - Prompt: none.
-- [ ] If (c): collapse one version first, review, then the rest.
+- [x] Owner decision L6 (2026-10-19): collapse each done version into a history file.
+- [ ] Check that the generator of the owner's progress dashboard reads the history
+      format; adapt the format (not the generator) if it does not.
+  - Skill: none (read-only agent).
+  - Prompt: "Read the owner's dashboard artifact (its URL is in the owner's notes) and
+    describe what it parses from docs/roadmap: file paths, header lines, tables. Report
+    which history-file layout it can read unchanged."
+- [ ] Collapse one version first, review, then the rest.
   - Skill: none (Edit, one agent per version file, disjoint files).
   - Prompt: "Collapse docs/roadmap/<version>/ into docs/roadmap/<version>-history.md:
     for each epic, its table; for each job, the header line, Goal (one paragraph),

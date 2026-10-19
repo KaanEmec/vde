@@ -49,6 +49,23 @@ it changed. New questions go at the bottom under "Open".
 16. **Default per-application limits.** 300 requests per minute, 30 submissions per
     minute, 20 jobs in progress, quota 1000 per day; all configurable. → v0.2 02-01,
     05-01, 05-02.
+17. **v1.1 Lean decisions (2026-10-19).** Asked as L1 to L9 with the roadmap
+    ([v1.1 Lean](v1.1-lean/README.md)); the owner answered:
+    - **L1** Drop the never-written `debug.log_content` sink (key stays accepted with a
+      "no effect, deprecated" warning) and the stub `vde config check --probe`. → 01-02.
+    - **L2** `vde config check` validates with `config.Validate` only, after closing any
+      gap the schema catches; `vde config schema` stays. → 03-06.
+    - **L3** `vde eval` reads `testdata/travelinbox/corpus` in place;
+      `vde eval import-travelinbox` and the generated cases go. → 06-03.
+    - **L4** Keep `prometheus/client_golang`. → 07-02 dropped.
+    - **L5** Delete the Node and Swift example clients; keep `submit.sh`. → 08-03.
+    - **L6** Collapse each done version (v0.1 to v1.0) into one history file. → 08-04.
+    - **L7** Remove `document.url` (`documents.fetch`, key stays accepted with a warning);
+      keep the completion webhook. → 09-01.
+    - **L8** Deprecate in 1.1, remove in 2.0: escalation, `second_judge`, the classifier
+      judge and `feedback_fallback`. Keep Bedrock and Vertex. → 09-02 (this revises
+      decision 14 for 2.0).
+    - **L9** Keep `vde eval --url`. → 09-03 dropped.
 
 ## Open
 
@@ -57,30 +74,3 @@ it changed. New questions go at the bottom under "Open".
 - ~~**Location of TravelInbox assets.**~~ Resolved 2026-10-16: the checkout at
   `~/Developer/TravelInbox` was available; assets are imported into `testdata/travelinbox/`
   by v0.1 01-01.
-
-### v1.1 Lean (asked 2026-10-19)
-
-Each question blocks the job named; the default is what the job does if the owner agrees.
-
-- **L1. Content log sink and `--probe`.** Drop the never-written `debug.log_content` sink
-  (key kept, warns "no effect, deprecated") and the stub `vde config check --probe`, or
-  finish them? Default: drop. → v1.1 01-02.
-- **L2. One configuration validator.** Let `vde config check` validate with
-  `config.Validate` only (after closing any gap), not also against `schema.json`?
-  Default: yes. → v1.1 03-06.
-- **L3. TravelInbox eval corpus in place.** Read `testdata/travelinbox/corpus` directly
-  and remove `vde eval import-travelinbox` and the 350 generated files? Default: yes.
-  → v1.1 06-03.
-- **L4. Prometheus client.** Replace `prometheus/client_golang` (8 modules) with a
-  hand-written text exposition of about the same size? Default: no. → v1.1 07-02.
-- **L5. Example clients.** Delete the Node (web) and Swift (mobile) examples, keep
-  `submit.sh`; or keep and test them? Default: delete. → v1.1 08-03.
-- **L6. Done versions in the roadmap.** Keep as is, archive, or collapse each into one
-  history file? Default: keep (fix stale statuses only). → v1.1 08-04.
-- **L7. Experimental API parts.** Remove the completion webhook, `document.url`, both or
-  neither (keys stay accepted with a warning)? No default. → v1.1 09-01.
-- **L8. Unverified providers and model tiers.** Deprecate in 1.1 (remove in 2.0) Bedrock,
-  Vertex, the classifier judge (asked for in decision 14), escalation, second judge,
-  `feedback_fallback: llm`; per item. No default. → v1.1 09-02.
-- **L9. `vde eval --url`.** Remove the remote-service mode of `vde eval`? No default.
-  → v1.1 09-03.

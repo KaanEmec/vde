@@ -53,7 +53,7 @@ Every prompt in this version says "Guardrails: skills.md". It means all of these
    for a configuration that does not use what a job removes; log attribute names, metric
    names and audit kinds stay unless the job file says otherwise.
 2. **Structure and behaviour never share a commit.** A job that changes behaviour says
-   so in its Goal: 01-02, 03-06, 06-03, 07-02, epic 09, and the separate `fix(...)`
+   so in its Goal: 01-02, 03-06, 06-03, 09-01, 09-02, and the separate `fix(...)`
    commits in 03-03 (in-progress gauge) and 04-02 (Gemini and Vertex finish reasons).
 3. **Evidence before deletion.** Run EVID first; delete only what the output and a
    `gopls references` check show unused. "Dead" is not "safe": check reflection, YAML and

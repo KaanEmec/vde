@@ -1,6 +1,6 @@
 # Job: Vertex reuses the Anthropic and Gemini wire code
 
-Version: v1.1 · Epic: 04 Providers · Status: planned · Depends on: 04-01; skip if 09-02 removes Vertex
+Version: v1.1 · Epic: 04 Providers · Status: planned · Depends on: 04-01 (Vertex stays, owner decision L8)
 
 ## Goal
 

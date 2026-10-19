@@ -9,5 +9,5 @@ the coverage gap the audit found).
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [Dependency hygiene and a local ULID](01-dependency-hygiene.md) | planned |
-| 02 | [Prometheus text exposition without the client library](02-prometheus-exposition.md) | planned |
+| 02 | [Prometheus text exposition without the client library](02-prometheus-exposition.md) | dropped (L4) |
 | 03 | [CI, Makefile and Dockerfile](03-ci-makefile-docker.md) | planned |

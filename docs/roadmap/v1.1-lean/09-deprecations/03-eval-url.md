@@ -1,6 +1,6 @@
 # Job: `vde eval --url`
 
-Version: v1.1 · Epic: 09 Deprecations · Status: planned · Depends on: owner decision L9 ([open questions](../../open-questions.md#open)); 03-04
+Version: v1.1 · Epic: 09 Deprecations · Status: dropped (owner decision L9, 2026-10-19: keep it) · Depends on: owner decision L9, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17); 03-04
 
 ## Goal
 
@@ -18,9 +18,7 @@ CHANGELOG entry. `docs/operator/evaluation.md` documents the flag.
 
 ## Tasks
 
-- [ ] Owner decision L9.
-  - Skill: none.
-  - Prompt: none.
+- [x] Owner decision L9 (2026-10-19): keep `vde eval --url`.
 - [ ] If removed.
   - Skill: SIMPLIFY.
   - Prompt: "/simplify cmd/vde/eval.go — remove the --url mode (httpEngine and its
