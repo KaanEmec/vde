@@ -38,6 +38,11 @@ All notable changes to this project are recorded here, in the format of
   loses its inputs when `force_none` was set on its application over the admin API after
   submit, as a job the worker finishes already did; before, only the YAML's `force_none`
   counted there.
+- The `gemini` adapter refuses the `BLOCKLIST` and `SPII` finish reasons as a permanent
+  failure, as `vertex` already did for Gemini models; before, it returned the blocked
+  answer's text. The `anthropic` adapter treats an empty or cut-off 2xx body as permanent,
+  like every other unreadable answer; before, it was retryable. Claude answers on `vertex`
+  that cannot be used carry no HTTP status, as on `anthropic`.
 
 ## [1.0.0] - 2026-10-18
 

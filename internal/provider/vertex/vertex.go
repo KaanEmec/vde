@@ -76,11 +76,11 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		if err != nil {
 			return provider.Response{}, err
 		}
-		raw, status, err := c.post(ctx, c.modelURL("anthropic", req.Model, "rawPredict"), body)
+		raw, _, err := c.post(ctx, c.modelURL("anthropic", req.Model, "rawPredict"), body)
 		if err != nil {
 			return provider.Response{}, err
 		}
-		return parseClaude(raw, status)
+		return parseClaude(raw)
 	case strings.HasPrefix(req.Model, "gemini"):
 		body, err := buildGeminiBody(req)
 		if err != nil {

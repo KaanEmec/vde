@@ -1,7 +1,6 @@
 package anthropic
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -199,12 +198,9 @@ func statusError(raw []byte, err error) error {
 // answer is not a usable extraction.
 func parseResponse(raw []byte) (provider.Response, error) {
 	var mr messagesResponse
-	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&mr); err != nil {
+	if json.Unmarshal(raw, &mr) != nil {
 		// Not wrapped: a syntax error can quote bytes of the response.
-		return provider.Response{}, &provider.Error{
-			Kind:    provider.Classify(err),
-			Message: "anthropic: unreadable response body",
-		}
+		return provider.Response{}, &provider.Error{Message: "anthropic: unreadable response body"}
 	}
 	if mr.StopReason == "refusal" {
 		return provider.Response{}, &provider.Error{Message: "anthropic: the model declined to answer (refusal)"}

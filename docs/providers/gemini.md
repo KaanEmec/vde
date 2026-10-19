@@ -43,7 +43,7 @@ configurable in v0.1: the config schema has no field for them and the loop parse
 |---|---|
 | 408, 429, 5xx, network failure, timeout | retryable (`Retry-After` honoured on 429/5xx) |
 | other 4xx (bad request, bad key, unsupported input) | permanent |
-| `promptFeedback.blockReason`, finish reason `SAFETY`, `RECITATION`, `PROHIBITED_CONTENT` | permanent, generic message |
+| `promptFeedback.blockReason`, finish reason `SAFETY`, `RECITATION`, `PROHIBITED_CONTENT`, `BLOCKLIST`, `SPII` | permanent, generic message |
 | no candidate, no text, malformed 2xx body | permanent |
 | caller cancelled the context | permanent |
 

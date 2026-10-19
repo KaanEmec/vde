@@ -373,6 +373,20 @@ func TestCompleteMalformedBody(t *testing.T) {
 	wantProviderError(t, err, provider.Permanent, 0)
 }
 
+// TestCompleteCutOffBody: a 2xx body that ends early is permanent like any other
+// unreadable answer, as for the other adapters (it was retryable while decoded as a stream).
+func TestCompleteCutOffBody(t *testing.T) {
+	t.Parallel()
+	for name, body := range map[string]string{"empty": "", "cut off": `{"model":"m","content":[{"type":"text","text":"` + secretAns} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			srv, _ := serve(t, reply(200, body))
+			_, err := complete(t, srv, request())
+			wantProviderError(t, err, provider.Permanent, 0)
+		})
+	}
+}
+
 func TestCompleteTimeouts(t *testing.T) {
 	t.Parallel()
 	hang := func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }

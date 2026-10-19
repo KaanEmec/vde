@@ -275,6 +275,35 @@ func TestComplete_unusableAnswers(t *testing.T) {
 	}
 }
 
+// TestComplete_unusableAnswerStatus: each family reports a 2xx it cannot use as its
+// direct adapter does, Gemini with the status and Claude without; Gemini also refuses the
+// BLOCKLIST and SPII finish reasons.
+func TestComplete_unusableAnswerStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, model, reply string
+		status             int
+	}{
+		{"gemini blocklist finish", "gemini-x", `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"BLOCKLIST"}]}`, 200},
+		{"gemini spii finish", "gemini-x", `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"SPII"}]}`, 200},
+		{"gemini malformed", "gemini-x", `{"candidates":[` + secretAns, 200},
+		{"claude refusal", "claude-x", `{"stop_reason":"refusal","content":[{"type":"text","text":"` + secretAns + `"}]}`, 0},
+		{"claude no text", "claude-x", `{"stop_reason":"end_turn","content":[]}`, 0},
+		{"claude malformed", "claude-x", `{"content":` + secretAns, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c, _ := serve(t, 200, tt.reply, nil)
+			_, err := c.Complete(context.Background(), provider.Request{Model: tt.model, Parts: []provider.Part{{Text: "x"}}})
+			var pe *provider.Error
+			if !errors.As(err, &pe) || pe.Kind != provider.Permanent || pe.Status != tt.status {
+				t.Fatalf("error = %v, want permanent with status %d", err, tt.status)
+			}
+		})
+	}
+}
+
 func TestComplete_badRequests(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -132,7 +131,7 @@ func buildBody(req provider.Request) ([]byte, error) {
 	gr.Contents = []content{user}
 	body, err := json.Marshal(gr)
 	if err != nil {
-		return nil, fmt.Errorf("gemini: encoding request: %w", err)
+		return nil, &provider.Error{Message: "gemini: encoding request failed", Err: err}
 	}
 	return body, nil
 }
@@ -153,7 +152,7 @@ func toResponse(gr *generateResponse, status int) (provider.Response, error) {
 	}
 	cand := gr.Candidates[0]
 	switch cand.FinishReason {
-	case "SAFETY", "RECITATION", "PROHIBITED_CONTENT":
+	case "SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII":
 		return provider.Response{}, provider.Refused(status, "gemini: answer blocked by the provider")
 	}
 	var text strings.Builder

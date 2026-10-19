@@ -99,13 +99,13 @@ func claudeSourceOf(b *provider.Blob) *claudeSource {
 	return &claudeSource{Type: "base64", MediaType: b.MediaType, Data: base64.StdEncoding.EncodeToString(b.Data)}
 }
 
-func parseClaude(raw []byte, status int) (provider.Response, error) {
+func parseClaude(raw []byte) (provider.Response, error) {
 	var mr claudeResponse
 	if err := json.Unmarshal(raw, &mr); err != nil {
-		return provider.Response{}, &provider.Error{Status: status, Message: "vertex: malformed response"}
+		return provider.Response{}, &provider.Error{Message: "vertex: malformed response"}
 	}
 	if mr.StopReason == "refusal" {
-		return provider.Response{}, provider.Refused(status, "vertex: the model declined to answer (refusal)")
+		return provider.Response{}, &provider.Error{Message: "vertex: the model declined to answer (refusal)"}
 	}
 	var text strings.Builder
 	for _, b := range mr.Content {
@@ -114,7 +114,7 @@ func parseClaude(raw []byte, status int) (provider.Response, error) {
 		}
 	}
 	if strings.TrimSpace(text.String()) == "" {
-		return provider.Response{}, &provider.Error{Status: status, Message: "vertex: the model returned no text"}
+		return provider.Response{}, &provider.Error{Message: "vertex: the model returned no text"}
 	}
 	return provider.Response{
 		Text:         text.String(),

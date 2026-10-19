@@ -247,6 +247,8 @@ func TestCompleteRefusals(t *testing.T) {
 		"safety finish":      `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"SAFETY"}]}`,
 		"recitation finish":  `{"candidates":[{"finishReason":"RECITATION"}]}`,
 		"prohibited content": `{"candidates":[{"finishReason":"PROHIBITED_CONTENT"}]}`,
+		"blocklist finish":   `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"BLOCKLIST"}]}`,
+		"spii finish":        `{"candidates":[{"content":{"parts":[{"text":"` + secretAns + `"}]},"finishReason":"SPII"}]}`,
 		"no candidates":      `{"candidates":[]}`,
 		"no text":            `{"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}`,
 		"malformed body":     `{"candidates": [` + secretAns,
