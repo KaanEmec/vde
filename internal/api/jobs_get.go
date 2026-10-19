@@ -29,26 +29,32 @@ func (s *server) getJob(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteJob is DELETE /v1/jobs/{id}: the blobs, then the row with its content, at once;
-// 204. Only the audit record stays. Once started it finishes even if the client leaves.
+// 204. Only the audit record stays.
 func (s *server) deleteJob(w http.ResponseWriter, r *http.Request) {
-	j, ok := s.loadJob(w, r)
-	if !ok {
-		return
+	if j, ok := s.loadJob(w, r); ok {
+		s.removeJob(w, r, j, audit.DeletedByRequest, newError(codeNotFound, msgJobNotFound))
 	}
+}
+
+// removeJob deletes j's blobs, then its row with the content, records job.deleted with
+// reason and refreshes the in-progress gauge; 204, or notFound when a concurrent delete
+// won. Once started it finishes even if the client leaves.
+func (s *server) removeJob(w http.ResponseWriter, r *http.Request, j job.Job, reason string, notFound apiError) {
 	ctx := context.WithoutCancel(r.Context())
 	if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
 		s.jobError(w, r, j, "job blobs not deleted", err)
 		return
 	}
 	switch err := s.deps.Store.DeleteJob(ctx, j.ID); {
-	case errors.Is(err, job.ErrNotFound): // a concurrent DELETE won
-		writeError(w, newError(codeNotFound, msgJobNotFound))
+	case errors.Is(err, job.ErrNotFound):
+		writeError(w, notFound)
 		return
 	case err != nil:
 		s.jobError(w, r, j, "job not deleted", err)
 		return
 	}
-	s.auditDeleted(ctx, j, audit.DeletedByRequest)
+	s.auditDeleted(ctx, j, reason)
+	s.refreshInProgress(ctx, j.ApplicationID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

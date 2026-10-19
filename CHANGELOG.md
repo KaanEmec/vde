@@ -15,6 +15,9 @@ All notable changes to this project are recorded here, in the format of
 
 ### Fixed
 
+- `DELETE /v1/jobs/{id}` of a queued or running job lowers `vde_jobs_in_progress` at once,
+  as the admin delete already did; before, the gauge stayed high until the next
+  submission or finished job of that application.
 - A running job whose worker was lost, finished by the sweeper as `failed`/`timeout`, now
   loses its inputs when `force_none` was set on its application over the admin API after
   submit, as a job the worker finishes already did; before, only the YAML's `force_none`

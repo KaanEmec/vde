@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/job"
 	"github.com/kaanemec/vde/internal/metrics"
 )
 
@@ -94,6 +96,27 @@ func TestMetricsHTTPLabels(t *testing.T) {
 	}
 	if strings.Contains(body, "secret") {
 		t.Errorf("metrics carry request data:\n%s", body)
+	}
+}
+
+// TestDeleteRefreshesInProgress: deleting a queued job, through /v1 or the admin API,
+// sets vde_jobs_in_progress from the store again.
+func TestDeleteRefreshesInProgress(t *testing.T) {
+	t.Parallel()
+	f := newJobFixture(t)
+	deps := f.s.deps
+	deps.Metrics = metrics.New(false)
+	h := handlerOf(newServer(deps))
+	j := f.create(t, testApp, job.RetentionDefault, time.Time{})
+	f.create(t, testApp, job.RetentionDefault, time.Time{})
+	deps.Metrics.SetJobsInProgress(testApp, 2)
+	w := serve(h, http.MethodDelete, "/v1/jobs/"+j.ID, func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+f.token) })
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("DELETE = %d, want 204", w.Code)
+	}
+	body := serve(h, http.MethodGet, "/metrics", nil).Body.String()
+	if want := `vde_jobs_in_progress{app="` + testApp + `"} 1`; !strings.Contains(body, want) {
+		t.Errorf("metrics lack %s after the delete", want)
 	}
 }
 

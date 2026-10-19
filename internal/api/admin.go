@@ -2,7 +2,6 @@ package api
 
 import (
 	"cmp"
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -528,26 +527,9 @@ func (s *server) adminGetJob(w http.ResponseWriter, r *http.Request) {
 // in any state. A worker still running the job loses it at its next write. 204; only
 // the audit record (job.deleted, reason admin) stays.
 func (s *server) adminDeleteJob(w http.ResponseWriter, r *http.Request) {
-	j, ok := s.loadAnyJob(w, r)
-	if !ok {
-		return
+	if j, ok := s.loadAnyJob(w, r); ok {
+		s.removeJob(w, r, j, audit.DeletedByAdmin, newError(codeNotFound, msgAdminJobNotFound))
 	}
-	ctx := context.WithoutCancel(r.Context())
-	if err := s.deps.Blobs.DeleteAll(ctx, j.ID); err != nil {
-		s.jobError(w, r, j, "job blobs not deleted", err)
-		return
-	}
-	switch err := s.deps.Store.DeleteJob(ctx, j.ID); {
-	case errors.Is(err, job.ErrNotFound):
-		writeError(w, newError(codeNotFound, msgAdminJobNotFound))
-		return
-	case err != nil:
-		s.jobError(w, r, j, "job not deleted", err)
-		return
-	}
-	s.recordAudit(r.Context(), j.ApplicationID, j.ID, audit.JobDeleted{Reason: audit.DeletedByAdmin, Retention: string(j.Retention)})
-	s.refreshInProgress(ctx, j.ApplicationID)
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) loadAnyJob(w http.ResponseWriter, r *http.Request) (job.Job, bool) {
