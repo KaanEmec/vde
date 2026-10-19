@@ -105,7 +105,7 @@ func parseClaude(raw []byte, status int) (provider.Response, error) {
 		return provider.Response{}, &provider.Error{Status: status, Message: "vertex: malformed response"}
 	}
 	if mr.StopReason == "refusal" {
-		return provider.Response{}, refused(status, "vertex: the model declined to answer (refusal)")
+		return provider.Response{}, provider.Refused(status, "vertex: the model declined to answer (refusal)")
 	}
 	var text strings.Builder
 	for _, b := range mr.Content {

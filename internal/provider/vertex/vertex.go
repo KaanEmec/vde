@@ -1,9 +1,7 @@
 package vertex
 
 import (
-	"bytes"
 	"context"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -114,31 +112,7 @@ func (c *Client) post(ctx context.Context, endpoint string, body []byte) ([]byte
 			Err:     err,
 		}
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, 0, &provider.Error{Message: "vertex: invalid request URL"}
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	tok.SetAuthHeader(httpReq)
-
-	resp, err := c.http.Do(httpReq)
-	if err != nil {
-		return nil, 0, &provider.Error{Kind: provider.Classify(err), Message: "vertex: request failed", Err: err}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		// The error body is not read: it can echo request content.
-		return nil, 0, provider.StatusError(resp, "vertex: request rejected")
-	}
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, &provider.Error{
-			Kind:    provider.Classify(err),
-			Status:  resp.StatusCode,
-			Message: "vertex: reading response failed",
-			Err:     err,
-		}
-	}
-	return raw, resp.StatusCode, nil
+	header := http.Header{}
+	header.Set("Authorization", tok.Type()+" "+tok.AccessToken)
+	return provider.PostJSON(ctx, c.http, endpoint, header, body, "vertex")
 }

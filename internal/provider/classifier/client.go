@@ -1,11 +1,9 @@
 package classifier
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -94,26 +92,14 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if err != nil {
 		return provider.Response{}, &provider.Error{Message: "encoding request failed", Err: err}
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(data))
-	if err != nil {
-		return provider.Response{}, &provider.Error{Message: "invalid endpoint url", Err: err}
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
+	header := http.Header{}
+	header.Set("Accept", "application/json")
 	if c.key != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.key)
+		header.Set("Authorization", "Bearer "+c.key)
 	}
-	resp, err := c.http.Do(httpReq)
+	raw, _, err := provider.PostJSON(ctx, c.http, c.url, header, data, "classifier")
 	if err != nil {
-		return provider.Response{}, &provider.Error{Kind: provider.Classify(err), Message: "request failed", Err: err}
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return provider.Response{}, provider.StatusError(resp, "classify request failed")
-	}
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return provider.Response{}, &provider.Error{Kind: provider.Classify(err), Message: "reading response failed", Err: err}
+		return provider.Response{}, err
 	}
 	var cr Response
 	if json.Unmarshal(raw, &cr) != nil {

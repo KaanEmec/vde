@@ -92,22 +92,22 @@ func parseGemini(raw []byte, status int) (provider.Response, error) {
 		return provider.Response{}, &provider.Error{Status: status, Message: "vertex: malformed response"}
 	}
 	if gr.PromptFeedback.BlockReason != "" {
-		return provider.Response{}, refused(status, "vertex: prompt blocked by the provider")
+		return provider.Response{}, provider.Refused(status, "vertex: prompt blocked by the provider")
 	}
 	if len(gr.Candidates) == 0 {
-		return provider.Response{}, refused(status, "vertex: response had no candidates")
+		return provider.Response{}, provider.Refused(status, "vertex: response had no candidates")
 	}
 	cand := gr.Candidates[0]
 	switch cand.FinishReason {
 	case "SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII":
-		return provider.Response{}, refused(status, "vertex: answer blocked by the provider")
+		return provider.Response{}, provider.Refused(status, "vertex: answer blocked by the provider")
 	}
 	var text strings.Builder
 	for _, p := range cand.Content.Parts {
 		text.WriteString(p.Text)
 	}
 	if text.Len() == 0 {
-		return provider.Response{}, refused(status, "vertex: response had no text")
+		return provider.Response{}, provider.Refused(status, "vertex: response had no text")
 	}
 	return provider.Response{
 		Text:         text.String(),
@@ -115,9 +115,4 @@ func parseGemini(raw []byte, status int) (provider.Response, error) {
 		OutputTokens: gr.UsageMetadata.CandidatesTokenCount,
 		Truncated:    cand.FinishReason == "MAX_TOKENS",
 	}, nil
-}
-
-// refused is a permanent error: asking again with the same input gets the same refusal.
-func refused(status int, msg string) error {
-	return &provider.Error{Kind: provider.Permanent, Status: status, Message: msg}
 }

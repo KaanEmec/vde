@@ -1,11 +1,9 @@
 package openai
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 
@@ -95,32 +93,18 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if err != nil {
 		return provider.Response{}, err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
-	if err != nil {
-		return provider.Response{}, &provider.Error{Message: "invalid endpoint url", Err: err}
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
+	header := http.Header{}
+	header.Set("Accept", "application/json")
 	if c.key != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.key)
+		header.Set("Authorization", "Bearer "+c.key)
 	}
 	if c.preset == presetOpenRouter {
-		httpReq.Header.Set("HTTP-Referer", openRouterReferer)
-		httpReq.Header.Set("X-Title", openRouterTitle)
+		header.Set("HTTP-Referer", openRouterReferer)
+		header.Set("X-Title", openRouterTitle)
 	}
-
-	resp, err := c.http.Do(httpReq)
+	raw, _, err := provider.PostJSON(ctx, c.http, c.url, header, body, "openai")
 	if err != nil {
-		return provider.Response{}, transportError("request failed", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return provider.Response{}, provider.StatusError(resp, "chat completions request failed")
-	}
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return provider.Response{}, transportError("reading response failed", err)
+		return provider.Response{}, err
 	}
 	return parseResponse(raw)
 }
@@ -221,9 +205,4 @@ func contentText(raw json.RawMessage) string {
 		}
 	}
 	return sb.String()
-}
-
-// transportError classifies a failure that produced no usable response.
-func transportError(msg string, err error) *provider.Error {
-	return &provider.Error{Kind: provider.Classify(err), Message: msg, Err: err}
 }

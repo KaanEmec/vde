@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 
@@ -20,9 +19,6 @@ const (
 
 	// apiVersion is the value of the anthropic-version header.
 	apiVersion = "2023-06-01"
-
-	// maxErrorBodyBytes bounds how much of an error response is read to find its type.
-	maxErrorBodyBytes = 64 << 10
 )
 
 // Client calls the Anthropic Messages API. It is safe for concurrent use.
@@ -115,26 +111,16 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if err != nil {
 		return provider.Response{}, err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return provider.Response{}, &provider.Error{Message: "anthropic: invalid endpoint URL"}
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("anthropic-version", apiVersion)
+	header := http.Header{}
+	header.Set("anthropic-version", apiVersion)
 	if c.apiKey != "" {
-		httpReq.Header.Set("x-api-key", c.apiKey)
+		header.Set("x-api-key", c.apiKey)
 	}
-
-	resp, err := c.http.Do(httpReq)
+	raw, _, err := provider.PostJSON(ctx, c.http, c.baseURL+"/v1/messages", header, body, "anthropic")
 	if err != nil {
-		return provider.Response{}, &provider.Error{Kind: provider.Classify(err), Message: "anthropic: request failed", Err: err}
+		return provider.Response{}, statusError(raw, err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return provider.Response{}, statusError(resp)
-	}
-	return parseResponse(resp.Body)
+	return parseResponse(raw)
 }
 
 // buildBody maps the request to the Messages API body.
@@ -193,30 +179,28 @@ func base64Source(b *provider.Blob) *source {
 	return &source{Type: "base64", MediaType: b.MediaType, Data: base64.StdEncoding.EncodeToString(b.Data)}
 }
 
-// statusError classifies a non-2xx response. The message carries at most a documented
-// error type, never the body.
-func statusError(resp *http.Response) *provider.Error {
-	msg := "anthropic: error response"
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-	if err == nil {
-		var er errorResponse
-		if json.Unmarshal(data, &er) == nil && errorTypes[er.Error.Type] {
-			msg = "anthropic: " + er.Error.Type
-		}
+// statusError names a non-2xx response by its documented error type, never by the body;
+// other errors pass unchanged.
+func statusError(raw []byte, err error) error {
+	var pe *provider.Error
+	if !errors.As(err, &pe) || pe.Status == 0 {
+		return err
 	}
-	return provider.StatusError(resp, msg)
+	pe.Message = "anthropic: error response"
+	var er errorResponse
+	if json.Unmarshal(raw, &er) == nil && errorTypes[er.Error.Type] {
+		pe.Message = "anthropic: " + er.Error.Type
+	}
+	return pe
 }
 
 // parseResponse reads a 2xx body. A refusal or an answer without text is a permanent
 // failure: asking again elsewhere would not change a content decision, and an empty
 // answer is not a usable extraction.
-func parseResponse(body io.Reader) (provider.Response, error) {
+func parseResponse(raw []byte) (provider.Response, error) {
 	var mr messagesResponse
-	if err := json.NewDecoder(body).Decode(&mr); err != nil {
-		if errors.Is(err, provider.ErrResponseTooLarge) {
-			return provider.Response{}, &provider.Error{Message: "anthropic: response body too large", Err: provider.ErrResponseTooLarge}
-		}
-		// Other decode errors are not wrapped: a syntax error can quote bytes of the response.
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&mr); err != nil {
+		// Not wrapped: a syntax error can quote bytes of the response.
 		return provider.Response{}, &provider.Error{
 			Kind:    provider.Classify(err),
 			Message: "anthropic: unreadable response body",

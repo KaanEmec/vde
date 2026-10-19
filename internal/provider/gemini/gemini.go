@@ -1,12 +1,10 @@
 package gemini
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -96,46 +94,21 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		return provider.Response{}, err
 	}
 	endpoint := c.baseURL + "/v1beta/models/" + url.PathEscape(req.Model) + ":generateContent"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	header := http.Header{}
+	header.Set(apiKeyHeader, c.apiKey)
+	raw, status, err := provider.PostJSON(ctx, c.http, endpoint, header, body, "gemini")
 	if err != nil {
-		return provider.Response{}, &provider.Error{Message: "gemini: invalid request URL"}
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set(apiKeyHeader, c.apiKey)
-
-	resp, err := c.http.Do(httpReq)
-	if err != nil {
-		return provider.Response{}, &provider.Error{
-			Kind:    provider.Classify(err),
-			Message: "gemini: request failed",
-			Err:     err,
-		}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		// The error body is not read: it can echo request content.
-		return provider.Response{}, provider.StatusError(resp, "gemini: request rejected")
-	}
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return provider.Response{}, &provider.Error{
-			Kind:    provider.Classify(err),
-			Status:  resp.StatusCode,
-			Message: "gemini: reading response failed",
-			Err:     err,
-		}
+		return provider.Response{}, err
 	}
 	var gr generateResponse
 	if err := json.Unmarshal(raw, &gr); err != nil {
 		// The decode error is dropped: it can quote response bytes.
 		return provider.Response{}, &provider.Error{
-			Status:  resp.StatusCode,
+			Status:  status,
 			Message: "gemini: malformed response",
 		}
 	}
-	return toResponse(&gr, resp.StatusCode)
+	return toResponse(&gr, status)
 }
 
 func buildBody(req provider.Request) ([]byte, error) {
@@ -173,22 +146,22 @@ func blobPart(b *provider.Blob) part {
 
 func toResponse(gr *generateResponse, status int) (provider.Response, error) {
 	if gr.PromptFeedback.BlockReason != "" {
-		return provider.Response{}, refused(status, "gemini: prompt blocked by the provider")
+		return provider.Response{}, provider.Refused(status, "gemini: prompt blocked by the provider")
 	}
 	if len(gr.Candidates) == 0 {
-		return provider.Response{}, refused(status, "gemini: response had no candidates")
+		return provider.Response{}, provider.Refused(status, "gemini: response had no candidates")
 	}
 	cand := gr.Candidates[0]
 	switch cand.FinishReason {
 	case "SAFETY", "RECITATION", "PROHIBITED_CONTENT":
-		return provider.Response{}, refused(status, "gemini: answer blocked by the provider")
+		return provider.Response{}, provider.Refused(status, "gemini: answer blocked by the provider")
 	}
 	var text strings.Builder
 	for _, p := range cand.Content.Parts {
 		text.WriteString(p.Text)
 	}
 	if text.Len() == 0 {
-		return provider.Response{}, refused(status, "gemini: response had no text")
+		return provider.Response{}, provider.Refused(status, "gemini: response had no text")
 	}
 	return provider.Response{
 		Text:         text.String(),
@@ -196,9 +169,4 @@ func toResponse(gr *generateResponse, status int) (provider.Response, error) {
 		OutputTokens: gr.UsageMetadata.CandidatesTokenCount,
 		Truncated:    cand.FinishReason == "MAX_TOKENS",
 	}, nil
-}
-
-// refused is a permanent error: asking again with the same input gets the same refusal.
-func refused(status int, msg string) error {
-	return &provider.Error{Kind: provider.Permanent, Status: status, Message: msg}
 }

@@ -141,3 +141,84 @@ func TestStatusError(t *testing.T) {
 		})
 	}
 }
+
+func TestPostJSON(t *testing.T) {
+	t.Parallel()
+	const secret = "SECRET-RESPONSE-TEXT"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ok", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		fmt.Fprintf(w, "%s|%s|%s|%s", r.Method, r.Header.Get("Content-Type"), r.Header.Get("X-Extra"), body)
+	})
+	mux.HandleFunc("/rejected", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "3")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, secret+strings.Repeat("x", maxErrorBodyBytes))
+	})
+	mux.HandleFunc("/large", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, secret+strings.Repeat("x", 64))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := NewHTTPClient(time.Second, 32)
+	header := http.Header{}
+	header.Set("X-Extra", "extra")
+
+	t.Run("2xx", func(t *testing.T) {
+		t.Parallel()
+		raw, status, err := PostJSON(t.Context(), client, srv.URL+"/ok", header, []byte(`{}`), "test")
+		if err != nil || status != http.StatusOK || string(raw) != "POST|application/json|extra|{}" {
+			t.Errorf("PostJSON = %q, %d, %v", raw, status, err)
+		}
+	})
+	t.Run("non-2xx", func(t *testing.T) {
+		t.Parallel()
+		raw, status, err := PostJSON(t.Context(), NewHTTPClient(time.Second, DefaultMaxResponseBytes), srv.URL+"/rejected", nil, nil, "test")
+		var pe *Error
+		if !errors.As(err, &pe) || pe.Kind != Retryable || pe.Status != http.StatusTooManyRequests || pe.RetryAfter != 3*time.Second {
+			t.Fatalf("error = %v, want a retryable 429 with Retry-After", err)
+		}
+		if status != http.StatusTooManyRequests || len(raw) != maxErrorBodyBytes || !strings.HasPrefix(string(raw), secret) {
+			t.Errorf("status %d, %d bytes, want 429 and the first %d bytes of the body", status, len(raw), maxErrorBodyBytes)
+		}
+		if strings.Contains(err.Error(), secret) || pe.Message != "test: request rejected" {
+			t.Errorf("error = %v, want the fixed message only", err)
+		}
+	})
+	t.Run("oversized", func(t *testing.T) {
+		t.Parallel()
+		raw, _, err := PostJSON(t.Context(), client, srv.URL+"/large", nil, nil, "test")
+		var pe *Error
+		if !errors.As(err, &pe) || pe.Kind != Permanent || pe.Status != 0 || !errors.Is(err, ErrResponseTooLarge) || raw != nil {
+			t.Fatalf("PostJSON = %q, %v; want a permanent ErrResponseTooLarge", raw, err)
+		}
+		if strings.Contains(err.Error(), secret) || pe.Message != "test: response body too large" {
+			t.Errorf("error = %v, want the fixed message only", err)
+		}
+	})
+	t.Run("invalid URL", func(t *testing.T) {
+		t.Parallel()
+		_, _, err := PostJSON(t.Context(), client, "http://[::1", nil, nil, "test")
+		var pe *Error
+		if !errors.As(err, &pe) || pe.Kind != Permanent || pe.Message != "test: invalid endpoint URL" {
+			t.Errorf("error = %v, want a permanent invalid URL", err)
+		}
+	})
+	t.Run("connection refused", func(t *testing.T) {
+		t.Parallel()
+		closed := httptest.NewServer(http.NotFoundHandler())
+		url := closed.URL
+		closed.Close()
+		_, _, err := PostJSON(t.Context(), client, url, nil, nil, "test")
+		if Classify(err) != Retryable {
+			t.Errorf("error = %v, want retryable", err)
+		}
+	})
+}
+
+func TestRefused(t *testing.T) {
+	t.Parallel()
+	if got, want := *Refused(200, "m"), (Error{Kind: Permanent, Status: 200, Message: "m"}); got != want {
+		t.Errorf("Refused = %+v, want %+v", got, want)
+	}
+}

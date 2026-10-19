@@ -1,8 +1,11 @@
 package provider
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,6 +16,9 @@ import (
 // DefaultMaxResponseBytes caps a provider response body. Model answers are text; a body
 // beyond this is a fault, not an answer.
 const DefaultMaxResponseBytes = 8 << 20
+
+// maxErrorBodyBytes bounds how much of a non-2xx body PostJSON returns.
+const maxErrorBodyBytes = 64 << 10
 
 // ErrResponseTooLarge is returned by a response body read past the client's cap.
 var ErrResponseTooLarge = errors.New("provider: response body exceeds the size cap")
@@ -93,6 +99,47 @@ func StatusError(resp *http.Response, message string) *Error {
 		Message:    message,
 		RetryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now()),
 	}
+}
+
+// PostJSON posts body as JSON to endpoint with the extra header and returns the body and
+// status of a 2xx response. Every failure is an *Error whose message starts with name and
+// never quotes the response: an invalid URL is Permanent, a failed call or body read is
+// classified by Classify, and a non-2xx response is StatusError. With a non-2xx response
+// the returned bytes are at most 64 KiB of its body, for an adapter that names a
+// documented error code; they must never reach an error message.
+func PostJSON(ctx context.Context, client *http.Client, endpoint string, header http.Header, body []byte, name string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, &Error{Message: name + ": invalid endpoint URL"}
+	}
+	maps.Copy(req.Header, header)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, &Error{Kind: Classify(err), Message: name + ": request failed", Err: err}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		return data, resp.StatusCode, StatusError(resp, name+": request rejected")
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		msg := name + ": reading response failed"
+		if errors.Is(err, ErrResponseTooLarge) {
+			msg = name + ": response body too large"
+		}
+		return nil, 0, &Error{Kind: Classify(err), Message: msg, Err: err}
+	}
+	return raw, resp.StatusCode, nil
+}
+
+// Refused is the Permanent error of a 2xx answer that cannot be used (a refusal, a
+// blocked answer, no text): asking again with the same input gets the same answer.
+func Refused(status int, msg string) *Error {
+	return &Error{Kind: Permanent, Status: status, Message: msg}
 }
 
 func retryAfter(v string, now time.Time) time.Duration {
