@@ -211,8 +211,8 @@ func TestRunConfigCheck(t *testing.T) {
 				`error: groups.main.endpoints[0].model: model "claud" is not declared`,
 				`error: roles.judge.group: group "review" is not defined`,
 				"error: limits.job_timeout:",
-				"error: debug.log_content:",
-				"5 blocking problem(s)",
+				"warning: debug.log_content:",
+				"4 blocking problem(s)",
 			},
 		},
 		{
@@ -315,9 +315,9 @@ func TestRunConfigSchema(t *testing.T) {
 			args:     []string{"config", "check", "--config", writeConfig(t, brokenConfig)},
 			wantCode: exitFailure,
 			wantStderr: []string{
-				"error: debug.log_content:",
+				"warning: debug.log_content:",
 				"error: schema: endpoints.anthropic.models.claude.accepts[1]: value must be one of",
-				"5 blocking problem(s)",
+				"4 blocking problem(s)",
 			},
 		},
 		{

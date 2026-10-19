@@ -9,9 +9,9 @@ All notable changes to this project are recorded here, in the format of
 ### Deprecated
 
 - `debug.log_content` has no effect: the content log sink, which was opened but never
-  written, is removed and no `content.log` file is created. The key is still accepted (and
-  still refused with a non-loopback `server.listen`); `vde config check` and `vde serve`
-  warn when it is `true`. It will be removed in 2.0.
+  written, is removed and no `content.log` file is created. The key is still accepted on any
+  `server.listen` (no longer refused off loopback); `vde config check` and `vde serve` warn
+  when it is `true`, so `vde config check --strict` fails on it. It will be removed in 2.0.
 
 ### Removed
 

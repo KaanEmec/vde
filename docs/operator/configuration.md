@@ -193,7 +193,7 @@ them. All counts above (`max_attempts`, `quota.limit`, `rate.*`) must be at leas
 | --- | --- | --- | --- |
 | `logging.level` | string | `info` | `debug`, `info`, `warn` or `error`. What is logged: [privacy](privacy.md). |
 | `logging.format` | string | `json` | `json` or `text`. |
-| `debug.log_content` | bool | `false` | Deprecated and without effect (removal in 2.0): no content is logged anywhere. Still accepted; `true` makes `vde config check` and `vde serve` warn, and is refused with a non-loopback `server.listen`. |
+| `debug.log_content` | bool | `false` | Deprecated and without effect (removal in 2.0): no content is logged anywhere. Still accepted; `true` makes `vde config check` and `vde serve` warn (and fails `vde config check --strict`). |
 
 ## `worker`, `retention`, `audit` and `metrics` (used by `vde serve`)
 

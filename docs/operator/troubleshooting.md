@@ -184,7 +184,6 @@ and carry the line: `config: line 12: endpoints.x.timeout: ...`. Unknown keys ar
 | `server.listen` | `... is not host:port` | Write `127.0.0.1:8090` or `:8090`. |
 | `server.tls` | `cert_file and key_file must be set together` | Set both or neither. |
 | `server.insecure_http` | `must not be true together with server.tls` | Remove one. |
-| `debug.log_content` | `must not be true while server.listen ... is not a loopback address` | Remove the key: it is deprecated and has no effect. |
 | `debug.log_content` (warning) | `has no effect and is deprecated (removal in 2.0)` | Remove the key. |
 | `auth.max_token_ttl` | `must be positive` | |
 | `endpoints` | `at least one endpoint is required` | |

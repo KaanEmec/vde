@@ -91,16 +91,14 @@ var (
 )
 
 func (v *validator) server(c *Config) {
-	host, _, err := net.SplitHostPort(c.Server.Listen)
+	_, _, err := net.SplitHostPort(c.Server.Listen)
 	if err != nil {
 		v.errorf("server.listen", "%q is not host:port", c.Server.Listen)
 	}
 	if (c.Server.TLS.CertFile == "") != (c.Server.TLS.KeyFile == "") {
 		v.errorf("server.tls", "cert_file and key_file must be set together")
 	}
-	if c.Debug.LogContent && (err != nil || !isLoopback(host)) {
-		v.errorf("debug.log_content", "must not be true while server.listen %q is not a loopback address", c.Server.Listen)
-	} else if c.Debug.LogContent {
+	if c.Debug.LogContent {
 		v.warnf("debug.log_content", "has no effect and is deprecated (removal in 2.0): no content is logged")
 	}
 	if c.Server.InsecureHTTP {
