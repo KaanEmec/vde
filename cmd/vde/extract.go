@@ -191,25 +191,9 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 	cfg := l.cfg
 	l.logger.Info("vde extract", "service_version", l.serviceVersion, "version", version.Version)
 
-	maxAttempts := cfg.Limits.MaxAttempts
-	if o.maxAttempts != 0 {
-		if o.maxAttempts < 1 || o.maxAttempts > cfg.Limits.MaxAttempts {
-			return jobOutput{}, fmt.Errorf("--max-attempts %d: must be from 1 to limits.max_attempts (%d)", o.maxAttempts, cfg.Limits.MaxAttempts)
-		}
-		maxAttempts = o.maxAttempts
-	}
-	timeout := cfg.Limits.JobTimeout
-	if o.timeout != 0 {
-		if o.timeout < 0 {
-			return jobOutput{}, fmt.Errorf("--timeout %s: must be positive", o.timeout)
-		}
-		timeout = o.timeout
-	}
-	policy := document.HTMLPolicy(cfg.Documents.HTML)
-	if o.html != "" {
-		if policy, err = document.ResolveHTMLPolicy(cfg.Documents.HTML, o.html); err != nil {
-			return jobOutput{}, fmt.Errorf("--html: %w", err)
-		}
+	maxAttempts, timeout, policy, err := o.jobLimits(cfg)
+	if err != nil {
+		return jobOutput{}, err
 	}
 
 	doc, err := readDocument(o, cfg.Limits)
@@ -248,8 +232,39 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 	}
 	input := l.input(doc, rep, files, maxAttempts, timeout)
 	input.OnAttempt = func(p extract.Progress) { obs.logf("attempt %d: %s", p.Attempts, describeProgress(p)) }
-	res := run(ctx, input, roles)
+	return newJobOutput(run(ctx, input, roles), obs, l.serviceVersion, doc), nil
+}
 
+// jobLimits resolves the flags that override the configuration: the attempt limit, the
+// job timeout and the HTML policy.
+func (o extractOptions) jobLimits(cfg *config.Config) (int, time.Duration, document.HTMLPolicy, error) {
+	maxAttempts := cfg.Limits.MaxAttempts
+	if o.maxAttempts != 0 {
+		if o.maxAttempts < 1 || o.maxAttempts > cfg.Limits.MaxAttempts {
+			return 0, 0, "", fmt.Errorf("--max-attempts %d: must be from 1 to limits.max_attempts (%d)", o.maxAttempts, cfg.Limits.MaxAttempts)
+		}
+		maxAttempts = o.maxAttempts
+	}
+	timeout := cfg.Limits.JobTimeout
+	if o.timeout != 0 {
+		if o.timeout < 0 {
+			return 0, 0, "", fmt.Errorf("--timeout %s: must be positive", o.timeout)
+		}
+		timeout = o.timeout
+	}
+	policy := document.HTMLPolicy(cfg.Documents.HTML)
+	if o.html != "" {
+		var err error
+		if policy, err = document.ResolveHTMLPolicy(cfg.Documents.HTML, o.html); err != nil {
+			return 0, 0, "", fmt.Errorf("--html: %w", err)
+		}
+	}
+	return maxAttempts, timeout, policy, nil
+}
+
+// newJobOutput logs the outcome and the usage the observer counted, and returns the
+// job's output.
+func newJobOutput(res extract.Outcome, obs *observer, serviceVersion string, doc *document.Document) jobOutput {
 	calls, in, outTokens := obs.usage()
 	summary := string(res.Status) + ", verification " + res.Verification
 	if res.Error != nil {
@@ -264,7 +279,7 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		Feedback:        res.Feedback,
 		Attempts:        res.Attempts,
 		Usage:           extract.Usage{InputTokens: in, OutputTokens: outTokens, Calls: calls},
-		ServiceVersion:  l.serviceVersion,
+		ServiceVersion:  serviceVersion,
 		JudgeConfidence: res.JudgeConfidence,
 		Error:           res.Error,
 		Verification:    res.Verification,
@@ -273,7 +288,7 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 	for _, a := range doc.Attachments {
 		out.Attachments = append(out.Attachments, attachment{Name: a.Filename, MediaType: a.MediaType, Bytes: a.Size})
 	}
-	return out, nil
+	return out
 }
 
 // localRun is what vde extract and vde eval set up alike to run the loop in this

@@ -92,81 +92,18 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 	if code, done := parseFlags(fs, args); done {
 		return code
 	}
-	configSet := false
-	fs.Visit(func(f *flag.Flag) { configSet = configSet || f.Name == "config" })
-	usageErr := func(format string, args ...any) int {
-		fmt.Fprintf(stderr, "vde eval: "+format+"\n", args...)
+	cases, prev, err := o.load(fs)
+	if err != nil {
+		fmt.Fprintf(stderr, "vde eval: %v\n", err)
 		return exitUsage
 	}
-	switch {
-	case fs.NArg() > 0:
-		return usageErr("unexpected argument %q", fs.Arg(0))
-	case o.corpus == "":
-		return usageErr("--corpus is required")
-	case o.concurrency < 1:
-		return usageErr("--concurrency must be at least 1")
-	case o.url != "" && configSet:
-		return usageErr("--config and --url exclude each other")
-	case o.url != "" && o.providerScript != "":
-		return usageErr("--provider-script runs locally; it excludes --url")
-	case o.url != "" && o.tokenEnv == "":
-		return usageErr("--url needs --token-env")
-	case o.url == "" && o.tokenEnv != "":
-		return usageErr("--token-env is only for --url")
-	}
-
-	if o.judge != "" {
-		if _, err := config.ParseJudgePolicy(o.judge); err != nil {
-			return usageErr("--judge: %v", err)
-		}
-	}
-	patterns, err := eval.ParseCases(o.cases)
-	if err != nil {
-		return usageErr("--cases: %v", err)
-	}
-
-	var prev *eval.Report
-	if o.compare != "" {
-		r, err := eval.LoadReport(o.compare)
-		if err != nil {
-			return usageErr("--compare: %v", err)
-		}
-		prev = &r
-	}
-	cases, err := eval.LoadCorpus(o.corpus, patterns...)
-	if err != nil {
-		return usageErr("%v", err)
-	}
-	if len(cases) == 0 {
-		return usageErr("no case in %s matches %q", o.corpus, o.cases)
-	}
-
 	report := eval.Report{Corpus: o.corpus, Cases: o.cases, Concurrency: o.concurrency, Target: "local", JudgePolicy: o.judge}
-	var runner eval.Runner
-	if o.url != "" {
-		token := os.Getenv(o.tokenEnv)
-		if token == "" {
-			return usageErr("--token-env %s: the variable is not set", o.tokenEnv)
-		}
-		base, err := url.Parse(strings.TrimSuffix(o.url, "/"))
-		if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
-			return usageErr("--url %q: want an http or https URL", o.url)
-		}
-		report.Target = base.String()
-		runner = (&httpEngine{base: base.String(), token: token, judge: o.judge, client: &http.Client{Timeout: 2 * time.Minute}}).run
-	} else {
-		engine, err := newLocalEngine(o, stderr)
-		if err != nil {
-			fmt.Fprintf(stderr, "vde eval: %v\n", err)
-			return exitUsage
-		}
-		report.ServiceVersion = engine.serviceVersion
-		report.JudgePolicy = engine.judgePolicy.String()
-		report.Extractor = groupPairs(engine.cfg, engine.cfg.Roles.Extractor.Group)
-		report.Judge = groupPairs(engine.cfg, engine.cfg.Roles.Judge.Group)
-		runner = engine.run
-		defer func() { _ = engine.pdf.Close() }()
+	runner, closeRunner, err := o.runner(&report, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "vde eval: %v\n", err)
+		return exitUsage
 	}
+	defer closeRunner()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -202,6 +139,85 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	return exitOK
+}
+
+// load checks the flags in fs (o holds their values) and loads the --compare report (nil
+// without the flag) and the corpus cases that --cases selects. Its errors are usage
+// errors.
+func (o evalOptions) load(fs *flag.FlagSet) ([]eval.Case, *eval.Report, error) {
+	configSet := false
+	fs.Visit(func(f *flag.Flag) { configSet = configSet || f.Name == "config" })
+	switch {
+	case fs.NArg() > 0:
+		return nil, nil, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	case o.corpus == "":
+		return nil, nil, errors.New("--corpus is required")
+	case o.concurrency < 1:
+		return nil, nil, errors.New("--concurrency must be at least 1")
+	case o.url != "" && configSet:
+		return nil, nil, errors.New("--config and --url exclude each other")
+	case o.url != "" && o.providerScript != "":
+		return nil, nil, errors.New("--provider-script runs locally; it excludes --url")
+	case o.url != "" && o.tokenEnv == "":
+		return nil, nil, errors.New("--url needs --token-env")
+	case o.url == "" && o.tokenEnv != "":
+		return nil, nil, errors.New("--token-env is only for --url")
+	}
+
+	if o.judge != "" {
+		if _, err := config.ParseJudgePolicy(o.judge); err != nil {
+			return nil, nil, fmt.Errorf("--judge: %w", err)
+		}
+	}
+	patterns, err := eval.ParseCases(o.cases)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--cases: %w", err)
+	}
+
+	var prev *eval.Report
+	if o.compare != "" {
+		r, err := eval.LoadReport(o.compare)
+		if err != nil {
+			return nil, nil, fmt.Errorf("--compare: %w", err)
+		}
+		prev = &r
+	}
+	cases, err := eval.LoadCorpus(o.corpus, patterns...)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(cases) == 0 {
+		return nil, nil, fmt.Errorf("no case in %s matches %q", o.corpus, o.cases)
+	}
+	return cases, prev, nil
+}
+
+// runner returns what runs each case, against the deployment of --url or in this
+// process, with the function that releases it, and fills the report's target, versions
+// and endpoints. Its errors are usage errors.
+func (o evalOptions) runner(report *eval.Report, stderr io.Writer) (eval.Runner, func(), error) {
+	if o.url != "" {
+		token := os.Getenv(o.tokenEnv)
+		if token == "" {
+			return nil, nil, fmt.Errorf("--token-env %s: the variable is not set", o.tokenEnv)
+		}
+		base, err := url.Parse(strings.TrimSuffix(o.url, "/"))
+		if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
+			return nil, nil, fmt.Errorf("--url %q: want an http or https URL", o.url)
+		}
+		report.Target = base.String()
+		engine := &httpEngine{base: base.String(), token: token, judge: o.judge, client: &http.Client{Timeout: 2 * time.Minute}}
+		return engine.run, func() {}, nil
+	}
+	engine, err := newLocalEngine(o, stderr)
+	if err != nil {
+		return nil, nil, err
+	}
+	report.ServiceVersion = engine.serviceVersion
+	report.JudgePolicy = engine.judgePolicy.String()
+	report.Extractor = groupPairs(engine.cfg, engine.cfg.Roles.Extractor.Group)
+	report.Judge = groupPairs(engine.cfg, engine.cfg.Roles.Judge.Group)
+	return engine.run, func() { _ = engine.pdf.Close() }, nil
 }
 
 // describeCase is one progress line: the case id, its outcome and counts, never content.

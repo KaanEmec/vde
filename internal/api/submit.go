@@ -138,33 +138,17 @@ func (s *server) submitJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, jobToResponse(j))
 }
 
-// createJob is the submission path POST /v1/jobs and POST /v1/extract share. It refuses
-// or accepts in this order: submissions in flight in this process and per application
-// (limits.max_submits_in_flight, submitSlots), before any part is kept; the global queue
-// ceiling (limits.max_queued_jobs), before any part is kept unless the request carries an
-// Idempotency-Key (then after the replay lookup, see below); then it reads the whole
-// request under the limits, multipart or JSON (submit_json.go), with the part rules and
-// options; the replay of a used Idempotency-Key; the submissions per minute, jobs in
-// progress and a read-only look at the quota; only then the work that costs more than
-// reading: the document url fetch, the document checks and image conversion, the schema
-// compilation and the representation (the PDF engine); last the quota charge. The body
-// itself is read before the limits because multipart parts arrive in the caller's order
-// and the idempotency hash covers them all. Nothing is stored before every check passed.
-// No content is ever logged or quoted in an error. done is true when it has answered: a
-// refusal, or the replay of an Idempotency-Key; otherwise the job is stored and the pool
-// woken, and the caller answers.
+// createJob is the submission path POST /v1/jobs and POST /v1/extract share. Its steps
+// refuse in the order of the contract checks: the cheap limits before any part is kept,
+// then the whole body read under the limits (the idempotency hash covers every part),
+// then the work that costs more than reading, and the quota charge last. Nothing is
+// stored before every check passed, and no content is logged or quoted in an error.
+// done is true when it has answered: a refusal, or the replay of an Idempotency-Key;
+// otherwise the job is stored and the pool woken, and the caller answers.
 func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, done bool) {
-	ctx := r.Context()
-	app, _ := ApplicationFrom(ctx)
+	app, _ := ApplicationFrom(r.Context())
 	cfg := s.deps.Config
-	requestLimit := cfg.Limits.RequestBytes
-	r.Body = &limitedBody{ReadCloser: http.MaxBytesReader(w, r.Body, requestLimit)}
-	// Every refusal first reads what is left of the body, up to the request limit, so
-	// the client sees the status instead of a reset connection.
-	refuse := func(err error) {
-		drainBody(r)
-		writeError(w, err)
-	}
+	r.Body = &limitedBody{ReadCloser: http.MaxBytesReader(w, r.Body, cfg.Limits.RequestBytes)}
 
 	// The submissions in flight come first, before any part is buffered, for every
 	// request, replays included: the slot is what bounds the memory of bodies being read.
@@ -172,13 +156,13 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	// keeping it and answers at once.
 	release, ok := s.submits.take(app.ID)
 	if !ok {
-		refuse(newError(codeUnavailable, msgSubmitsBusy).withRetryAfter(submitsBusyRetryAfter))
+		refuse(w, r, newError(codeUnavailable, msgSubmitsBusy).withRetryAfter(submitsBusyRetryAfter))
 		return nil, true
 	}
 	defer release()
 	key := r.Header.Get(headerIdempotencyKey)
 	if utf8.RuneCountInString(key) > maxIdempotencyKeyChars {
-		refuse(newError(codeBadRequest, msgIdempotencyKeyTooLong, maxIdempotencyKeyChars))
+		refuse(w, r, newError(codeBadRequest, msgIdempotencyKeyTooLong, maxIdempotencyKeyChars))
 		return nil, true
 	}
 	// The queue ceiling refuses before the body is read, except for a request with an
@@ -188,83 +172,33 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	if key == "" && !s.queueRoom(w, r) {
 		return nil, true
 	}
-	var sub *submission
-	var err error
-	if mediaTypeIn(r.Header.Get("Content-Type"), "", "application/json") {
-		sub, err = s.readJSONSubmission(r, cfg, requestLimit)
-	} else {
-		sub, err = readSubmission(r, cfg.Limits, requestLimit)
-	}
+	sub, err := s.readBody(r)
 	if err != nil {
-		refuse(err)
+		refuse(w, r, err)
 		return nil, true
 	}
 	retention, maxAttempts, err := sub.options(app)
 	if err != nil {
-		refuse(err)
+		refuse(w, r, err)
 		return nil, true
 	}
 	policy, err := sub.judgePolicy(app, cfg)
 	if err != nil {
-		refuse(err)
+		refuse(w, r, err)
 		return nil, true
 	}
-
 	if key != "" {
 		unlock := s.limits.lockKey(app.ID, key)
 		defer unlock()
-		existing, found := s.findIdempotent(w, r, app, key)
-		if existing == nil {
-			return nil, true // the lookup failed and was answered
-		}
-		if found {
-			// The replay needs the body hash only: the job was checked when it was created.
-			if err := s.fetchPending(r, sub, cfg.Limits); err != nil {
-				refuse(err)
-				return nil, true
-			}
-			s.answerReplay(w, r, *existing, sub.hash())
-			return nil, true
-		}
-		if !s.queueRoom(w, r) {
+		if s.replayKeyed(w, r, app, key, sub) {
 			return nil, true
 		}
 	}
 	if !s.limitSubmit(w, r, app) {
 		return nil, true
 	}
-	if err := s.fetchPending(r, sub, cfg.Limits); err != nil {
-		refuse(err)
-		return nil, true
-	}
-
-	pages := make([]document.Page, len(sub.pages))
-	for i, p := range sub.pages {
-		pages[i] = document.Page{MediaType: p.mediaType, Data: p.data}
-	}
-	doc, err := document.New(document.Input{
-		MediaType: sub.document.mediaType, Data: sub.document.data, Filename: sub.document.filename, Pages: pages,
-	}, cfg.Limits)
-	if err != nil {
-		s.refuseDocument(w, r, err)
-		return nil, true
-	}
-	var schema string
-	if sub.schema != nil {
-		if _, err := extract.CompileSchema(sub.schema.data); err != nil {
-			refuse(newError(codeInvalidSchema, msgInvalidSchema))
-			return nil, true
-		}
-		schema = string(sub.schema.data)
-	}
-	rep, err := selectRepresentation(r.Context(), cfg, app, doc, s.deps.PDF)
-	if err != nil {
-		s.refuseDocument(w, r, err)
-		return nil, true
-	}
-
-	bodyHash := sub.hash()
-	if !s.chargeSubmit(w, r, app) {
+	doc, schema, rep, done := s.prepare(w, r, app, sub)
+	if done || !s.chargeSubmit(w, r, app) {
 		return nil, true
 	}
 
@@ -278,7 +212,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		PageCount:             len(doc.Pages),
 		Retention:             retention,
 		IdempotencyKey:        key,
-		BodyHash:              bodyHash,
+		BodyHash:              sub.hash(),
 		Attachments:           jobAttachments(doc.Attachments),
 		ExtractorInstructions: string(sub.extractorInstructions.data),
 		JudgeInstructions:     string(sub.judgeInstructions.data),
@@ -287,15 +221,101 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 		JudgePolicy:           string(policy),
 		CreatedAt:             s.now(),
 	}
-	err = s.storeJob(ctx, j, doc)
-	if errors.Is(err, job.ErrDuplicate) && key != "" && s.replay(w, r, app, key, bodyHash) {
-		return nil, true // another process created the job with this key between lookup and insert
+	if !s.insert(w, r, app, j, doc) {
+		return nil, true
+	}
+	return j, false
+}
+
+// refuse answers err after reading what is left of the body, up to the request limit,
+// so the client sees the status instead of a reset connection.
+func refuse(w http.ResponseWriter, r *http.Request, err error) {
+	drainBody(r)
+	writeError(w, err)
+}
+
+// readBody reads the whole request under the limits, multipart (readSubmission) or
+// JSON (readJSONSubmission), with the part rules.
+func (s *server) readBody(r *http.Request) (*submission, error) {
+	cfg := s.deps.Config
+	if mediaTypeIn(r.Header.Get("Content-Type"), "", "application/json") {
+		return s.readJSONSubmission(r, cfg, cfg.Limits.RequestBytes)
+	}
+	return readSubmission(r, cfg.Limits, cfg.Limits.RequestBytes)
+}
+
+// replayKeyed looks up the Idempotency-Key under its lock. A used key is replayed, after
+// the document url fetch (the body hash covers the fetched bytes); an unused one meets the
+// queue ceiling the request skipped before its body was read. It reports true when it
+// has answered.
+func (s *server) replayKeyed(w http.ResponseWriter, r *http.Request, app job.Application, key string, sub *submission) bool {
+	existing, found := s.findIdempotent(w, r, app, key)
+	if existing == nil {
+		return true // the lookup failed and was answered
+	}
+	if found {
+		// The replay needs the body hash only: the job was checked when it was created.
+		if err := s.fetchPending(r, sub, s.deps.Config.Limits); err != nil {
+			refuse(w, r, err)
+			return true
+		}
+		s.answerReplay(w, r, *existing, sub.hash())
+		return true
+	}
+	return !s.queueRoom(w, r)
+}
+
+// prepare does the work that costs more than reading, in order: the document url fetch,
+// the document checks and image conversion, the schema compilation and the
+// representation (the PDF engine). done is true when it has refused.
+func (s *server) prepare(w http.ResponseWriter, r *http.Request, app job.Application, sub *submission) (
+	doc *document.Document, schema string, rep document.Representation, done bool) {
+	cfg := s.deps.Config
+	if err := s.fetchPending(r, sub, cfg.Limits); err != nil {
+		refuse(w, r, err)
+		return nil, "", rep, true
+	}
+	pages := make([]document.Page, len(sub.pages))
+	for i, p := range sub.pages {
+		pages[i] = document.Page{MediaType: p.mediaType, Data: p.data}
+	}
+	doc, err := document.New(document.Input{
+		MediaType: sub.document.mediaType, Data: sub.document.data, Filename: sub.document.filename, Pages: pages,
+	}, cfg.Limits)
+	if err != nil {
+		s.refuseDocument(w, r, err)
+		return nil, "", rep, true
+	}
+	if sub.schema != nil {
+		if _, err := extract.CompileSchema(sub.schema.data); err != nil {
+			refuse(w, r, newError(codeInvalidSchema, msgInvalidSchema))
+			return nil, "", rep, true
+		}
+		schema = string(sub.schema.data)
+	}
+	rep, err = selectRepresentation(r.Context(), cfg, app, doc, s.deps.PDF)
+	if err != nil {
+		s.refuseDocument(w, r, err)
+		return nil, "", rep, true
+	}
+	return doc, schema, rep, false
+}
+
+// insert stores the job and its blobs, counts it as queued, sets the job's
+// service_version header, records the audit event and wakes the pool. It reports false
+// when it has answered: the store failed, or another process created the job with the
+// same Idempotency-Key between the lookup and the insert (then the replay answers).
+func (s *server) insert(w http.ResponseWriter, r *http.Request, app job.Application, j *job.Job, doc *document.Document) bool {
+	ctx := r.Context()
+	err := s.storeJob(ctx, j, doc)
+	if errors.Is(err, job.ErrDuplicate) && j.IdempotencyKey != "" && s.replay(w, r, app, j.IdempotencyKey, j.BodyHash) {
+		return false
 	}
 	if err != nil {
 		s.storeUnavailable(w, r, "job not stored", err)
-		return nil, true
+		return false
 	}
-	if cfg.Limits.MaxQueuedJobs > 0 {
+	if s.deps.Config.Limits.MaxQueuedJobs > 0 {
 		s.queued.add()
 	}
 	w.Header().Set(headerServiceVersion, j.ServiceVersion) // the version of the job's policy
@@ -304,7 +324,7 @@ func (s *server) createJob(w http.ResponseWriter, r *http.Request) (_ *job.Job, 
 	if s.deps.Wake != nil {
 		s.deps.Wake()
 	}
-	return j, false
+	return true
 }
 
 // queueRoom applies limits.max_queued_jobs: it reports false after refusing with 503
@@ -397,13 +417,12 @@ func (q *queuedCount) add() {
 }
 
 // readSubmission streams the multipart body, enforcing the part rules and the per-part
-// limits while reading. It reports false with the refusal on the first violation.
+// limits while reading. It returns the refusal of the first violation.
 func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (*submission, error) {
 	mr, err := r.MultipartReader()
 	if err != nil {
 		return nil, newError(codeBadRequest, msgNotMultipart)
 	}
-	maxPages := limits.Pages
 	sub := &submission{}
 	for {
 		p, err := mr.NextPart()
@@ -414,46 +433,9 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 			return nil, readError(r, err, requestLimit)
 		}
 		name := p.FormName()
-		var slot **part
-		var limit int64
-		switch name {
-		case partDocument:
-			slot, limit = &sub.document, limits.DocumentBytes
-			if p.Header.Get("Content-Type") == "" {
-				return nil, newError(codeBadRequest, msgPartNoMediaType, partDocument)
-			}
-		case partPage:
-			if len(sub.pages) == maxPages {
-				return nil, newError(codePayloadTooLarge, msgTooManyPages, maxPages)
-			}
-			limit = limits.PageBytes
-		case partExtractorInstructions, partJudgeInstructions:
-			slot, limit = &sub.extractorInstructions, maxInstructionsBytes
-			if name == partJudgeInstructions {
-				slot = &sub.judgeInstructions
-			}
-			if !mediaTypeIn(p.Header.Get("Content-Type"), "text/plain", "text/plain", "text/markdown") {
-				return nil, newError(codeBadRequest, msgPartMediaType, name)
-			}
-		case partSchema:
-			slot, limit = &sub.schema, maxSchemaBytes
-			if !mediaTypeIn(p.Header.Get("Content-Type"), "", "application/schema+json", "application/json") {
-				return nil, newError(codeBadRequest, msgPartMediaType, name)
-			}
-		case partRetention:
-			slot, limit = &sub.retention, maxOptionBytes
-		case partMaxAttempts:
-			slot, limit = &sub.maxAttempts, maxOptionBytes
-		case partJudge:
-			slot, limit = &sub.judge, maxJudgeBytes
-			if !mediaTypeIn(p.Header.Get("Content-Type"), "text/plain", "text/plain") {
-				return nil, newError(codeBadRequest, msgPartMediaType, name)
-			}
-		default:
-			return nil, newError(codeBadRequest, msgUnknownPart)
-		}
-		if slot != nil && *slot != nil {
-			return nil, newError(codeBadRequest, msgPartRepeated, name)
+		slot, limit, err := sub.partSlot(p, name, limits)
+		if err != nil {
+			return nil, err
 		}
 		read, err := readPart(p, limit)
 		switch {
@@ -486,6 +468,55 @@ func readSubmission(r *http.Request, limits config.Limits, requestLimit int64) (
 		}
 	}
 	return sub, nil
+}
+
+// partSlot applies the part rules to the part p, named name, before it is read: it
+// returns the submission field the part goes to (nil for a page) and its size limit, or
+// the refusal (an unknown or repeated part, a missing or wrong media type, a page too
+// many).
+func (sub *submission) partSlot(p *multipart.Part, name string, limits config.Limits) (**part, int64, error) {
+	var slot **part
+	var limit int64
+	switch name {
+	case partDocument:
+		slot, limit = &sub.document, limits.DocumentBytes
+		if p.Header.Get("Content-Type") == "" {
+			return nil, 0, newError(codeBadRequest, msgPartNoMediaType, partDocument)
+		}
+	case partPage:
+		if len(sub.pages) == limits.Pages {
+			return nil, 0, newError(codePayloadTooLarge, msgTooManyPages, limits.Pages)
+		}
+		limit = limits.PageBytes
+	case partExtractorInstructions, partJudgeInstructions:
+		slot, limit = &sub.extractorInstructions, maxInstructionsBytes
+		if name == partJudgeInstructions {
+			slot = &sub.judgeInstructions
+		}
+		if !mediaTypeIn(p.Header.Get("Content-Type"), "text/plain", "text/plain", "text/markdown") {
+			return nil, 0, newError(codeBadRequest, msgPartMediaType, name)
+		}
+	case partSchema:
+		slot, limit = &sub.schema, maxSchemaBytes
+		if !mediaTypeIn(p.Header.Get("Content-Type"), "", "application/schema+json", "application/json") {
+			return nil, 0, newError(codeBadRequest, msgPartMediaType, name)
+		}
+	case partRetention:
+		slot, limit = &sub.retention, maxOptionBytes
+	case partMaxAttempts:
+		slot, limit = &sub.maxAttempts, maxOptionBytes
+	case partJudge:
+		slot, limit = &sub.judge, maxJudgeBytes
+		if !mediaTypeIn(p.Header.Get("Content-Type"), "text/plain", "text/plain") {
+			return nil, 0, newError(codeBadRequest, msgPartMediaType, name)
+		}
+	default:
+		return nil, 0, newError(codeBadRequest, msgUnknownPart)
+	}
+	if slot != nil && *slot != nil {
+		return nil, 0, newError(codeBadRequest, msgPartRepeated, name)
+	}
+	return slot, limit, nil
 }
 
 var errPartTooLarge = errors.New("api: part exceeds its limit")

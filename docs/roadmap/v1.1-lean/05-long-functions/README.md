@@ -1,6 +1,6 @@
 # Epic 05: Long functions
 
-Version: v1.1 · Status: in progress · Depends on: 02, 03
+Version: v1.1 · Status: done · Depends on: 02, 03
 
 After the deletions and merges, split the few functions that are still long enough to hide
 their structure. Structure only. Splitting happens last so it works on the smaller code.
@@ -8,4 +8,4 @@ their structure. Structure only. Splitting happens last so it works on the small
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [The extraction loop and the verdict parser](01-extraction-loop.md) | done |
-| 02 | [Serve wiring and the submit path](02-serve-and-submit.md) | planned |
+| 02 | [Serve wiring and the submit path](02-serve-and-submit.md) | done |

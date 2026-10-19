@@ -18,6 +18,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/api"
 	"github.com/kaanemec/vde/internal/audit"
+	"github.com/kaanemec/vde/internal/blob"
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/extract"
@@ -151,36 +152,80 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 			}
 		}
 	}()
-	m := metrics.New(cfg.Metrics.GoRuntime)
-	roles, err := extract.NewRoles(cfg, build)
-	if err != nil {
+	p := &process{cfg: cfg, role: role, logger: logger, metrics: metrics.New(cfg.Metrics.GoRuntime)}
+	if p.roles, err = extract.NewRoles(cfg, build); err != nil {
 		return err
 	}
-	meter(roles, m)
-	runsJobs := role != api.RoleAPI
-	instance := instanceID()
-	if runsJobs {
-		m.WatchEndpoints(instance, endpointStates(roles))
+	meter(p.roles, p.metrics)
+	p.instance = instanceID()
+	if p.runsJobs() {
+		p.metrics.WatchEndpoints(p.instance, endpointStates(p.roles))
 	}
-	store, err := openStore(ctx, cfg)
-	if err != nil {
+	if p.store, err = openStore(ctx, cfg); err != nil {
 		return err
 	}
-	defer store.Close()
-	blobs, err := openBlobs(ctx, cfg)
-	if err != nil {
+	defer p.store.Close()
+	if p.blobs, err = openBlobs(ctx, cfg); err != nil {
 		return err
 	}
 	logger.Info("storage opened", storageAttrs(cfg)...)
 	// One pdfium engine per process (ADR 0010), started by the first PDF that needs it:
 	// submit selects with it (--role api and all), workers re-select and render with it.
-	pdfEngine, err := newPDFEngine(cfg, pdf.CacheDir(cfg.Server.DataDir))
+	if p.pdf, err = newPDFEngine(cfg, pdf.CacheDir(cfg.Server.DataDir)); err != nil {
+		return err
+	}
+	defer func() { _ = p.pdf.Close() }()
+	warmPDF(ctx, logger, p.pdf, cfg.Documents.PDF.Mode != "native")
+
+	deps, err := p.buildDeps(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = pdfEngine.Close() }()
-	warmPDF(ctx, logger, pdfEngine, cfg.Documents.PDF.Mode != "native")
+	if err := p.newServers(deps, adminLn); err != nil {
+		return err
+	}
+	// The pool and the sweeper outlive the signal: they stop after the HTTP drain.
+	bgCtx, stopBackground := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopBackground()
+	p.stopBackground = stopBackground
+	p.startServers(bgCtx, ln, adminLn, deps.ServiceVersion)
+	return p.drain(p.wait(ctx))
+}
 
+// process is one vde serve process: what serveAs opens, the workers and servers wired
+// from it, and what drain stops.
+type process struct {
+	cfg      *config.Config
+	role     string
+	instance string
+	logger   *slog.Logger
+	metrics  *metrics.Metrics
+	roles    extract.Roles
+	store    *job.DB
+	blobs    blob.Store
+	pdf      *pdf.Engine
+
+	pool  *worker.Pool
+	sweep *worker.Sweeper
+	hooks *webhook.Dispatcher
+
+	srv, adminSrv, metricsSrv *http.Server // adminSrv and metricsSrv nil when not configured
+	metricsLn                 net.Listener
+	errc                      chan error // the Serve result of every started server
+	servers                   int        // started servers whose result is still to be read
+	sweepDone                 chan struct{}
+	stopBackground            context.CancelFunc
+}
+
+// runsJobs reports whether the process runs the worker pool and the sweeper (roles all
+// and worker).
+func (p *process) runsJobs() bool { return p.role != api.RoleAPI }
+
+// buildDeps writes the startup warnings and the configuration's audit event, mirrors the
+// configured applications into the store, builds the workers and returns the API's
+// dependencies.
+func (p *process) buildDeps(ctx context.Context) (api.Deps, error) {
+	cfg, logger := p.cfg, p.logger
 	if len(cfg.Applications) == 0 {
 		logger.Warn("no applications are configured: every /v1 request is refused")
 	}
@@ -192,26 +237,56 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 	if cfg.Audit.Log {
 		auditLogger = logger
 	}
-	rec := audit.New(store, audit.Options{Logger: auditLogger})
-	if err := syncApplications(ctx, store, rec, cfg.Applications, time.Now()); err != nil {
-		return err
+	rec := audit.New(p.store, audit.Options{Logger: auditLogger})
+	if err := syncApplications(ctx, p.store, rec, cfg.Applications, time.Now()); err != nil {
+		return api.Deps{}, err
 	}
 	serviceVersion := extract.ServiceVersion(cfg, version.Version)
 	if err := rec.Record(ctx, audit.ActorConfig, "", "", audit.ConfigLoaded{ServiceVersion: serviceVersion}); err != nil {
 		logger.Warn("audit event not written", "kind", string(audit.ConfigLoadedKind), "error", err)
 	}
-	// The service_version of an application's jobs follows its stored row (attempt limit,
-	// HTML policy and judge settings) and the job's judge policy, so applications created
-	// or changed over the admin API get theirs.
-	appVersion := func(a job.Application, policy config.JudgePolicy) string {
-		app := storedApplication(a)
-		app.Documents.PDF.Mode = cfg.PDFModeOf(a.ID)
-		if policy == "" {
-			policy = cfg.JudgePolicyOf(app)
-		}
-		return extract.ApplicationServiceVersion(cfg, app, policy, version.Version)
+	if err := p.logApplications(ctx); err != nil {
+		return api.Deps{}, err
 	}
-	apps, err := store.ListApplications(ctx)
+	completions := p.newWorkers(rec)
+	deps := api.Deps{
+		Config:            cfg,
+		Store:             p.store,
+		ServiceVersion:    serviceVersion,
+		AppServiceVersion: p.appVersion,
+		Logger:            logger,
+		Extractor:         p.roles.ExtractorHealthy,
+		Judge:             p.roles.JudgeHealthy,
+		Blobs:             p.blobs,
+		Metrics:           p.metrics,
+		Audit:             rec.WithActor(audit.ActorAPI),
+		PDF:               document.PDFEngineOf(p.pdf),
+		Role:              p.role,
+	}
+	if p.runsJobs() {
+		// Within the process a submission wakes a worker at once; other processes' workers
+		// find it at their next poll (worker.poll_interval).
+		deps.Wake, deps.Completions = p.pool.Wake, completions
+	}
+	return deps, nil
+}
+
+// appVersion is the service_version of an application's jobs: it follows the stored row
+// (attempt limit, HTML policy and judge settings) and the job's judge policy, so
+// applications created or changed over the admin API get theirs.
+func (p *process) appVersion(a job.Application, policy config.JudgePolicy) string {
+	app := storedApplication(a)
+	app.Documents.PDF.Mode = p.cfg.PDFModeOf(a.ID)
+	if policy == "" {
+		policy = p.cfg.JudgePolicyOf(app)
+	}
+	return extract.ApplicationServiceVersion(p.cfg, app, policy, version.Version)
+}
+
+// logApplications logs every enabled application with its service_version and sets its
+// jobs in progress, those left queued or running by a previous process.
+func (p *process) logApplications(ctx context.Context) error {
+	apps, err := p.store.ListApplications(ctx)
 	if err != nil {
 		return err
 	}
@@ -219,149 +294,153 @@ func serveAs(ctx context.Context, role string, cfg *config.Config, ln, adminLn n
 		if !a.Enabled {
 			continue
 		}
-		logger.Info("application enabled", "app_id", a.ID, "source", a.Source, "service_version", appVersion(a, ""))
-		if n, err := store.CountInProgress(ctx, a.ID); err == nil {
-			m.SetJobsInProgress(a.ID, n) // jobs left queued or running by a previous process
+		p.logger.Info("application enabled", "app_id", a.ID, "source", a.Source, "service_version", p.appVersion(a, ""))
+		if n, err := p.store.CountInProgress(ctx, a.ID); err == nil {
+			p.metrics.SetJobsInProgress(a.ID, n) // jobs left queued or running by a previous process
 		}
 	}
+	return nil
+}
 
-	// The completion hook: wake POST /v1/extract waiters, queue the webhooks. A worker
-	// process sends the webhooks of the jobs it finished; an API-only process has no
-	// in-process completions and POST /v1/extract polls the store.
+// newWorkers builds the worker pool, the sweeper and the webhook sender, and returns the
+// completion notifier. The completion hook wakes POST /v1/extract waiters and queues the
+// webhooks: a worker process sends the webhooks of the jobs it finished; an API-only
+// process has no in-process completions and POST /v1/extract polls the store.
+func (p *process) newWorkers(rec *audit.Recorder) *worker.Notifier {
 	completions := worker.NewNotifier()
-	hooks := webhook.New(webhookTargets(cfg), webhook.Options{Audit: rec, Logger: logger})
-	pool := worker.New(store, blobs, cfg, roles, worker.Options{
-		WorkerID: instance,
-		Metrics:  m,
-		Logger:   logger,
+	p.hooks = webhook.New(webhookTargets(p.cfg), webhook.Options{Audit: rec, Logger: p.logger})
+	p.pool = worker.New(p.store, p.blobs, p.cfg, p.roles, worker.Options{
+		WorkerID: p.instance,
+		Metrics:  p.metrics,
+		Logger:   p.logger,
 		Audit:    rec.WithActor(audit.ActorWorker),
 		OnFinish: func(j job.Job) {
 			completions.Notify(j.ID)
-			hooks.JobFinished(j)
+			p.hooks.JobFinished(j)
 			// vde_jobs_in_progress (queued plus running), one indexed COUNT.
-			if n, err := store.CountInProgress(context.Background(), j.ApplicationID); err == nil {
-				m.SetJobsInProgress(j.ApplicationID, n)
+			if n, err := p.store.CountInProgress(context.Background(), j.ApplicationID); err == nil {
+				p.metrics.SetJobsInProgress(j.ApplicationID, n)
 			}
 		},
-		PDF: document.PDFEngineOf(pdfEngine),
+		PDF: document.PDFEngineOf(p.pdf),
 	})
-	sweep := worker.NewSweeper(store, blobs, cfg, worker.SweepOptions{
-		Logger:  logger,
-		Metrics: m,
+	p.sweep = worker.NewSweeper(p.store, p.blobs, p.cfg, worker.SweepOptions{
+		Logger:  p.logger,
+		Metrics: p.metrics,
 		Audit:   rec.WithActor(audit.ActorSweeper),
-		Lock:    store, // one worker process sweeps at a time
+		Lock:    p.store, // one worker process sweeps at a time
 	})
-	deps := api.Deps{
-		Config:            cfg,
-		Store:             store,
-		ServiceVersion:    serviceVersion,
-		AppServiceVersion: appVersion,
-		Logger:            logger,
-		Extractor:         roles.ExtractorHealthy,
-		Judge:             roles.JudgeHealthy,
-		Blobs:             blobs,
-		Metrics:           m,
-		Audit:             rec.WithActor(audit.ActorAPI),
-		PDF:               document.PDFEngineOf(pdfEngine),
-		Role:              role,
-	}
-	if runsJobs {
-		// Within the process a submission wakes a worker at once; other processes' workers
-		// find it at their next poll (worker.poll_interval).
-		deps.Wake, deps.Completions = pool.Wake, completions
-	}
-	useTLS := cfg.Server.TLS.CertFile != ""
-	srv := newHTTPServer(api.New(deps), logger)
-	var adminSrv *http.Server // same certificate as the main listener with server.tls
+	return completions
+}
+
+// newServers builds the HTTP server, the admin server when adminLn is set (same
+// certificate as the main listener with server.tls) and the metrics server with its
+// listener when metrics.listen is set.
+func (p *process) newServers(deps api.Deps, adminLn net.Listener) error {
+	p.srv = newHTTPServer(api.New(deps), p.logger)
 	if adminLn != nil {
-		adminSrv = newHTTPServer(api.NewAdmin(deps), logger)
+		p.adminSrv = newHTTPServer(api.NewAdmin(deps), p.logger)
 	}
-	if useTLS {
-		srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} // Go's default suites otherwise
-		if adminSrv != nil {
-			adminSrv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	if p.cfg.Server.TLS.CertFile != "" {
+		p.srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} // Go's default suites otherwise
+		if p.adminSrv != nil {
+			p.adminSrv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		}
 	}
-	var metricsSrv *http.Server
-	var metricsLn net.Listener
-	if cfg.Metrics.Listen != "" {
-		if metricsLn, err = net.Listen("tcp", cfg.Metrics.Listen); err != nil {
+	if p.cfg.Metrics.Listen != "" {
+		var err error
+		if p.metricsLn, err = net.Listen("tcp", p.cfg.Metrics.Listen); err != nil {
 			return fmt.Errorf("metrics.listen: %w", err)
 		}
-		metricsSrv = newHTTPServer(api.NewMetrics(m, cfg.Metrics), logger)
+		p.metricsSrv = newHTTPServer(api.NewMetrics(p.metrics, p.cfg.Metrics), p.logger)
 	}
+	return nil
+}
 
-	// The pool and the sweeper outlive the signal: they stop after the HTTP drain.
-	bgCtx, stopBackground := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopBackground()
-	sweepDone := make(chan struct{})
-	if runsJobs {
-		pool.Start(bgCtx)
+// startServers starts the pool and the sweeper on bgCtx (roles all and worker), then
+// every server on its listener.
+func (p *process) startServers(bgCtx context.Context, ln, adminLn net.Listener, serviceVersion string) {
+	cfg := p.cfg
+	p.sweepDone = make(chan struct{})
+	if p.runsJobs() {
+		p.pool.Start(bgCtx)
 		go func() {
-			defer close(sweepDone)
-			sweep.Run(bgCtx)
+			defer close(p.sweepDone)
+			p.sweep.Run(bgCtx)
 		}()
 	} else {
-		close(sweepDone)
+		close(p.sweepDone)
 	}
 
-	logger.Info("vde serve starting",
+	useTLS := cfg.Server.TLS.CertFile != ""
+	p.logger.Info("vde serve starting",
 		"service_version", serviceVersion,
-		"process_role", role,
-		"instance", instance,
+		"process_role", p.role,
+		"instance", p.instance,
 		"listen", ln.Addr().String(),
 		"tls", useTLS,
 		"trusted_proxy", cfg.Server.TrustedProxy,
 		"insecure_http", cfg.Server.InsecureHTTP)
-	errc := make(chan error, 3)
+	p.errc = make(chan error, 3)
 	start := func(srv *http.Server, ln net.Listener) {
 		if useTLS {
-			errc <- srv.ServeTLS(ln, cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile)
+			p.errc <- srv.ServeTLS(ln, cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile)
 			return
 		}
-		errc <- srv.Serve(ln)
+		p.errc <- srv.Serve(ln)
 	}
-	go start(srv, ln)
-	servers := 1
-	if adminSrv != nil {
-		servers++
-		logger.Info("admin listener starting", "listen", adminLn.Addr().String(), "tls", useTLS)
-		go start(adminSrv, adminLn)
+	go start(p.srv, ln)
+	p.servers = 1
+	if p.adminSrv != nil {
+		p.servers++
+		p.logger.Info("admin listener starting", "listen", adminLn.Addr().String(), "tls", useTLS)
+		go start(p.adminSrv, adminLn)
 	}
-	if metricsSrv != nil {
-		servers++
-		logger.Info("metrics listener starting", "listen", metricsLn.Addr().String())
-		go func() { errc <- metricsSrv.Serve(metricsLn) }()
+	if p.metricsSrv != nil {
+		p.servers++
+		p.logger.Info("metrics listener starting", "listen", p.metricsLn.Addr().String())
+		go func() { p.errc <- p.metricsSrv.Serve(p.metricsLn) }()
 	}
+}
 
-	var serveErr error
+// wait returns when ctx is done (nil) or a server stopped (its Serve error).
+func (p *process) wait(ctx context.Context) error {
 	select {
-	case serveErr = <-errc: // a listener failed: stop everything
-		servers--
+	case serveErr := <-p.errc: // a listener failed: stop everything
+		p.servers--
+		return serveErr
 	case <-ctx.Done():
+		return nil
 	}
+}
+
+// drain shuts down within drainTimeout: the servers first, then the pool, the webhook
+// deliveries and the sweeper. It joins every error with serveErr, the error that ended
+// serving (nil on a signal).
+func (p *process) drain(serveErr error) (err error) {
+	logger := p.logger
 	logger.Info("vde serve stopping", "drain_timeout", drainTimeout.String())
 	drainCtx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
-	err = shutdown(drainCtx, srv)
-	if metricsSrv != nil {
-		err = errors.Join(err, shutdown(drainCtx, metricsSrv))
+	err = shutdown(drainCtx, p.srv)
+	if p.metricsSrv != nil {
+		err = errors.Join(err, shutdown(drainCtx, p.metricsSrv))
 	}
-	if adminSrv != nil {
-		err = errors.Join(err, shutdown(drainCtx, adminSrv))
+	if p.adminSrv != nil {
+		err = errors.Join(err, shutdown(drainCtx, p.adminSrv))
 	}
 	// After the HTTP drain no job is submitted any more; running jobs finish within the
 	// rest of the drain time or keep their lease for the next start.
-	if perr := pool.Stop(drainCtx); perr != nil {
+	if perr := p.pool.Stop(drainCtx); perr != nil {
 		logger.Warn("worker pool stopped before its jobs finished; they resume after a restart", "error", perr)
 	}
-	if werr := hooks.Stop(drainCtx); werr != nil {
+	if werr := p.hooks.Stop(drainCtx); werr != nil {
 		logger.Warn("webhook deliveries still pending at shutdown were dropped", "error", werr)
 	}
-	stopBackground()
-	<-sweepDone
-	for range servers {
-		if serr := <-errc; !errors.Is(serr, http.ErrServerClosed) {
+	p.stopBackground()
+	<-p.sweepDone
+	for range p.servers {
+		if serr := <-p.errc; !errors.Is(serr, http.ErrServerClosed) {
 			err = errors.Join(err, serr)
 		}
 	}
