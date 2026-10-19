@@ -53,7 +53,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 | `test/conformance/` | Black-box suite for the TravelInbox contract (`doc.go`) |
 | `docs/` | Architecture and ADRs, roadmap, operator, API, providers, conformance, security, quality |
 | `examples/` | Example configs, compose (single and `scaled`), synthetic samples ([README](examples/README.md)) |
-| `testdata/` | `scenarios/` (fake-provider scripts), `eval/` (corpus), `travelinbox/` (co-owned assets, [README](testdata/travelinbox/README.md)); `user-docs/` is local only |
+| `testdata/` | `scenarios/` (fake-provider scripts), `eval/` (corpus; `travelinbox` links to the TravelInbox corpus), `travelinbox/` (co-owned assets, [README](testdata/travelinbox/README.md)); `user-docs/` is local only |
 | `FromTravelApp/` | TravelInbox contract, its OpenAPI and schema (read-only input) |
 | `.githooks/` | `pre-push` runs `make check` (enable with `make hooks`); every check runs locally with `make ci` and releases with `make release`; GitHub only hosts the repository and the release artifacts |
 

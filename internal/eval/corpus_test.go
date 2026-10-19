@@ -1,7 +1,7 @@
 package eval_test
 
 import (
-	"bytes"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,10 +11,7 @@ import (
 	"github.com/kaanemec/vde/internal/extract"
 )
 
-const (
-	corpusDir      = "../../testdata/eval"
-	travelInboxDir = "../../testdata/travelinbox"
-)
+const corpusDir = "../../testdata/eval"
 
 // TestCorpus checks the committed corpus: the TravelInbox cases and at least ten
 // synthetic cases in two other domains, each expected.json valid against its schema and
@@ -57,47 +54,6 @@ func TestCorpus(t *testing.T) {
 	}
 }
 
-// TestImportTravelInbox converts testdata/travelinbox and checks the result is the
-// committed corpus, so the two cannot drift. VDE_EVAL_UPDATE=1 rewrites the committed
-// cases instead (the same as vde eval import-travelinbox).
-func TestImportTravelInbox(t *testing.T) { // not parallel: with VDE_EVAL_UPDATE it writes the corpus TestCorpus reads
-	if os.Getenv("VDE_EVAL_UPDATE") != "" {
-		if _, err := eval.ImportTravelInbox(travelInboxDir, corpusDir); err != nil {
-			t.Fatal(err)
-		}
-	}
-	dir := t.TempDir()
-	n, err := eval.ImportTravelInbox(travelInboxDir, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 50 {
-		t.Errorf("ImportTravelInbox() = %d cases, want 50", n)
-	}
-	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, _ := filepath.Rel(dir, p)
-		got, _ := os.ReadFile(p)
-		want, err := os.ReadFile(filepath.Join(corpusDir, rel))
-		if err != nil || !bytes.Equal(got, want) {
-			t.Errorf("%s differs from the committed corpus (rerun vde eval import-travelinbox): %v", rel, err)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestImportTravelInbox_noCorpus(t *testing.T) {
-	t.Parallel()
-	if _, err := eval.ImportTravelInbox(t.TempDir(), t.TempDir()); err == nil {
-		t.Error("ImportTravelInbox(empty dir) succeeded, want an error")
-	}
-}
-
 // TestParseCasesAndLoadCorpus: a comma-separated list of globs selects the union of
 // their cases; an empty or malformed glob is an error.
 func TestParseCasesAndLoadCorpus(t *testing.T) {
@@ -124,5 +80,50 @@ func TestParseCasesAndLoadCorpus(t *testing.T) {
 	}
 	if all, err := eval.LoadCorpus(corpusDir); err != nil || len(all) < 60 {
 		t.Errorf("LoadCorpus without patterns: %d cases, %v", len(all), err)
+	}
+}
+
+// TestLoadCorpus_malformed: a case with a file missing in it and in its corpus, two
+// documents or an invalid ground truth fails the whole load with the case's id.
+func TestLoadCorpus_malformed(t *testing.T) {
+	t.Parallel()
+	complete := map[string]string{"document.txt": "x", "expected.json": "{}", "extractor.md": "e", "judge.md": "j",
+		"compare.yaml": "default: exact\n"}
+	for _, tt := range []struct {
+		name   string
+		change func(files map[string]string)
+		want   string
+	}{
+		{"no document", func(f map[string]string) { delete(f, "document.txt") }, "no document"},
+		{"two documents", func(f map[string]string) { f["source.eml"] = "x" }, "more than one"},
+		{"no extractor instructions", func(f map[string]string) { delete(f, "extractor.md") }, "no extractor.md"},
+		{"no judge instructions", func(f map[string]string) { delete(f, "judge.md") }, "no judge.md"},
+		{"no compare rules", func(f map[string]string) { delete(f, "compare.yaml") }, "no compare.yaml"},
+		{"invalid ground truth", func(f map[string]string) { f["expected.json"] = "{" }, "not valid JSON"},
+		{"invalid truth", func(f map[string]string) { delete(f, "expected.json"); f["truth.json"] = "[" }, "truth.json is not valid JSON"},
+		{"bad rules", func(f map[string]string) { f["compare.yaml"] = "default: fuzzy\n" }, "fuzzy"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			files := maps.Clone(complete)
+			tt.change(files)
+			if err := os.Mkdir(filepath.Join(dir, "nested"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			caseDir := filepath.Join(dir, "nested", "c1")
+			if err := os.Mkdir(caseDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for name, data := range files {
+				if err := os.WriteFile(filepath.Join(caseDir, name), []byte(data), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := eval.LoadCorpus(dir)
+			if err == nil || !strings.Contains(err.Error(), "case nested-c1") || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("LoadCorpus() = %v, want an error for case nested-c1 naming %q", err, tt.want)
+			}
+		})
 	}
 }

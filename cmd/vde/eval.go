@@ -32,7 +32,6 @@ import (
 const evalUsage = `Usage: vde eval --corpus dir [--config file | --url URL --token-env NAME]
                 [--concurrency n] [--cases glob,...] [--judge always|never|auto]
                 [--out dir] [--compare previous.json] [--provider-script file]
-       vde eval import-travelinbox --from dir --to dir
 
 Runs every case of a corpus (docs/operator/evaluation.md) through the engine, or through a
 deployment with --url, compares each result with the case's expected.json under its
@@ -53,9 +52,6 @@ With --url it sends the judge part, which the application must allow
 --provider-script replays a fake provider script for every case (a fresh fake per case),
 so no key is needed; "{{expected}}" in an answer is replaced by the case's expected.json.
 
-import-travelinbox converts the TravelInbox corpus (testdata/travelinbox or a TravelInbox
-checkout) into travelinbox-* cases.
-
 Exit codes: 0 every case ran, 1 usage or configuration error or a case the harness could
 not run.
 
@@ -74,9 +70,6 @@ type evalOptions struct {
 }
 
 func runEval(args []string, stdout, stderr io.Writer) int {
-	if len(args) > 0 && args[0] == "import-travelinbox" {
-		return runEvalImport(args[1:], stdout, stderr)
-	}
 	var o evalOptions
 	fs := newFlagSet("vde eval", evalUsage, stderr)
 	fs.StringVar(&o.corpus, "corpus", "", "the corpus directory (required)")
@@ -569,33 +562,4 @@ func (e *httpEngine) do(req *http.Request, want int) (remoteJob, int, time.Durat
 		job.ServiceVersion = resp.Header.Get("X-Service-Version")
 	}
 	return job, resp.StatusCode, 0, nil
-}
-
-const evalImportUsage = `Usage: vde eval import-travelinbox --from dir --to dir
-
-Converts the TravelInbox corpus into evaluation cases travelinbox-<nnn>-<kind> under --to.
---from is this repository's testdata/travelinbox or a TravelInbox checkout. Existing cases
-are refreshed; none is removed.
-
-Flags:
-`
-
-func runEvalImport(args []string, stdout, stderr io.Writer) int {
-	fs := newFlagSet("vde eval import-travelinbox", evalImportUsage, stderr)
-	from := fs.String("from", "", "the TravelInbox assets or checkout (required)")
-	to := fs.String("to", "", "the corpus directory to write (required)")
-	if code, done := parseFlags(fs, args); done {
-		return code
-	}
-	if fs.NArg() > 0 || *from == "" || *to == "" {
-		fmt.Fprintln(stderr, "vde eval import-travelinbox: --from and --to are required, no arguments")
-		return exitUsage
-	}
-	n, err := eval.ImportTravelInbox(*from, *to)
-	if err != nil {
-		fmt.Fprintf(stderr, "vde eval import-travelinbox: %v\n", err)
-		return exitFailure
-	}
-	fmt.Fprintf(stdout, "%d case(s) written to %s\n", n, *to)
-	return exitOK
 }

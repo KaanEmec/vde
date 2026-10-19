@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -375,7 +374,6 @@ func TestEval_usageErrors(t *testing.T) {
 		{"bad judge", []string{"--corpus", evalCorpus, "--judge", "sometimes"}, "--judge"},
 		{"missing compare", []string{"--corpus", evalCorpus, "--compare", "missing.json"}, "--compare"},
 		{"missing config", []string{"--corpus", evalCorpus, "--config", "missing.yaml"}, "config:"},
-		{"import flags", []string{"import-travelinbox", "--from", "x"}, "--from and --to are required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -385,27 +383,5 @@ func TestEval_usageErrors(t *testing.T) {
 				t.Errorf("exit %d, stderr %q; want %d and %q", code, stderr, exitUsage, tt.want)
 			}
 		})
-	}
-}
-
-func TestEval_importTravelInbox(t *testing.T) {
-	t.Parallel()
-	to := t.TempDir()
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"eval", "import-travelinbox", "--from", filepath.Join(repoRoot, "testdata", "travelinbox"), "--to", to}, &stdout, &stderr)
-	if code != exitOK || !strings.Contains(stdout.String(), "50 case(s)") {
-		t.Fatalf("exit %d\n%s\n%s", code, stdout.String(), stderr.String())
-	}
-	cases, err := eval.LoadCorpus(to, "travelinbox-*")
-	if err != nil || len(cases) != 50 {
-		t.Errorf("LoadCorpus(imported) = %d cases, %v", len(cases), err)
-	}
-	var expected map[string]any
-	if err := json.Unmarshal(cases[0].Expected, &expected); err != nil || expected["schema_version"] == nil {
-		t.Errorf("expected.json of %s: %v", cases[0].ID, err)
-	}
-	code = run([]string{"eval", "import-travelinbox", "--from", t.TempDir(), "--to", to}, &stdout, &stderr)
-	if code != exitFailure {
-		t.Errorf("import from an empty directory: exit %d, want %d", code, exitFailure)
 	}
 }

@@ -727,8 +727,8 @@ func TestRun_travelInbox(t *testing.T) {
 		Representation: document.Representation{
 			Kind: document.Text, Parts: []provider.Part{{Text: read("corpus/001-flight/notes.md")}}, MediaTypes: []string{"text/plain"},
 		},
-		ExtractorInstructions: read("prompts/extractor.md"),
-		JudgeInstructions:     read("prompts/judge.md"),
+		ExtractorInstructions: read("corpus/extractor.md"),
+		JudgeInstructions:     read("corpus/judge.md"),
 		Schema:                travelSchema(t),
 	}
 	out := Run(t.Context(), in, r.roles)

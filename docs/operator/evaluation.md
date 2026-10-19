@@ -22,8 +22,13 @@ A corpus is a directory with one subdirectory per case. The directory name is th
   notes.md          optional, for people: where the document comes from and why it is here
 ```
 
-A subdirectory without `expected.json` is not a case and is skipped; a case with
-`expected.json` and a missing or malformed file stops the run before anything is sent.
+`extractor.md`, `judge.md`, `schema.json` and `compare.yaml` that a case lacks are read
+from the directory that holds the case, so cases sharing them keep one copy. A case may
+also use the TravelInbox layout: `source.*` for `document.*`, `truth.json` for
+`expected.json`. A subdirectory without `expected.json` or `truth.json` is a nested
+corpus (one level deep, a symbolic link allowed) whose case ids are its name, `-` and the
+case directory's name: `testdata/eval/lab/001-cbc` is the case `lab-001-cbc`. A case with
+a missing or malformed file stops the run before anything is sent.
 
 ### compare.yaml
 
@@ -59,19 +64,13 @@ JSON) matches no field.
 
 | Cases | Domain | Source |
 | --- | --- | --- |
-| `travelinbox-001-flight` ... `travelinbox-050-boarding-pass` (50) | Travel bookings: flights, hotels, dining, cars, rail, transfers, cancellations; 45 emails, 4 PDFs, 1 photo; ten languages | The co-owned TravelInbox corpus (`testdata/travelinbox`, decision 11), converted by `vde eval import-travelinbox`. Shared TravelInbox prompts and schema; `compare.yaml` follows the corpus labelling conventions (title, notes and confidence ignored, printed texts normalized, travellers a set, price amount numeric). |
-| `receipt-001` ... `receipt-006` (6) | Receipts: grocery, café, hardware, restaurant with tip, German pharmacy, ride-hailing email | Synthetic, written for this repository: fictional merchants, no real people. |
-| `lab-001` ... `lab-005` (5) | Laboratory reports: blood count, lipids, metabolic panel, urinalysis, German thyroid panel | Synthetic, written for this repository: invented patients and laboratories. |
+| `travelinbox-001-flight` ... `travelinbox-050-boarding-pass` (50) | Travel bookings: flights, hotels, dining, cars, rail, transfers, cancellations; 45 emails, 4 PDFs, 1 photo; ten languages | The co-owned TravelInbox corpus (`testdata/travelinbox/corpus`, decision 11), read in place through the symbolic link `testdata/eval/travelinbox`. Shared TravelInbox prompts and schema (`FromTravelApp/extraction-schema.json`) at the corpus root; its `compare.yaml` follows the corpus labelling conventions (title, notes and confidence ignored, printed texts normalized, travellers a set, price amount numeric). |
+| `receipt-001` ... `receipt-006` (6) | Receipts: grocery, café, hardware, restaurant with tip, German pharmacy, ride-hailing email | Synthetic, written for this repository: fictional merchants, no real people. In `testdata/eval/receipt/`. |
+| `lab-001` ... `lab-005` (5) | Laboratory reports: blood count, lipids, metabolic panel, urinalysis, German thyroid panel | Synthetic, written for this repository: invented patients and laboratories. In `testdata/eval/lab/`. |
 
-The TravelInbox cases are regenerated whenever that corpus grows:
-
-```
-vde eval import-travelinbox --from testdata/travelinbox --to testdata/eval
-vde eval import-travelinbox --from ../TravelInbox --to testdata/eval   # from a checkout
-```
-
-`go test ./internal/eval` fails when the committed cases differ from a fresh conversion, and
-checks every `expected.json` against its schema.
+A new TravelInbox document is a new `testdata/travelinbox/corpus/<nnn>-<kind>/` folder;
+nothing is generated. `go test ./internal/eval` checks every case's ground truth against
+its schema and its `compare.yaml`.
 
 ## Running it
 

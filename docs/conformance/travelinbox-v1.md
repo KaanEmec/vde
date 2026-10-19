@@ -157,7 +157,7 @@ their tests no longer skip; their history and resolution are in the
 | 7.3 | A `reject` MUST have at least one feedback entry. | `TestS05AcceptedOnlyOnJudgeAccept` (a reject without entries is never accepted) |
 | 7.4 | The feedback map becomes the `feedback` array in the order the judge gave, with `source: "judge"`. | `TestS07FeedbackOrderAndMessagesUnedited` |
 | 7.5 | The service MUST NOT edit messages, except to cap their length (cap of at least 2,000 characters). | `TestS07FeedbackOrderAndMessagesUnedited` (2,500 characters, tabs, newlines, non-ASCII) |
-| 7.6 | The service's framing MUST agree with the format the caller's instructions restate. | `TestS07VerdictFormat` (the framing names the same keys and values); wording: not testable automatically, verified by: comparing `internal/extract/framings/judge.md` with `testdata/travelinbox/prompts/judge.md` |
+| 7.6 | The service's framing MUST agree with the format the caller's instructions restate. | `TestS07VerdictFormat` (the framing names the same keys and values); wording: not testable automatically, verified by: comparing `internal/extract/framings/judge.md` with `testdata/travelinbox/corpus/judge.md` |
 | 8.1 | Quota: submissions count; polls and quota reads do not. | `TestS08QuotaRead`, `TestS05PollingNotCharged`, `TestItem07QuotaSpent` |
 | 8.2 | A spent quota answers `POST /v1/jobs` with 429 and `X-Quota-Remaining: 0`. | `TestItem07QuotaSpent` |
 | 8.3 | A rate limit answers 429 with `X-Quota-Remaining` above zero. | `TestS08RateLimited` |

@@ -1,6 +1,6 @@
 # Job: Eval reads the TravelInbox corpus in place
 
-Version: v1.1 · Epic: 06 Tests and testdata · Status: planned · Depends on: 00-04; owner decision L3, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
+Version: v1.1 · Epic: 06 Tests and testdata · Status: done · Depends on: 00-04; owner decision L3, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -27,7 +27,7 @@ the same. Removes `vde eval import-travelinbox` (an operator CLI change).
 ## Tasks
 
 - [x] Owner decision L3 (2026-10-19): read the corpus in place.
-- [ ] Plan and execute.
+- [x] Plan and execute (by hand).
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: teach internal/eval LoadCorpus/LoadCase to
     read the TravelInbox layout of testdata/travelinbox/corpus with the case ids
@@ -37,14 +37,14 @@ the same. Removes `vde eval import-travelinbox` (an operator CLI change).
     import-travelinbox subcommand and its test. Prove first, before deleting, that `make
     eval` and `--cases 'travelinbox-*'` give identical reports. Guardrails: skills.md."
     Then "/golang-refactoring Execute mode: step <n>."
-- [ ] Remove the unused reference stub and the duplicate schema.
+- [x] Remove the unused reference stub and the duplicate schema.
   - Skill: SIMPLIFY.
   - Prompt: "/simplify testdata/travelinbox — delete reference-stub/service_test.go.txt
     and its README row; make one TravelInbox schema file the source (keep
     FromTravelApp/ read-only as the contract input) and point everything at it. Update
     AGENTS.md, docs/quality.md, docs/operator/evaluation.md and CHANGELOG. Guardrails:
     skills.md."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW.
   - Prompt: `/code-review high <first>^..<last>`, then `make eval` with `--compare`
     against eval-reports/lean-baseline under all three policies.
@@ -53,6 +53,45 @@ the same. Removes `vde eval import-travelinbox` (an operator CLI change).
 
 - `git ls-files testdata | wc -l` down by at least 350; `make eval` reports identical
   numbers and case ids; `make ci` green.
+
+## Result
+
+- **Loader.** `eval.LoadCorpus` reads three things it did not: a case in the TravelInbox
+  layout (`source.*` is the document, `truth.json` the ground truth); `extractor.md`,
+  `judge.md`, `schema.json` and `compare.yaml` from the corpus directory when the case
+  lacks them; and a nested corpus, a subdirectory that is not a case (one level, a
+  symbolic link followed), whose case ids are its name, `-` and the case's name.
+  `LoadCase` became the unexported `loadCase(dir, id, corpus)`; nothing outside the
+  package called it.
+- **Testdata.** `testdata/eval/travelinbox` is a symbolic link to
+  `../travelinbox/corpus`, which now holds the shared `extractor.md` and `judge.md` (moved
+  from `prompts/`), a `compare.yaml` (the importer's rules, unchanged) and `schema.json`, a
+  symbolic link to `FromTravelApp/extraction-schema.json`, now the one TravelInbox schema
+  (the byte-identical `testdata/travelinbox/extraction-schema.json` is gone; the extract
+  and conformance tests and `docs/api/writing-instructions.md` point at FromTravelApp).
+  The synthetic cases moved to `testdata/eval/lab/NNN-*` and `testdata/eval/receipt/NNN-*`
+  with one copy of their four shared files each (44 → 8). Deleted: the 50 generated
+  `testdata/eval/travelinbox-*` cases (350 files), `reference-stub/` and its README row,
+  `internal/eval/travelinbox.go`, `vde eval import-travelinbox` and its tests
+  (`TestImportTravelInbox`, `TestImportTravelInbox_noCorpus`, `TestEval_importTravelInbox`).
+  New `TestLoadCorpus_malformed` covers the loader's error paths in a nested corpus.
+- **Proof before deletion.** `make eval` (always, never, auto) and `--cases
+  'travelinbox-*'` (always) on the new layout, before the generated cases were dropped
+  from the commit, give reports identical to those of `HEAD` in every field except
+  timings: the same 61 (50) case ids in the same order, the same summaries and per-case
+  numbers, the same three `service_version`s. Against `eval-reports/lean-baseline` only
+  the duration fields differ.
+- Docs: `docs/operator/evaluation.md` (layout, what is in `testdata/eval`; the regenerate
+  commands removed), `internal/eval/doc.go`, `testdata/travelinbox/README.md`,
+  `AGENTS.md` (map row), `docs/conformance/travelinbox-v1.md` (judge prompt path), CHANGELOG
+  under Removed. `docs/quality.md` and the AGENTS.md eval commands stay valid as written.
+
+Coverage: `internal/eval` 91.8 % → 95.7 %; `cmd/vde` 81.3 % → 81.1 % (the removed
+subcommand was covered code). Tracked files under `testdata/`: 609 → 224 (−385);
+`testdata/eval` 152 KB. `make check`, `make conformance`, `make eval` green.
+
+`git diff --stat`: production 4 files (+77 −233); tests 5 files (+53 −76); testdata 423
+files (+10 −52,048 lines, 2 symbolic links); docs 6 files (+26 −21).
 
 ## Out of scope
 

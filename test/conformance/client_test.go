@@ -234,9 +234,9 @@ func load() error {
 			}
 			return data
 		}
-		inputs.extractor = read("testdata", "travelinbox", "prompts", "extractor.md")
-		inputs.judge = read("testdata", "travelinbox", "prompts", "judge.md")
-		inputs.schema = read("testdata", "travelinbox", "extraction-schema.json")
+		inputs.extractor = read("testdata", "travelinbox", "corpus", "extractor.md")
+		inputs.judge = read("testdata", "travelinbox", "corpus", "judge.md")
+		inputs.schema = read("FromTravelApp", "extraction-schema.json")
 		inputs.txt = read("examples", "samples", "booking.txt")
 		inputs.html = read("examples", "samples", "booking.html")
 		inputs.eml = read("examples", "samples", "booking.eml")

@@ -18,6 +18,7 @@ const (
 	FileSchema    = "schema.json"
 	FileExpected  = "expected.json"
 	FileCompare   = "compare.yaml"
+	FileTruth     = "truth.json" // the TravelInbox layout's expected.json
 )
 
 // Case is one corpus case. Paths are file paths; Expected and Rules are loaded.
@@ -52,9 +53,10 @@ func ParseCases(list string) ([]string, error) {
 }
 
 // LoadCorpus loads the cases of dir whose id matches any of patterns (path.Match syntax;
-// none, "" or "*" for all), sorted by id. Subdirectories without expected.json are not
-// cases and are skipped; a case with expected.json and a missing or malformed file is an
-// error.
+// none, "" or "*" for all), sorted by id. A subdirectory with expected.json or truth.json
+// is a case; one without is a nested corpus (one level, a symbolic link allowed) whose
+// case ids are prefixed with its name and "-". A case with a missing or malformed file is
+// an error.
 func LoadCorpus(dir string, patterns ...string) ([]Case, error) {
 	for _, p := range patterns {
 		if _, err := path.Match(p, ""); err != nil {
@@ -72,32 +74,64 @@ func LoadCorpus(dir string, patterns ...string) ([]Case, error) {
 		}
 		return false
 	}
+	cases, err := loadCorpusDir(dir, "", true, selected)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(cases, func(a, b Case) int { return strings.Compare(a.ID, b.ID) })
+	return cases, nil
+}
+
+// loadCorpusDir loads the selected cases of dir with ids prefix+name, and those of its
+// nested corpora when nested is set.
+func loadCorpusDir(dir, prefix string, nested bool, selected func(string) bool) ([]Case, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 	var cases []Case
 	for _, e := range entries {
-		if !e.IsDir() || !selected(e.Name()) {
-			continue
-		}
-		caseDir := filepath.Join(dir, e.Name())
-		if _, err := os.Stat(filepath.Join(caseDir, FileExpected)); errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		c, err := LoadCase(caseDir)
+		sub := filepath.Join(dir, e.Name())
+		fi, err := os.Stat(sub) // follows a symbolic link
 		if err != nil {
 			return nil, err
 		}
-		cases = append(cases, c)
+		switch {
+		case !fi.IsDir():
+		case fileOf(FileExpected, sub) != "" || fileOf(FileTruth, sub) != "":
+			if id := prefix + e.Name(); selected(id) {
+				c, err := loadCase(sub, id, dir)
+				if err != nil {
+					return nil, err
+				}
+				cases = append(cases, c)
+			}
+		case nested:
+			more, err := loadCorpusDir(sub, prefix+e.Name()+"-", false, selected)
+			if err != nil {
+				return nil, err
+			}
+			cases = append(cases, more...)
+		}
 	}
-	slices.SortFunc(cases, func(a, b Case) int { return strings.Compare(a.ID, b.ID) })
 	return cases, nil
 }
 
-// LoadCase loads the case in dir.
-func LoadCase(dir string) (Case, error) {
-	c := Case{ID: filepath.Base(dir), Dir: dir}
+// fileOf returns the path of name in the first of dirs that has it, "" when none does.
+func fileOf(name string, dirs ...string) string {
+	for _, d := range dirs {
+		p := filepath.Join(d, name)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// loadCase loads the case in dir with the given id; extractor.md, judge.md, schema.json
+// and compare.yaml it lacks are read from corpus, the directory that holds it.
+func loadCase(dir, id, corpus string) (Case, error) {
+	c := Case{ID: id, Dir: dir}
 	fail := func(err error) (Case, error) { return Case{}, fmt.Errorf("case %s: %w", c.ID, err) }
 
 	entries, err := os.ReadDir(dir)
@@ -110,9 +144,9 @@ func LoadCase(dir string) (Case, error) {
 			continue
 		}
 		switch {
-		case strings.HasPrefix(name, "document."):
+		case strings.HasPrefix(name, "document."), strings.HasPrefix(name, "source."):
 			if c.Document != "" {
-				return fail(errors.New("more than one document.* file"))
+				return fail(errors.New("more than one document.* or source.* file"))
 			}
 			c.Document = filepath.Join(dir, name)
 		case strings.HasPrefix(name, "page-"):
@@ -122,29 +156,31 @@ func LoadCase(dir string) (Case, error) {
 	if c.Document == "" {
 		return fail(errors.New("no document.* file"))
 	}
-	for _, req := range []struct {
-		name string
-		dst  *string
-	}{{FileExtractor, &c.ExtractorInstructions}, {FileJudge, &c.JudgeInstructions}} {
-		p := filepath.Join(dir, req.name)
-		if _, err := os.Stat(p); err != nil {
-			return fail(err)
-		}
-		*req.dst = p
+	if c.ExtractorInstructions = fileOf(FileExtractor, dir, corpus); c.ExtractorInstructions == "" {
+		return fail(errors.New("no " + FileExtractor))
 	}
-	if _, err := os.Stat(filepath.Join(dir, FileSchema)); err == nil {
-		c.Schema = filepath.Join(dir, FileSchema)
+	if c.JudgeInstructions = fileOf(FileJudge, dir, corpus); c.JudgeInstructions == "" {
+		return fail(errors.New("no " + FileJudge))
 	}
+	c.Schema = fileOf(FileSchema, dir, corpus)
 
-	expected, err := os.ReadFile(filepath.Join(dir, FileExpected))
+	expectedPath := fileOf(FileExpected, dir)
+	if expectedPath == "" {
+		expectedPath = filepath.Join(dir, FileTruth)
+	}
+	expected, err := os.ReadFile(expectedPath)
 	if err != nil {
 		return fail(err)
 	}
 	if !json.Valid(expected) {
-		return fail(fmt.Errorf("%s is not valid JSON", FileExpected))
+		return fail(fmt.Errorf("%s is not valid JSON", filepath.Base(expectedPath)))
 	}
 	c.Expected = expected
-	rules, err := os.ReadFile(filepath.Join(dir, FileCompare))
+	comparePath := fileOf(FileCompare, dir, corpus)
+	if comparePath == "" {
+		return fail(errors.New("no " + FileCompare))
+	}
+	rules, err := os.ReadFile(comparePath)
 	if err != nil {
 		return fail(err)
 	}

@@ -28,6 +28,12 @@ All notable changes to this project are recorded here, in the format of
 
 - `vde config check --probe`: no provider had a probe, so it only warned "probe not
   available". It is now an unknown flag (a usage error); test an endpoint with `vde extract`.
+- `vde eval import-travelinbox`: `vde eval` reads the TravelInbox corpus in place
+  (`testdata/travelinbox/corpus`, linked as `testdata/eval/travelinbox`), so the 50
+  generated `testdata/eval/travelinbox-*` cases are gone; case ids and report numbers are
+  unchanged. A corpus case may now use the TravelInbox layout (`source.*`, `truth.json`),
+  take `extractor.md`, `judge.md`, `schema.json` and `compare.yaml` from its corpus
+  directory, and sit in a nested corpus (`lab/001-cbc` is the case `lab-001-cbc`).
 
 ### Fixed
 

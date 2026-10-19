@@ -122,7 +122,7 @@ attempt, so a schema that is stricter than the documents allow burns attempts.
 
 ### Confidence patterns
 
-TravelInbox's schema ([`testdata/travelinbox/extraction-schema.json`](../../testdata/travelinbox/extraction-schema.json))
+TravelInbox's schema ([`FromTravelApp/extraction-schema.json`](../../FromTravelApp/extraction-schema.json))
 asks the extractor for its own confidence per field, next to the data:
 
 - Each reservation has a required `confidence` object. Its keys are limited to the

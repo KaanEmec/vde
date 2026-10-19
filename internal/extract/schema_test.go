@@ -12,7 +12,7 @@ import (
 	"github.com/kaanemec/vde/internal/ground"
 )
 
-const travelSchemaPath = "../../testdata/travelinbox/extraction-schema.json"
+const travelSchemaPath = "../../FromTravelApp/extraction-schema.json"
 
 func travelSchema(t *testing.T) *Schema {
 	t.Helper()
