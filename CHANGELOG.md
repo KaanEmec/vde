@@ -10,14 +10,15 @@ All notable changes to this project are recorded here, in the format of
 
 - `vde config check` no longer runs a second pass against the JSON Schema and no longer
   prints `error: schema: <key>: <message>` lines or "has N schema violation(s)": it
-  validates exactly as `vde serve` does. The cases only the schema refused are now refused
-  by that validation, so `vde serve` refuses them too: a number or boolean where a string
-  is expected (`name: 42`, a parse error naming the key), a negative
-  `limits.feedback_message_chars`, `storage.max_open_conns` outside 0 to 1000 and an
-  unknown `blobs.sse` with any driver. `vde config schema` and the schema are unchanged.
+  validates exactly as `vde serve` does. `vde config schema` and the schema are unchanged.
 
 ### Deprecated
 
+- Configuration values that 1.0 accepted but the schema refuses now warn from
+  `vde config check` and `vde serve` (`vde config check --strict` fails; refused in 2.0):
+  a number, boolean or date where a string is expected (quote it), a negative
+  `limits.feedback_message_chars` (the default is used), `storage.max_open_conns` outside
+  0 to 1000 with `sqlite`, and an unknown `blobs.sse` with `fs`.
 - `debug.log_content` has no effect: the content log sink, which was opened but never
   written, is removed and no `content.log` file is created. The key is still accepted on any
   `server.listen` (no longer refused off loopback); `vde config check` and `vde serve` warn
