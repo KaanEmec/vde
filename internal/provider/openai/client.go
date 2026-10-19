@@ -14,8 +14,6 @@ import (
 )
 
 const (
-	defaultMaxTokens = 4096
-
 	presetOpenRouter  = "openrouter"
 	openRouterReferer = "https://github.com/kaanemec/vde"
 	openRouterTitle   = "vde"
@@ -48,7 +46,7 @@ type chatRequest struct {
 	Model       string        `json:"model"`
 	Messages    []message     `json:"messages"`
 	MaxTokens   int           `json:"max_tokens"`
-	Temperature float64       `json:"temperature"`
+	Temperature float64       `json:"temperature"`        // always 0, sent explicitly
 	Provider    *routingPrefs `json:"provider,omitempty"` // OpenRouter only
 }
 
@@ -79,7 +77,6 @@ type filePart struct {
 }
 
 type chatResponse struct {
-	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content json.RawMessage `json:"content"`
@@ -125,7 +122,7 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if err != nil {
 		return provider.Response{}, transportError("reading response failed", err)
 	}
-	return parseResponse(raw, req.Model)
+	return parseResponse(raw)
 }
 
 // buildBody maps a role request to the chat completions body.
@@ -144,15 +141,10 @@ func (c *Client) buildBody(req provider.Request) ([]byte, error) {
 	}
 	msgs = append(msgs, message{Role: "user", Content: parts})
 
-	maxTokens := req.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = defaultMaxTokens
-	}
 	cr := chatRequest{
-		Model:       req.Model,
-		Messages:    msgs,
-		MaxTokens:   maxTokens,
-		Temperature: req.Temperature,
+		Model:     req.Model,
+		Messages:  msgs,
+		MaxTokens: req.MaxTokens,
 	}
 	if c.preset == presetOpenRouter {
 		// OpenRouter's routing option: only providers that do not log or train on prompts.
@@ -184,7 +176,7 @@ func dataURL(b *provider.Blob) string {
 }
 
 // parseResponse extracts the answer. Errors never include the response content.
-func parseResponse(raw []byte, requestedModel string) (provider.Response, error) {
+func parseResponse(raw []byte) (provider.Response, error) {
 	var cr chatResponse
 	if json.Unmarshal(raw, &cr) != nil {
 		// Not wrapped: json errors can quote a byte of the response.
@@ -201,15 +193,10 @@ func parseResponse(raw []byte, requestedModel string) (provider.Response, error)
 	if strings.TrimSpace(text) == "" {
 		return provider.Response{}, &provider.Error{Message: "response has no content"}
 	}
-	model := cr.Model
-	if model == "" {
-		model = requestedModel
-	}
 	return provider.Response{
 		Text:         text,
 		InputTokens:  cr.Usage.PromptTokens,
 		OutputTokens: cr.Usage.CompletionTokens,
-		Model:        model,
 		Truncated:    choice.FinishReason == "length",
 	}, nil
 }

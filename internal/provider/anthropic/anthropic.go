@@ -21,9 +21,6 @@ const (
 	// apiVersion is the value of the anthropic-version header.
 	apiVersion = "2023-06-01"
 
-	// defaultMaxTokens applies when a request sets no output limit.
-	defaultMaxTokens = 4096
-
 	// maxErrorBodyBytes bounds how much of an error response is read to find its type.
 	maxErrorBodyBytes = 64 << 10
 )
@@ -54,11 +51,10 @@ func New(ep *config.Endpoint) *Client {
 // messagesRequest is the POST /v1/messages body. Only the fields vde uses are modelled:
 // no tools, streaming, metadata, caching or thinking.
 type messagesRequest struct {
-	Model       string        `json:"model"`
-	MaxTokens   int           `json:"max_tokens"`
-	System      string        `json:"system,omitempty"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	Messages    []userMessage `json:"messages"`
+	Model     string        `json:"model"`
+	MaxTokens int           `json:"max_tokens"`
+	System    string        `json:"system,omitempty"`
+	Messages  []userMessage `json:"messages"`
 }
 
 type userMessage struct {
@@ -113,9 +109,7 @@ var errorTypes = map[string]bool{
 }
 
 // Complete sends the request as one user message and returns the concatenated text blocks.
-//
-// Temperature is sent only when above zero: current Claude models reject non-default
-// sampling parameters, and zero means "leave it to the model".
+// It sends no temperature: current Claude models reject non-default sampling parameters.
 func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
 	body, err := buildBody(req)
 	if err != nil {
@@ -164,12 +158,6 @@ func buildBody(req provider.Request) ([]byte, error) {
 		MaxTokens: req.MaxTokens,
 		System:    req.System,
 		Messages:  []userMessage{{Role: "user", Content: blocks}},
-	}
-	if r.MaxTokens <= 0 {
-		r.MaxTokens = defaultMaxTokens
-	}
-	if req.Temperature > 0 {
-		r.Temperature = &req.Temperature
 	}
 	body, err := json.Marshal(r)
 	if err != nil {
@@ -250,7 +238,6 @@ func parseResponse(body io.Reader) (provider.Response, error) {
 		Text:         text.String(),
 		InputTokens:  mr.Usage.InputTokens,
 		OutputTokens: mr.Usage.OutputTokens,
-		Model:        mr.Model,
 		Truncated:    mr.StopReason == "max_tokens",
 	}, nil
 }

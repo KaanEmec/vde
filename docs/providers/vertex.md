@@ -42,10 +42,10 @@ other id is refused before a call. Every call is `POST` with `Authorization: Bea
 
 The request and response are the same as for the [Gemini adapter](gemini.md): `System` is
 `systemInstruction`, parts are `contents[0].parts[]` with images and documents as base64
-`inlineData`, `MaxTokens` (4096 when 0) is `generationConfig.maxOutputTokens`, `Temperature`
-is `generationConfig.temperature`. The answer is the concatenated text of
-`candidates[0].content.parts`; usage comes from `usageMetadata`; the reported model is
-`modelVersion` or the requested id. A block reason, or a finish reason of `SAFETY`,
+`inlineData`, `MaxTokens` (the model's `max_output_tokens`) is
+`generationConfig.maxOutputTokens`, and `generationConfig.temperature` is always 0. The answer
+is the concatenated text of `candidates[0].content.parts`; usage comes from `usageMetadata`. A
+block reason, or a finish reason of `SAFETY`,
 `RECITATION`, `PROHIBITED_CONTENT`, `BLOCKLIST` or `SPII`, is a permanent failure; finish
 reason `MAX_TOKENS` sets `Truncated`.
 
@@ -63,8 +63,7 @@ and no `model` field (the model is in the URL; Anthropic model ids on Vertex may
 | text part | `messages[0].content[]` `text` block (role `user`) |
 | image part | `image` block with a base64 source |
 | document part, `application/pdf` only | `document` block with a base64 source |
-| `MaxTokens` (4096 when 0) | `max_tokens` |
-| `Temperature`, only when above zero | `temperature` |
+| `MaxTokens` (the model's `max_output_tokens`) | `max_tokens` |
 
 The answer is the concatenated text blocks; usage comes from `usage`; `stop_reason`
 `max_tokens` sets `Truncated` and `refusal` is a permanent failure. Streaming, tools,

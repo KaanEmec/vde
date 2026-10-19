@@ -28,11 +28,11 @@ Redirects are not followed.
 | `System` | `systemInstruction.parts[].text` |
 | text part | `contents[0].parts[].text` (role `user`, parts in order) |
 | image and document parts | `contents[0].parts[].inlineData` (`mimeType`, base64 `data`) |
-| `MaxTokens` (4096 when 0) | `generationConfig.maxOutputTokens` |
-| `Temperature` | `generationConfig.temperature` |
+| `MaxTokens` (the model's `max_output_tokens`) | `generationConfig.maxOutputTokens` |
+| always 0 | `generationConfig.temperature` |
 
 The answer is the concatenated text of `candidates[0].content.parts`. Usage comes from
-`usageMetadata`; the reported model is `modelVersion`, or the requested model when absent.
+`usageMetadata`.
 Documents are sent inline, so very large files are limited by the API's request size cap;
 the Files API is not used (out of scope for v0.1). JSON mode and extra headers are not
 configurable in v0.1: the config schema has no field for them and the loop parses text.

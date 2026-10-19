@@ -15,10 +15,7 @@ import (
 	"github.com/kaanemec/vde/internal/provider"
 )
 
-const (
-	cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
-	defaultMaxTokens   = 4096
-)
+const cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
 
 // Client calls Gemini and Anthropic models on Vertex AI. It is safe for concurrent use.
 type Client struct {
@@ -95,7 +92,7 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		if err != nil {
 			return provider.Response{}, err
 		}
-		return parseGemini(raw, status, req.Model)
+		return parseGemini(raw, status)
 	default:
 		return provider.Response{}, &provider.Error{Message: "vertex: model must be a gemini or claude model"}
 	}

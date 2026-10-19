@@ -77,7 +77,7 @@ func TestClient_Complete(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp.Text), &v); err != nil {
 		t.Fatal(err)
 	}
-	if v.Verdict != "accept" || len(v.Feedback) != 0 || v.Confidence != 0.85 || resp.Model != "jev" {
+	if v.Verdict != "accept" || len(v.Feedback) != 0 || v.Confidence != 0.85 {
 		t.Errorf("verdict = %s", resp.Text)
 	}
 }

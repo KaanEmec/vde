@@ -71,7 +71,7 @@ type inlineData struct {
 
 type generationConfig struct {
 	MaxOutputTokens int     `json:"maxOutputTokens"`
-	Temperature     float64 `json:"temperature"`
+	Temperature     float64 `json:"temperature"` // always 0, sent explicitly
 }
 
 type generateResponse struct {
@@ -86,7 +86,6 @@ type generateResponse struct {
 		PromptTokenCount     int `json:"promptTokenCount"`
 		CandidatesTokenCount int `json:"candidatesTokenCount"`
 	} `json:"usageMetadata"`
-	ModelVersion string `json:"modelVersion"`
 }
 
 // Complete runs one generateContent call. Errors never contain request or response
@@ -136,16 +135,12 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 			Message: "gemini: malformed response",
 		}
 	}
-	return toResponse(&gr, req.Model, resp.StatusCode)
+	return toResponse(&gr, resp.StatusCode)
 }
 
 func buildBody(req provider.Request) ([]byte, error) {
-	maxTokens := req.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = defaultMaxTokens
-	}
 	gr := generateRequest{
-		GenerationConfig: generationConfig{MaxOutputTokens: maxTokens, Temperature: req.Temperature},
+		GenerationConfig: generationConfig{MaxOutputTokens: req.MaxTokens},
 	}
 	if req.System != "" {
 		gr.SystemInstruction = &content{Parts: []part{{Text: req.System}}}
@@ -176,7 +171,7 @@ func blobPart(b *provider.Blob) part {
 	}}
 }
 
-func toResponse(gr *generateResponse, model string, status int) (provider.Response, error) {
+func toResponse(gr *generateResponse, status int) (provider.Response, error) {
 	if gr.PromptFeedback.BlockReason != "" {
 		return provider.Response{}, refused(status, "gemini: prompt blocked by the provider")
 	}
@@ -195,14 +190,10 @@ func toResponse(gr *generateResponse, model string, status int) (provider.Respon
 	if text.Len() == 0 {
 		return provider.Response{}, refused(status, "gemini: response had no text")
 	}
-	if gr.ModelVersion != "" {
-		model = gr.ModelVersion
-	}
 	return provider.Response{
 		Text:         text.String(),
 		InputTokens:  gr.UsageMetadata.PromptTokenCount,
 		OutputTokens: gr.UsageMetadata.CandidatesTokenCount,
-		Model:        model,
 		Truncated:    cand.FinishReason == "MAX_TOKENS",
 	}, nil
 }

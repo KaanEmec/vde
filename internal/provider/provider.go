@@ -26,11 +26,10 @@ type Blob struct {
 
 // Request is one role call: a framing, the user content and the model to run it on.
 type Request struct {
-	Model       string
-	System      string // the role framing
-	Parts       []Part // instructions, schema, document representation, candidate, feedback
-	MaxTokens   int
-	Temperature float64
+	Model     string
+	System    string // the role framing
+	Parts     []Part // instructions, schema, document representation, candidate, feedback
+	MaxTokens int    // the router sets the pair's output-token limit
 }
 
 // Response is the model's text answer and its token usage.
@@ -38,7 +37,6 @@ type Response struct {
 	Text         string
 	InputTokens  int
 	OutputTokens int
-	Model        string // the model that answered, as reported by the provider
 	// Truncated: the model stopped at the output-token limit, so Text may be cut off.
 	Truncated bool
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kaanemec/vde/internal/eval"
+	"github.com/kaanemec/vde/internal/extract"
 )
 
 // testCase is a case with a two-field ground truth compared exactly.
@@ -51,11 +52,11 @@ func usage(in, out int) *eval.Usage { return &eval.Usage{Calls: 2, InputTokens: 
 func TestRunAndSummarize(t *testing.T) {
 	t.Parallel()
 	outcomes := map[string]eval.Outcome{
-		"c1-correct-accept": {Status: eval.StatusAccepted, Result: json.RawMessage(right), Attempts: 1, ServiceVersion: "sv1", Usage: usage(100, 20)},
-		"c2-false-accept":   {Status: eval.StatusAccepted, Result: json.RawMessage(wrong), Attempts: 2, Usage: usage(200, 40)},
-		"c3-false-reject":   {Status: eval.StatusRejected, Result: json.RawMessage(right), Attempts: 3, Usage: usage(300, 60)},
-		"c4-right-reject":   {Status: eval.StatusRejected, Result: json.RawMessage(wrong), Attempts: 3},
-		"c5-failed":         {Status: eval.StatusFailed, ErrorCode: "provider_unavailable", Attempts: 1},
+		"c1-correct-accept": {Status: string(extract.StatusAccepted), Result: json.RawMessage(right), Attempts: 1, ServiceVersion: "sv1", Usage: usage(100, 20)},
+		"c2-false-accept":   {Status: string(extract.StatusAccepted), Result: json.RawMessage(wrong), Attempts: 2, Usage: usage(200, 40)},
+		"c3-false-reject":   {Status: string(extract.StatusRejected), Result: json.RawMessage(right), Attempts: 3, Usage: usage(300, 60)},
+		"c4-right-reject":   {Status: string(extract.StatusRejected), Result: json.RawMessage(wrong), Attempts: 3},
+		"c5-failed":         {Status: string(extract.StatusFailed), ErrorCode: "provider_unavailable", Attempts: 1},
 	}
 	var cases []eval.Case
 	for _, id := range []string{"c1-correct-accept", "c2-false-accept", "c3-false-reject", "c4-right-reject", "c5-failed", "c6-harness-error"} {
@@ -87,11 +88,11 @@ func TestRunAndSummarize(t *testing.T) {
 		correct, falseAccept, falseRej bool
 		status                         string
 	}{
-		{"c1-correct-accept", true, false, false, eval.StatusAccepted},
-		{"c2-false-accept", false, true, false, eval.StatusAccepted},
-		{"c3-false-reject", true, false, true, eval.StatusRejected},
-		{"c4-right-reject", false, false, false, eval.StatusRejected},
-		{"c5-failed", false, false, false, eval.StatusFailed},
+		{"c1-correct-accept", true, false, false, string(extract.StatusAccepted)},
+		{"c2-false-accept", false, true, false, string(extract.StatusAccepted)},
+		{"c3-false-reject", true, false, true, string(extract.StatusRejected)},
+		{"c4-right-reject", false, false, false, string(extract.StatusRejected)},
+		{"c5-failed", false, false, false, string(extract.StatusFailed)},
 		{"c6-harness-error", false, false, false, eval.StatusError},
 	}
 	for _, c := range checks {
@@ -128,26 +129,26 @@ func calls(n int) *int { return &n }
 func TestSummarize_judgePolicy(t *testing.T) {
 	t.Parallel()
 	judged := func(result string, n int) eval.Outcome {
-		return eval.Outcome{Status: eval.StatusAccepted, Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "auto",
-			Verification: eval.VerificationJudge, JudgeCalls: calls(n), Decision: eval.DecisionJudged}
+		return eval.Outcome{Status: string(extract.StatusAccepted), Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "auto",
+			Verification: extract.VerificationJudge, JudgeCalls: calls(n), Decision: extract.DecisionJudged}
 	}
 	grounded := func(result string) eval.Outcome {
-		return eval.Outcome{Status: eval.StatusAccepted, Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "auto",
-			Verification: eval.VerificationGrounded, JudgeCalls: calls(0), Decision: eval.DecisionGrounded}
+		return eval.Outcome{Status: string(extract.StatusAccepted), Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "auto",
+			Verification: extract.VerificationGrounded, JudgeCalls: calls(0), Decision: extract.DecisionGrounded}
 	}
 	extracted := func(result string) eval.Outcome {
-		return eval.Outcome{Status: eval.StatusExtracted, Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "never",
-			Verification: eval.VerificationNone, JudgeCalls: calls(0), Decision: eval.DecisionSkipped}
+		return eval.Outcome{Status: string(extract.StatusExtracted), Result: json.RawMessage(result), Attempts: 1, JudgePolicy: "never",
+			Verification: extract.VerificationNone, JudgeCalls: calls(0), Decision: extract.DecisionSkipped}
 	}
 	outcomes := map[string]eval.Outcome{
 		"j1-judged":          judged(right, 1),
 		"j2-judged-wrong":    judged(wrong, 1),
 		"g1-grounded":        grounded(right),
 		"g2-grounded-wrong":  grounded(wrong),
-		"s1-sampled":         {Status: eval.StatusAccepted, Result: json.RawMessage(right), Attempts: 2, Verification: eval.VerificationJudge, JudgeCalls: calls(2), Decision: eval.DecisionSampled, Disagreements: 1},
+		"s1-sampled":         {Status: string(extract.StatusAccepted), Result: json.RawMessage(right), Attempts: 2, Verification: extract.VerificationJudge, JudgeCalls: calls(2), Decision: extract.DecisionSampled, Disagreements: 1},
 		"x1-extracted":       extracted(right),
 		"x2-extracted-wrong": extracted(wrong),
-		"r1-rejected":        {Status: eval.StatusRejected, Result: json.RawMessage(wrong), Attempts: 3, Verification: eval.VerificationNone, JudgeCalls: calls(3), Decision: eval.DecisionJudged},
+		"r1-rejected":        {Status: string(extract.StatusRejected), Result: json.RawMessage(wrong), Attempts: 3, Verification: extract.VerificationNone, JudgeCalls: calls(3), Decision: extract.DecisionJudged},
 	}
 	var cases []eval.Case
 	for id := range outcomes {
@@ -164,7 +165,7 @@ func TestSummarize_judgePolicy(t *testing.T) {
 			t.Errorf("%s: an extracted case is a false accept or reject: %+v", id, r)
 		}
 	}
-	if r := byID["g2-grounded-wrong"]; !r.FalseAccept || r.Verification != eval.VerificationGrounded || *r.JudgeCalls != 0 || r.JudgePolicy != "auto" {
+	if r := byID["g2-grounded-wrong"]; !r.FalseAccept || r.Verification != extract.VerificationGrounded || *r.JudgeCalls != 0 || r.JudgePolicy != "auto" {
 		t.Errorf("grounded false accept: %+v", r)
 	}
 
@@ -189,7 +190,7 @@ func TestSummarize_judgePolicy(t *testing.T) {
 	now.JudgePolicy = "auto"
 	var out bytes.Buffer
 	now.WriteTable(&out)
-	before := sampleReport("sv-always", eval.CaseResult{ID: "g1-grounded", Status: eval.StatusAccepted, Verification: eval.VerificationJudge, Correct: true})
+	before := sampleReport("sv-always", eval.CaseResult{ID: "g1-grounded", Status: string(extract.StatusAccepted), Verification: extract.VerificationJudge, Correct: true})
 	before.JudgePolicy = "always"
 	now.WriteDiff(&out, before)
 	text := out.String()
@@ -213,7 +214,7 @@ func TestSummarize_durations(t *testing.T) {
 	t.Parallel()
 	var results []eval.CaseResult
 	for _, d := range []int64{50, 10, 40, 20, 30, 100, 60, 70, 80, 90} {
-		results = append(results, eval.CaseResult{Status: eval.StatusAccepted, DurationMS: d})
+		results = append(results, eval.CaseResult{Status: string(extract.StatusAccepted), DurationMS: d})
 	}
 	s := eval.Summarize(results)
 	if s.DurationMedianMS != 55 || s.DurationP95MS != 100 {
@@ -235,7 +236,7 @@ func sampleReport(sv string, results ...eval.CaseResult) eval.Report {
 func TestReport_SaveLoad(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "eval-reports")
-	r := sampleReport("vde-0.3.0+abc/def", eval.CaseResult{ID: "c1", Status: eval.StatusAccepted, Correct: true})
+	r := sampleReport("vde-0.3.0+abc/def", eval.CaseResult{ID: "c1", Status: string(extract.StatusAccepted), Correct: true})
 	first, err := r.Save(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -269,14 +270,14 @@ func TestReport_SaveLoad(t *testing.T) {
 func TestReport_WriteTableAndDiff(t *testing.T) {
 	t.Parallel()
 	before := sampleReport("sv-before",
-		eval.CaseResult{ID: "c1", Status: eval.StatusAccepted, Correct: true, Fields: eval.Fields{Total: 2, Matched: 2}},
-		eval.CaseResult{ID: "c2", Status: eval.StatusRejected},
-		eval.CaseResult{ID: "gone", Status: eval.StatusAccepted, Correct: true},
+		eval.CaseResult{ID: "c1", Status: string(extract.StatusAccepted), Correct: true, Fields: eval.Fields{Total: 2, Matched: 2}},
+		eval.CaseResult{ID: "c2", Status: string(extract.StatusRejected)},
+		eval.CaseResult{ID: "gone", Status: string(extract.StatusAccepted), Correct: true},
 	)
 	now := sampleReport("sv-now",
-		eval.CaseResult{ID: "c1", Status: eval.StatusAccepted, FalseAccept: true, Fields: eval.Fields{Total: 2, Matched: 1, Mismatches: []string{"/a"}}},
-		eval.CaseResult{ID: "c2", Status: eval.StatusRejected, Usage: &eval.Usage{Calls: 1, InputTokens: 10, OutputTokens: 5}},
-		eval.CaseResult{ID: "new", Status: eval.StatusFailed, ErrorCode: "timeout", Fields: eval.Fields{Total: 2, NoResult: true}},
+		eval.CaseResult{ID: "c1", Status: string(extract.StatusAccepted), FalseAccept: true, Fields: eval.Fields{Total: 2, Matched: 1, Mismatches: []string{"/a"}}},
+		eval.CaseResult{ID: "c2", Status: string(extract.StatusRejected), Usage: &eval.Usage{Calls: 1, InputTokens: 10, OutputTokens: 5}},
+		eval.CaseResult{ID: "new", Status: string(extract.StatusFailed), ErrorCode: "timeout", Fields: eval.Fields{Total: 2, NoResult: true}},
 	)
 	var out bytes.Buffer
 	now.WriteTable(&out)

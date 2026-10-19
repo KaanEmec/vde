@@ -124,7 +124,7 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if err != nil {
 		return provider.Response{}, err
 	}
-	return provider.Response{Text: text, Model: req.Model}, nil
+	return provider.Response{Text: text}, nil
 }
 
 // verdictJSON is the judge verdict of contract §7 plus the optional confidence.

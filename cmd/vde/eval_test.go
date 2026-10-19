@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kaanemec/vde/internal/eval"
+	"github.com/kaanemec/vde/internal/extract"
 )
 
 var (
@@ -244,8 +245,8 @@ func TestEval_judgePolicies(t *testing.T) {
 		t.Errorf("--cases %q selected %s, want %s", cases, got, wantIDs)
 	}
 	for _, c := range r.Results {
-		if (c.Status != eval.StatusExtracted && c.Status != eval.StatusRejected) || c.JudgeCalls == nil || *c.JudgeCalls != 0 ||
-			c.Verification != eval.VerificationNone || c.JudgePolicy != "never" || c.FalseAccept || c.FalseReject {
+		if (c.Status != string(extract.StatusExtracted) && c.Status != string(extract.StatusRejected)) || c.JudgeCalls == nil || *c.JudgeCalls != 0 ||
+			c.Verification != extract.VerificationNone || c.JudgePolicy != "never" || c.FalseAccept || c.FalseReject {
 			t.Errorf("never: %+v", c)
 		}
 	}
@@ -267,7 +268,7 @@ func TestEval_judgePolicies(t *testing.T) {
 		t.Errorf("auto and never share service_version %s", a.ServiceVersion)
 	}
 	for _, c := range a.Results {
-		if c.Status != eval.StatusAccepted || c.Verification != eval.VerificationGrounded || *c.JudgeCalls != 0 || c.Decision != eval.DecisionGrounded {
+		if c.Status != string(extract.StatusAccepted) || c.Verification != extract.VerificationGrounded || *c.JudgeCalls != 0 || c.Decision != extract.DecisionGrounded {
 			t.Errorf("auto: %+v", c)
 		}
 	}
@@ -331,7 +332,7 @@ func TestEval_urlJudge(t *testing.T) {
 	}
 	r := onlyReport(t, out)
 	c := r.Results[0]
-	if c.Status != eval.StatusExtracted || c.Verification != eval.VerificationNone || c.JudgeCalls != nil || !c.Correct ||
+	if c.Status != string(extract.StatusExtracted) || c.Verification != extract.VerificationNone || c.JudgeCalls != nil || !c.Correct ||
 		c.JudgePolicy != "never" || r.JudgePolicy != "never" || r.Summary.Extracted != 1 || r.Summary.JudgeCallCases != 0 {
 		t.Errorf("report %+v", r)
 	}

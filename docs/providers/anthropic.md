@@ -27,8 +27,8 @@ The document goes out as the source material for the model to read, in one of th
   `image/webp`; `image/gif` is accepted by the API but vde does not produce it);
 - text representations (extracted text, visible text of HTML) as `text` blocks.
 
-Also sent: the model name, `max_tokens` (4096 when the request sets none; the router sets it from `max_output_tokens`) and, only when the
-caller sets one above zero, `temperature`. Nothing else: no tools, no streaming, no
+Also sent: the model name and `max_tokens` (the model's `max_output_tokens`). No
+`temperature`. Nothing else: no tools, no streaming, no
 `metadata` (so no end-user identifier), no thinking configuration, no prompt-caching
 markers, no `service_tier`, no `inference_geo`.
 
@@ -128,9 +128,8 @@ can end as `extractor_failed` instead of retrying the same content.
   cost, but cached prompt content is an extra storage mechanism to approve. Optional
   follow-up.
 - Batch API, streaming, tool use, extended thinking.
-- Temperature: current Claude models reject non-default sampling parameters. `vde` sends
-  `temperature` only when the caller sets a value above zero, so keep the extraction
-  temperature at zero (unset) for those models.
+- Temperature: current Claude models reject non-default sampling parameters, so `vde`
+  never sends `temperature`.
 
 ## Tests
 

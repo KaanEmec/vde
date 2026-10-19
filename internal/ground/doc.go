@@ -6,8 +6,7 @@
 //
 //	doc := ground.NewText(rep.GroundText)          // normalized index, built once
 //	rules, annotated, err := ground.RulesFromSchema(rawSchema) // nil Rules for schema-less jobs
-//	res := ground.Check(doc, candidate, rules, ground.Options{})
-//	feedback := res.Ungrounded.Feedback()           // source "grounding", fixed message
+//	res := ground.Check(doc, candidate, rules, maxMisses) // res.Ungrounded: pointers only
 //
 // # Rules (RulesVersion)
 //
@@ -29,7 +28,7 @@
 //   - An ISO date (YYYY-MM-DD) is grounded when one of DateForms occurs, with month names
 //     from Months. An ISO datetime needs its date and its time (TimeForms); a time-only
 //     string (HH:MM[:SS]) needs its time. Seconds and zones are ignored.
-//   - Booleans, nulls, empty strings, strings shorter than Options.MinLength and values
+//   - Booleans, nulls, empty strings, strings shorter than two runes and values
 //     equal to an enum or const of their location are skipped, as are leaves the schema
 //     annotates x-vde-grounding: derived or skip. See Rules and RulesFromSchema.
 //   - When no visited leaf is annotated critical, every checked leaf is critical.

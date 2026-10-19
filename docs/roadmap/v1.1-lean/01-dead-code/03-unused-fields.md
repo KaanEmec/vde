@@ -1,6 +1,6 @@
 # Job: Unused fields and outputs
 
-Version: v1.1 · Epic: 01 Dead code · Status: planned · Depends on: 01-01
+Version: v1.1 · Epic: 01 Dead code · Status: done (Gate task left to the orchestrator) · Depends on: 01-01
 
 ## Goal
 
@@ -36,35 +36,54 @@ Audit findings (`78b6486`):
 
 ## Tasks
 
-- [ ] Confirm each field is unread in production.
+- [x] Confirm each field is unread in production.
   - Skill: EVID.
   - Prompt: "For Response.Model, Request.Temperature, each adapter's defaultMaxTokens,
     ground.Kind, Miss.Kind, Result.Checked/Skipped/Missed, Options.MinLength,
     ground.Feedback, eval Summary.CostUSD and the eval status constants: list production
     reads and writes with `gopls references`, and whether `router.go` always sets
     MaxTokens before an adapter runs (including the `vde extract` path). Report only."
-- [ ] Provider fields.
+- [x] Provider fields.
   - Skill: SIMPLIFY.
   - Prompt: "/simplify internal/provider — remove Response.Model, Request.Temperature and
     the unreachable defaultMaxTokens fallbacks as reported; keep every request body
     byte-identical (OpenAI and Gemini still send temperature 0); update the httptest
     assertions. Guardrails: skills.md."
-- [ ] Ground outputs.
+- [x] Ground outputs.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode, then Execute mode: in internal/ground remove
     Kind and every kind return value, the unused Result counters, Options.MinLength and
     ground.Feedback; let internal/extract build its feedback from Miss.Pointer. RulesVersion
     and every grounding decision stay the same; run `make scenarios` and `make eval` with
     `--compare` against eval-reports/lean-baseline. Guardrails: skills.md."
-- [ ] Eval duplicates.
+- [x] Eval duplicates.
   - Skill: SIMPLIFY.
   - Prompt: "/simplify internal/eval — use internal/extract's status, verification and
     decision constants instead of the copies in run.go; remove Summary.CostUSD only if
     `--compare` still reads the reports in docs/quality and eval-reports/lean-baseline,
     and update docs/operator/evaluation.md. Guardrails: skills.md."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW.
   - Prompt: `/code-review high <first>^..<last>`.
+
+Findings and decisions:
+
+- The router sets `MaxTokens` before every adapter call (`vde serve`, `vde extract` and
+  `vde eval` all go through `router.Group`; the `cmd/vde` observer wraps the adapter inside
+  it), so the router's guard is the single one. Every live test sets `MaxTokens`.
+- Wire bodies of production calls are unchanged: OpenAI and Gemini (also on Vertex) still
+  send `temperature: 0`; Anthropic, Vertex Claude and Bedrock still send none. Adapter
+  tests that set a temperature or relied on the 4096 fallback now set `MaxTokens` and
+  assert the zero or absent temperature (they exercised inputs that no longer exist).
+  The response-side model fields (`model`, `modelVersion`) are no longer decoded.
+- Also removed, as unread in production: `ground.Misses` (now `[]Miss`); kept
+  `Miss.Critical` (tests assert it). Ground tests assert `CriticalChecked` and
+  `CriticalMissed` where they asserted `Checked`, `Skipped` and `Missed`; the oracle
+  values were taken from the code before the change.
+- `--compare` decodes reports leniently (`json.Unmarshal`), so old reports with
+  `cost_usd` still load (checked against `eval-reports/lean-baseline` and `docs/quality`).
+- `make eval` numbers equal the baseline under all three policies (`cost_usd` aside).
+- `internal/eval` now imports `internal/extract` for the constants; `StatusError` stays.
 
 ## Acceptance criteria
 
@@ -75,3 +94,5 @@ Audit findings (`78b6486`):
 
 - The double timeout (`NewHTTPClient(ep.Timeout)` and the router's context timeout): kept
   as a safety net for paths that bypass the router.
+
+Result: production code 18 files changed, 97 insertions(+), 248 deletions(-); tests 12 files, +132 −187.

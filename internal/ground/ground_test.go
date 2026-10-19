@@ -12,7 +12,7 @@ import (
 	"github.com/kaanemec/vde/internal/ground"
 )
 
-func pointers(m ground.Misses) []string {
+func pointers(m []ground.Miss) []string {
 	out := []string{}
 	for _, x := range m {
 		out = append(out, x.Pointer)
@@ -58,12 +58,12 @@ func TestCheck_planted(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := ground.Check(doc, json.RawMessage(tt.candidate), nil, ground.Options{})
+			res := ground.Check(doc, json.RawMessage(tt.candidate), nil, 0)
 			if got := pointers(res.Ungrounded); !slices.Equal(got, tt.want) {
 				t.Errorf("misses = %q, want %q", got, tt.want)
 			}
-			if res.Missed != len(tt.want) || res.CriticalMissed != len(tt.want) {
-				t.Errorf("Missed, CriticalMissed = %d, %d, want %d", res.Missed, res.CriticalMissed, len(tt.want))
+			if res.CriticalMissed != len(tt.want) {
+				t.Errorf("CriticalMissed = %d, want %d", res.CriticalMissed, len(tt.want))
 			}
 		})
 	}
@@ -82,21 +82,21 @@ func TestCheck_eventInvoice(t *testing.T) {
 	t.Parallel()
 	doc := ground.NewText(string(readFixture(t, "text.txt")))
 	rules := mustRules(t, string(readFixture(t, "schema.json")))
-	res := ground.Check(doc, readFixture(t, "candidate.json"), rules, ground.Options{})
+	res := ground.Check(doc, readFixture(t, "candidate.json"), rules, 0)
 	want := []string{"/event/start_date", "/event/end_date", "/event/venue", "/event/organiser", "/travellers/0/name", "/travellers/1/name"}
 	if got := pointers(res.Ungrounded); !slices.Equal(got, want) {
 		t.Errorf("misses = %q, want %q", got, want)
 	}
-	wantKinds := []ground.Kind{ground.KindDate, ground.KindDateTime, ground.KindString, ground.KindString, ground.KindString, ground.KindString}
-	for i, m := range res.Ungrounded {
-		if i < len(wantKinds) && (m.Kind != wantKinds[i] || !m.Critical) {
-			t.Errorf("miss %s: kind %v critical %v, want %v critical", m.Pointer, m.Kind, m.Critical, wantKinds[i])
+	for _, m := range res.Ungrounded {
+		if !m.Critical {
+			t.Errorf("miss %s is not critical", m.Pointer)
 		}
 	}
-	// skipped: currency (derived), notes and confidence (skip), document_type (enum), two booleans
-	if res.Skipped != 6 || res.Checked != 19 || res.CriticalMissed != 6 || res.CriticalOK() {
-		t.Errorf("Skipped %d Checked %d CriticalMissed %d CriticalOK %v, want 6, 19, 6, false",
-			res.Skipped, res.Checked, res.CriticalMissed, res.CriticalOK())
+	// 25 leaves; not checked: currency (derived), notes and confidence (skip),
+	// document_type (enum), two booleans
+	if res.CriticalChecked != 19 || res.CriticalMissed != 6 || res.CriticalOK() {
+		t.Errorf("CriticalChecked %d CriticalMissed %d CriticalOK %v, want 19, 6, false",
+			res.CriticalChecked, res.CriticalMissed, res.CriticalOK())
 	}
 }
 
@@ -114,27 +114,27 @@ func TestCheck_annotations(t *testing.T) {
 	tests := []struct {
 		name, candidate      string
 		want                 []string
-		checked, skipped     int
+		criticalChecked      int
 		criticalMissed       int
 		criticalOK, critical bool
 	}{
-		{"skip and derived are skipped", `{"city":"Berlin","note":"invented","travellers":["A B","C D"]}`, []string{}, 0, 4, 0, false, false},
-		{"misses outside critical do not count", `{"total":100,"venue":"Messe Nord"}`, []string{"/venue"}, 2, 0, 0, true, false},
-		{"critical miss counts", `{"total":101,"venue":"Messe Nord"}`, []string{"/total", "/venue"}, 2, 0, 1, false, true},
-		{"annotation on an array applies to its items", `{"guests":[{"name":"Jane Roe"},{"name":"John Roe"}]}`, []string{"/guests/0/name", "/guests/1/name"}, 2, 0, 2, false, true},
-		{"a deeper annotation overrides", `{"guests":[{"name":"Jane Roe","seat":"12A"}],"venue":"Messe Nord"}`, []string{"/guests/0/name", "/guests/0/seat", "/venue"}, 3, 0, 1, false, true},
-		{"critical leaf that is null still marks critical", `{"total":null,"venue":"Messe Nord"}`, []string{"/venue"}, 1, 1, 0, false, false},
+		{"skip and derived are skipped", `{"city":"Berlin","note":"invented","travellers":["A B","C D"]}`, []string{}, 0, 0, false, false},
+		{"misses outside critical do not count", `{"total":100,"venue":"Messe Nord"}`, []string{"/venue"}, 1, 0, true, false},
+		{"critical miss counts", `{"total":101,"venue":"Messe Nord"}`, []string{"/total", "/venue"}, 1, 1, false, true},
+		{"annotation on an array applies to its items", `{"guests":[{"name":"Jane Roe"},{"name":"John Roe"}]}`, []string{"/guests/0/name", "/guests/1/name"}, 2, 2, false, true},
+		{"a deeper annotation overrides", `{"guests":[{"name":"Jane Roe","seat":"12A"}],"venue":"Messe Nord"}`, []string{"/guests/0/name", "/guests/0/seat", "/venue"}, 1, 1, false, true},
+		{"critical leaf that is null still marks critical", `{"total":null,"venue":"Messe Nord"}`, []string{"/venue"}, 0, 0, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := ground.Check(doc, json.RawMessage(tt.candidate), rules, ground.Options{})
+			res := ground.Check(doc, json.RawMessage(tt.candidate), rules, 0)
 			if got := pointers(res.Ungrounded); !slices.Equal(got, tt.want) {
 				t.Errorf("misses = %q, want %q", got, tt.want)
 			}
-			if res.Checked != tt.checked || res.Skipped != tt.skipped || res.CriticalMissed != tt.criticalMissed || res.CriticalOK() != tt.criticalOK {
-				t.Errorf("Checked %d Skipped %d CriticalMissed %d CriticalOK %v, want %d %d %d %v",
-					res.Checked, res.Skipped, res.CriticalMissed, res.CriticalOK(), tt.checked, tt.skipped, tt.criticalMissed, tt.criticalOK)
+			if res.CriticalChecked != tt.criticalChecked || res.CriticalMissed != tt.criticalMissed || res.CriticalOK() != tt.criticalOK {
+				t.Errorf("CriticalChecked %d CriticalMissed %d CriticalOK %v, want %d %d %v",
+					res.CriticalChecked, res.CriticalMissed, res.CriticalOK(), tt.criticalChecked, tt.criticalMissed, tt.criticalOK)
 			}
 			if len(res.Ungrounded) > 0 && res.Ungrounded[0].Critical != tt.critical {
 				t.Errorf("first miss critical = %v, want %v", res.Ungrounded[0].Critical, tt.critical)
@@ -158,41 +158,40 @@ func TestCheck_leaves(t *testing.T) {
 	tests := []struct {
 		name, candidate string
 		rules           ground.Rules
-		opts            ground.Options
+		maxMisses       int
 		want            []string
-		checked         int
-		skipped         int
+		checked         int // all checked leaves are critical here: no rule is critical
 	}{
-		{"booleans and nulls skipped", `{"a":true,"b":false,"c":null}`, nil, ground.Options{}, []string{}, 0, 3},
-		{"empty and short strings skipped", `{"a":"","b":"  ","c":"x","d":"--"}`, nil, ground.Options{}, []string{}, 0, 4},
-		{"min length option", `{"a":"xyz"}`, nil, ground.Options{MinLength: 4}, []string{}, 0, 1},
-		{"enum value skipped", `{"class":"first","count":7}`, enumRules, ground.Options{}, []string{}, 0, 2},
-		{"non-enum value checked", `{"class":"premium","count":8}`, enumRules, ground.Options{}, []string{"/class", "/count"}, 2, 0},
-		{"pointer escaping", `{"a/b":"zz","m~n":"yy"}`, nil, ground.Options{}, []string{"/a~1b", "/m~0n"}, 2, 0},
-		{"scalar candidate", `"invented value"`, nil, ground.Options{}, []string{""}, 1, 0},
-		{"top-level array", `["economy","invented"]`, nil, ground.Options{}, []string{"/1"}, 2, 0},
-		{"big integer printed", `{"order":12345678901234567890}`, nil, ground.Options{}, []string{}, 1, 0},
-		{"overflowing number", `{"n":1e400}`, nil, ground.Options{}, []string{"/n"}, 1, 0},
-		{"max misses caps entries only", `["q1","q2","q3"]`, nil, ground.Options{MaxMisses: 2}, []string{"/0", "/1"}, 3, 0},
-		{"empty containers", `{"a":{},"b":[]}`, nil, ground.Options{}, []string{}, 0, 0},
+		{"booleans and nulls skipped", `{"a":true,"b":false,"c":null}`, nil, 0, []string{}, 0},
+		{"empty and short strings skipped", `{"a":"","b":"  ","c":"x","d":"--"}`, nil, 0, []string{}, 0},
+		{"two runes are checked", `{"a":"zq"}`, nil, 0, []string{"/a"}, 1},
+		{"enum value skipped", `{"class":"first","count":7}`, enumRules, 0, []string{}, 0},
+		{"non-enum value checked", `{"class":"premium","count":8}`, enumRules, 0, []string{"/class", "/count"}, 2},
+		{"pointer escaping", `{"a/b":"zz","m~n":"yy"}`, nil, 0, []string{"/a~1b", "/m~0n"}, 2},
+		{"scalar candidate", `"invented value"`, nil, 0, []string{""}, 1},
+		{"top-level array", `["economy","invented"]`, nil, 0, []string{"/1"}, 2},
+		{"big integer printed", `{"order":12345678901234567890}`, nil, 0, []string{}, 1},
+		{"overflowing number", `{"n":1e400}`, nil, 0, []string{"/n"}, 1},
+		{"max misses caps entries only", `["q1","q2","q3"]`, nil, 2, []string{"/0", "/1"}, 3},
+		{"empty containers", `{"a":{},"b":[]}`, nil, 0, []string{}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := ground.Check(doc, json.RawMessage(tt.candidate), tt.rules, tt.opts)
+			res := ground.Check(doc, json.RawMessage(tt.candidate), tt.rules, tt.maxMisses)
 			if res.Ungroundable {
 				t.Fatal("Ungroundable")
 			}
 			if got := pointers(res.Ungrounded); !slices.Equal(got, tt.want) {
 				t.Errorf("misses = %q, want %q", got, tt.want)
 			}
-			if res.Checked != tt.checked || res.Skipped != tt.skipped {
-				t.Errorf("Checked %d Skipped %d, want %d %d", res.Checked, res.Skipped, tt.checked, tt.skipped)
+			if res.CriticalChecked != tt.checked {
+				t.Errorf("CriticalChecked %d, want %d", res.CriticalChecked, tt.checked)
 			}
 		})
 	}
-	if res := ground.Check(doc, json.RawMessage(`["q1","q2","q3"]`), nil, ground.Options{MaxMisses: 2}); res.Missed != 3 || res.CriticalMissed != 3 {
-		t.Errorf("capped counts: Missed %d CriticalMissed %d, want 3 3", res.Missed, res.CriticalMissed)
+	if res := ground.Check(doc, json.RawMessage(`["q1","q2","q3"]`), nil, 2); res.CriticalMissed != 3 {
+		t.Errorf("capped count: CriticalMissed %d, want 3", res.CriticalMissed)
 	}
 }
 
@@ -214,7 +213,7 @@ func TestCheck_nothingCritical(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := ground.Check(doc, json.RawMessage(tt.candidate), nil, ground.Options{})
+			res := ground.Check(doc, json.RawMessage(tt.candidate), nil, 0)
 			if res.CriticalOK() != tt.criticalOK {
 				t.Errorf("CriticalOK = %v (CriticalChecked %d), want %v", res.CriticalOK(), res.CriticalChecked, tt.criticalOK)
 			}
@@ -240,41 +239,11 @@ func TestCheck_ungroundable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := ground.Check(tt.doc, json.RawMessage(tt.candidate), nil, ground.Options{})
-			if !res.Ungroundable || len(res.Ungrounded) != 0 || res.Checked != 0 || res.CriticalOK() {
+			res := ground.Check(tt.doc, json.RawMessage(tt.candidate), nil, 0)
+			if !res.Ungroundable || len(res.Ungrounded) != 0 || res.CriticalChecked != 0 || res.CriticalOK() {
 				t.Errorf("Check = %+v, want Ungroundable with nothing checked", res)
 			}
 		})
-	}
-}
-
-func TestMisses_Feedback(t *testing.T) {
-	t.Parallel()
-	if got := ground.Misses(nil).Feedback(); got != nil {
-		t.Errorf("Feedback of no misses = %v, want nil", got)
-	}
-	m := ground.Misses{{Pointer: "/a", Kind: ground.KindDate, Critical: true}, {Pointer: "/b/0"}}
-	got := m.Feedback()
-	want := []ground.Feedback{
-		{Pointer: "/a", Message: "value not found in the document", Source: "grounding"},
-		{Pointer: "/b/0", Message: "value not found in the document", Source: "grounding"},
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("Feedback = %+v, want %+v", got, want)
-	}
-	b, err := json.Marshal(got[0])
-	if err != nil || string(b) != `{"pointer":"/a","message":"value not found in the document","source":"grounding"}` {
-		t.Errorf("json = %s, %v", b, err)
-	}
-}
-
-func TestKind_String(t *testing.T) {
-	t.Parallel()
-	for k, want := range map[ground.Kind]string{ground.KindString: "string", ground.KindNumber: "number",
-		ground.KindDate: "date", ground.KindDateTime: "datetime", ground.KindTime: "time", ground.Kind(9): "kind(9)"} {
-		if got := k.String(); got != want {
-			t.Errorf("Kind(%d).String() = %q, want %q", k, got, want)
-		}
 	}
 }
 
@@ -283,8 +252,8 @@ func TestCheck_noValueInOutput(t *testing.T) {
 	t.Parallel()
 	doc := ground.NewText(string(readFixture(t, "text.txt")))
 	candidate := readFixture(t, "candidate.json")
-	res := ground.Check(doc, candidate, mustRules(t, string(readFixture(t, "schema.json"))), ground.Options{})
-	fb, err := json.Marshal(res.Ungrounded.Feedback())
+	res := ground.Check(doc, candidate, mustRules(t, string(readFixture(t, "schema.json"))), 0)
+	fb, err := json.Marshal(res.Ungrounded)
 	if err != nil {
 		t.Fatal(err)
 	}

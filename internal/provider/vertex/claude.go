@@ -18,7 +18,6 @@ type claudeRequest struct {
 	AnthropicVersion string          `json:"anthropic_version"`
 	MaxTokens        int             `json:"max_tokens"`
 	System           string          `json:"system,omitempty"`
-	Temperature      *float64        `json:"temperature,omitempty"`
 	Messages         []claudeMessage `json:"messages"`
 }
 
@@ -40,7 +39,6 @@ type claudeSource struct {
 }
 
 type claudeResponse struct {
-	Model      string `json:"model"`
 	StopReason string `json:"stop_reason"`
 	Content    []struct {
 		Type string `json:"type"`
@@ -66,12 +64,6 @@ func buildClaudeBody(req provider.Request) ([]byte, error) {
 		MaxTokens:        req.MaxTokens,
 		System:           req.System,
 		Messages:         []claudeMessage{{Role: "user", Content: blocks}},
-	}
-	if r.MaxTokens <= 0 {
-		r.MaxTokens = defaultMaxTokens
-	}
-	if req.Temperature > 0 { // current Claude models reject non-default sampling; 0 means default
-		r.Temperature = &req.Temperature
 	}
 	body, err := json.Marshal(r)
 	if err != nil {
@@ -128,7 +120,6 @@ func parseClaude(raw []byte, status int) (provider.Response, error) {
 		Text:         text.String(),
 		InputTokens:  mr.Usage.InputTokens,
 		OutputTokens: mr.Usage.OutputTokens,
-		Model:        mr.Model,
 		Truncated:    mr.StopReason == "max_tokens",
 	}, nil
 }

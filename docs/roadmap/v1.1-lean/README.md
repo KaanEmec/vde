@@ -74,7 +74,7 @@ Release `v1.1.0` with `make release` when:
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
 | 00 | [Preparation: skills, local CI and release, baseline](00-preparation/README.md) | none; runs first, merged into `main` before the rest | planned |
-| 01 | [Dead code and dead features](01-dead-code/README.md) | 00 | in progress |
+| 01 | [Dead code and dead features](01-dead-code/README.md) | 00 | done |
 | 02 | [Remove unneeded abstractions](02-de-abstraction/README.md) | 01 | planned |
 | 03 | [One source for each rule](03-single-source/README.md) | 01 | planned |
 | 04 | [Provider adapters](04-providers/README.md) | 01-03 | planned |

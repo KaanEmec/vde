@@ -62,9 +62,9 @@ func newClient(t *testing.T, baseURL string, timeout time.Duration) *Client {
 
 func baseRequest() provider.Request {
 	return provider.Request{
-		Model:       "gemini-test-model",
-		System:      "be careful",
-		Temperature: 0.1,
+		Model:     "gemini-test-model",
+		System:    "be careful",
+		MaxTokens: 4096,
 		Parts: []provider.Part{
 			{Text: secretText},
 			{Image: &provider.Blob{MediaType: "image/png", Data: []byte(secretBlob)}},
@@ -151,10 +151,10 @@ func TestCompleteRequest(t *testing.T) {
 		}
 	}
 	if got, want := body.GenerationConfig["maxOutputTokens"], float64(4096); got != want {
-		t.Errorf("maxOutputTokens = %v, want default %v", got, want)
+		t.Errorf("maxOutputTokens = %v, want %v", got, want)
 	}
-	if got := body.GenerationConfig["temperature"]; got != 0.1 {
-		t.Errorf("temperature = %v, want 0.1", got)
+	if got, ok := body.GenerationConfig["temperature"]; !ok || got != float64(0) {
+		t.Errorf("temperature = %v, want 0 sent explicitly", got)
 	}
 }
 
@@ -185,7 +185,7 @@ func TestCompleteSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := provider.Response{Text: secretAns, InputTokens: 11, OutputTokens: 7, Model: "gemini-test-model-001"}
+	want := provider.Response{Text: secretAns, InputTokens: 11, OutputTokens: 7}
 	if resp != want {
 		t.Errorf("response = %+v, want %+v", resp, want)
 	}
@@ -203,19 +203,6 @@ func TestCompleteTruncated(t *testing.T) {
 		if resp.Text != `{"a":` || resp.Truncated != want {
 			t.Errorf("finishReason %q: text %q truncated %v, want truncated %v", reason, resp.Text, resp.Truncated, want)
 		}
-	}
-}
-
-func TestCompleteModelFallsBackToRequested(t *testing.T) {
-	t.Parallel()
-	reply := `{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}`
-	c, _ := serve(t, http.StatusOK, reply, nil)
-	resp, err := c.Complete(t.Context(), baseRequest())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.Model != "gemini-test-model" {
-		t.Errorf("Model = %q, want the requested model", resp.Model)
 	}
 }
 

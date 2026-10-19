@@ -35,7 +35,7 @@ type geminiInlineData struct {
 
 type geminiGenerationConfig struct {
 	MaxOutputTokens int     `json:"maxOutputTokens"`
-	Temperature     float64 `json:"temperature"`
+	Temperature     float64 `json:"temperature"` // always 0, sent explicitly
 }
 
 type geminiResponse struct {
@@ -50,16 +50,11 @@ type geminiResponse struct {
 		PromptTokenCount     int `json:"promptTokenCount"`
 		CandidatesTokenCount int `json:"candidatesTokenCount"`
 	} `json:"usageMetadata"`
-	ModelVersion string `json:"modelVersion"`
 }
 
 func buildGeminiBody(req provider.Request) ([]byte, error) {
-	maxTokens := req.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = defaultMaxTokens
-	}
 	gr := geminiRequest{
-		GenerationConfig: geminiGenerationConfig{MaxOutputTokens: maxTokens, Temperature: req.Temperature},
+		GenerationConfig: geminiGenerationConfig{MaxOutputTokens: req.MaxTokens},
 	}
 	if req.System != "" {
 		gr.SystemInstruction = &geminiContent{Parts: []geminiPart{{Text: req.System}}}
@@ -90,7 +85,7 @@ func geminiBlob(b *provider.Blob) geminiPart {
 	}}
 }
 
-func parseGemini(raw []byte, status int, model string) (provider.Response, error) {
+func parseGemini(raw []byte, status int) (provider.Response, error) {
 	var gr geminiResponse
 	if err := json.Unmarshal(raw, &gr); err != nil {
 		// The decode error is dropped: it can quote response bytes.
@@ -114,14 +109,10 @@ func parseGemini(raw []byte, status int, model string) (provider.Response, error
 	if text.Len() == 0 {
 		return provider.Response{}, refused(status, "vertex: response had no text")
 	}
-	if gr.ModelVersion != "" {
-		model = gr.ModelVersion
-	}
 	return provider.Response{
 		Text:         text.String(),
 		InputTokens:  gr.UsageMetadata.PromptTokenCount,
 		OutputTokens: gr.UsageMetadata.CandidatesTokenCount,
-		Model:        model,
 		Truncated:    cand.FinishReason == "MAX_TOKENS",
 	}, nil
 }

@@ -223,7 +223,7 @@ func describeCase(r eval.CaseResult) string {
 	if r.ErrorCode != "" {
 		status += " (" + r.ErrorCode + ")"
 	}
-	if r.Verification != "" && r.Verification != eval.VerificationNone {
+	if r.Verification != "" && r.Verification != extract.VerificationNone {
 		status += " by " + r.Verification
 	}
 	fields := fmt.Sprintf("%d/%d fields", r.Fields.Matched, r.Fields.Total)
@@ -235,7 +235,7 @@ func describeCase(r eval.CaseResult) string {
 	if r.JudgeCalls != nil {
 		line += fmt.Sprintf(", %d judge call(s)", *r.JudgeCalls)
 	}
-	if r.Decision == eval.DecisionSampled {
+	if r.Decision == extract.DecisionSampled {
 		line += ", sampled"
 	}
 	if r.FalseAccept {

@@ -11,7 +11,7 @@ the version path (`https://api.openai.com/v1`, `https://openrouter.ai/api/v1`,
 Each role call is one request to the endpoint you configured, and nothing else is sent
 anywhere:
 
-- `model`, `max_tokens` (4096 when the request sets none; the router sets it from `max_output_tokens`) and `temperature`.
+- `model`, `max_tokens` (the model's `max_output_tokens`) and `temperature` (always 0).
 - A `system` message with the role framing.
 - One `user` message whose content parts follow the order of the request: instruction and
   schema text, the document representation, the candidate answer, reviewer feedback.

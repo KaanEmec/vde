@@ -5,31 +5,14 @@ import (
 	"encoding/json"
 	"sync"
 	"time"
+
+	"github.com/kaanemec/vde/internal/extract"
 )
 
-// Terminal job statuses as a Runner reports them, and the status of a case the harness
-// could not run. StatusExtracted is a job no judge was asked about (judge policy never,
-// ADR 0009): neither accepted nor rejected, so never a false accept or a false reject.
-const (
-	StatusAccepted  = "accepted"
-	StatusRejected  = "rejected"
-	StatusFailed    = "failed"
-	StatusExtracted = "extracted"
-	StatusError     = "error"
-)
-
-// Verifications (the job's verification field) and judge decisions (how the last
-// schema-valid candidate was decided), as the engine reports them.
-const (
-	VerificationJudge    = "judge"
-	VerificationGrounded = "grounded"
-	VerificationNone     = "none"
-
-	DecisionJudged   = "judged"
-	DecisionGrounded = "grounded"
-	DecisionSampled  = "sampled"
-	DecisionSkipped  = "skipped"
-)
+// StatusError is the status of a case the harness could not run. The terminal job
+// statuses, verifications and decisions are internal/extract's (StatusExtracted is a job
+// no judge was asked about: never a false accept or a false reject).
+const StatusError = "error"
 
 // Usage is the model usage of one case.
 type Usage struct {
@@ -62,7 +45,7 @@ type Outcome struct {
 
 // Runner runs one case to its terminal state. An error means the harness could not run
 // the case at all (an unreadable file, an unsupported document, a transport failure); a
-// failed job is an Outcome with StatusFailed.
+// failed job is an Outcome with status failed.
 type Runner func(ctx context.Context, c Case) (Outcome, error)
 
 // CaseResult is one case's line of a report. It never carries content.
@@ -146,7 +129,7 @@ func Score(r CaseResult, c Case, result json.RawMessage) CaseResult {
 	r.Correct = r.Status != StatusError && f.Correct()
 	// An extracted case is neither accepted nor rejected: it is never a false accept or a
 	// false reject, only its field accuracy counts.
-	r.FalseAccept = r.Status == StatusAccepted && !r.Correct
-	r.FalseReject = r.Status == StatusRejected && r.Correct
+	r.FalseAccept = r.Status == string(extract.StatusAccepted) && !r.Correct
+	r.FalseReject = r.Status == string(extract.StatusRejected) && r.Correct
 	return r
 }

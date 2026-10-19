@@ -95,8 +95,7 @@ func request() provider.Request {
 			{Document: &provider.Blob{MediaType: "application/pdf", Data: []byte(secretDoc)}},
 			{Text: "Candidate: {}"},
 		},
-		MaxTokens:   1000,
-		Temperature: 0.1,
+		MaxTokens: 1000,
 	}
 }
 
@@ -190,8 +189,8 @@ func TestCompleteRequestShape(t *testing.T) {
 	if body.Model != "claude-test" || body.MaxTokens != 1000 || body.System != "You are an extractor. "+secretText {
 		t.Errorf("model/max_tokens/system = %q/%d/%q", body.Model, body.MaxTokens, body.System)
 	}
-	if body.Temperature == nil || *body.Temperature != 0.1 {
-		t.Errorf("temperature = %v, want 0.1", body.Temperature)
+	if body.Temperature != nil {
+		t.Errorf("temperature = %v, want none", *body.Temperature)
 	}
 	if len(body.Messages) != 1 || body.Messages[0].Role != "user" {
 		t.Fatalf("messages = %+v, want one user message", body.Messages)
@@ -238,7 +237,7 @@ func TestCompleteRequestShape(t *testing.T) {
 func TestCompleteRequestDefaults(t *testing.T) {
 	t.Parallel()
 	srv, got := serve(t, reply(200, successBody("ok")))
-	req := provider.Request{Model: "claude-test", Parts: []provider.Part{{Text: "hi"}}}
+	req := provider.Request{Model: "claude-test", MaxTokens: 4096, Parts: []provider.Part{{Text: "hi"}}}
 	if _, err := complete(t, srv, req); err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +246,7 @@ func TestCompleteRequestDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(fields["max_tokens"]) != "4096" {
-		t.Errorf("max_tokens = %s, want the default 4096", fields["max_tokens"])
+		t.Errorf("max_tokens = %s, want 4096", fields["max_tokens"])
 	}
 	for _, f := range []string{"system", "temperature"} {
 		if _, ok := fields[f]; ok {
@@ -266,7 +265,7 @@ func TestCompleteSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := provider.Response{Text: `{"a":1}`, InputTokens: 120, OutputTokens: 7, Model: "claude-test-20260101"}
+	want := provider.Response{Text: `{"a":1}`, InputTokens: 120, OutputTokens: 7}
 	if got != want {
 		t.Errorf("response = %+v, want %+v", got, want)
 	}

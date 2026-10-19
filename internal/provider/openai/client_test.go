@@ -70,10 +70,9 @@ const okReply = `{"model":"gpt-x-2026","choices":[{"message":{"role":"assistant"
 
 func request() provider.Request {
 	return provider.Request{
-		Model:       "gpt-x",
-		System:      "you are a reader",
-		MaxTokens:   1000,
-		Temperature: 0.2,
+		Model:     "gpt-x",
+		System:    "you are a reader",
+		MaxTokens: 1000,
 		Parts: []provider.Part{
 			{Text: docText},
 			{Image: &provider.Blob{MediaType: "image/png", Data: []byte("PNGDATA")}},
@@ -105,7 +104,7 @@ func TestRequestShape(t *testing.T) {
 		t.Error("attribution headers sent without the openrouter preset")
 	}
 	b := got.body
-	if b["model"] != "gpt-x" || b["max_tokens"] != float64(1000) || b["temperature"] != 0.2 {
+	if b["model"] != "gpt-x" || b["max_tokens"] != float64(1000) || b["temperature"] != float64(0) {
 		t.Errorf("scalar fields = %v", b)
 	}
 	if _, ok := b["provider"]; ok {
@@ -148,12 +147,12 @@ func TestDefaultsAndNoSystem(t *testing.T) {
 	t.Parallel()
 	srv, got := serve(t, 200, okReply, nil)
 	c := New(endpoint(t, srv.URL, "", ""))
-	req := provider.Request{Model: "m", Parts: []provider.Part{{Text: "hi"}}}
+	req := provider.Request{Model: "m", MaxTokens: 4096, Parts: []provider.Part{{Text: "hi"}}}
 	if _, err := c.Complete(t.Context(), req); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if got.body["max_tokens"] != float64(4096) {
-		t.Errorf("max_tokens = %v, want the 4096 default", got.body["max_tokens"])
+	if got.body["max_tokens"] != float64(4096) || got.body["temperature"] != float64(0) {
+		t.Errorf("max_tokens, temperature = %v, %v, want 4096, 0", got.body["max_tokens"], got.body["temperature"])
 	}
 	if n := len(got.body["messages"].([]any)); n != 1 {
 		t.Errorf("messages = %d, want only the user message", n)
@@ -188,22 +187,21 @@ func TestSuccessParsing(t *testing.T) {
 		name  string
 		reply string
 		text  string
-		model string
 	}{
 		{
 			name:  "string content",
 			reply: okReply,
-			text:  answer, model: "gpt-x-2026",
+			text:  answer,
 		},
 		{
-			name:  "array content, model falls back to the requested one",
+			name:  "array content",
 			reply: `{"choices":[{"message":{"content":[{"type":"text","text":"ab"},{"type":"text","text":"cd"}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":7}}`,
-			text:  "abcd", model: "gpt-x",
+			text:  "abcd",
 		},
 		{
 			name:  "minimal Ollama-style reply without usage",
 			reply: `{"model":"llava","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`,
-			text:  "ok", model: "llava",
+			text:  "ok",
 		},
 	}
 	for _, tt := range tests {
@@ -214,8 +212,8 @@ func TestSuccessParsing(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Complete: %v", err)
 			}
-			if resp.Text != tt.text || resp.Model != tt.model {
-				t.Errorf("got text %q model %q, want %q %q", resp.Text, resp.Model, tt.text, tt.model)
+			if resp.Text != tt.text {
+				t.Errorf("got text %q, want %q", resp.Text, tt.text)
 			}
 			if strings.Contains(tt.reply, "usage") && (resp.InputTokens != 11 || resp.OutputTokens != 7) {
 				t.Errorf("usage = %d/%d, want 11/7", resp.InputTokens, resp.OutputTokens)

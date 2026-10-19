@@ -102,7 +102,6 @@ func (p *Provider) Complete(ctx context.Context, req provider.Request) (provider
 		Text:         step.Answer,
 		InputTokens:  InputTokens,
 		OutputTokens: OutputTokens,
-		Model:        req.Model,
 		Truncated:    step.Truncated,
 	}, nil
 }

@@ -111,26 +111,28 @@ func NewText(s string) *Text {
 	return t
 }
 
-// match classifies value and reports whether it is grounded.
-func (t *Text) match(value string) (Kind, bool) {
-	if k, ok, isTemporal := t.matchTemporal(strings.TrimSpace(value)); isTemporal {
-		return k, ok
+// match reports whether the string value is grounded in the text: as an ISO date,
+// datetime or time (dates.go), as a phrase on word boundaries, as reordered words within
+// a short window, or as a number (numbers.go).
+func (t *Text) match(value string) bool {
+	if ok, isTemporal := t.matchTemporal(strings.TrimSpace(value)); isTemporal {
+		return ok
 	}
 	c := Normalize(value)
 	if c == "" {
-		return KindString, true
+		return true
 	}
 	if t.containsPhrase(c) || t.containsReordered(c) {
-		return KindString, true
+		return true
 	}
 	if readings, ok := parseCandidateNumber(value); ok {
 		for _, v := range readings {
 			if t.ContainsNumber(v) {
-				return KindString, true
+				return true
 			}
 		}
 	}
-	return KindString, false
+	return false
 }
 
 // containsPhrase reports whether the normalized phrase c occurs with no letter, digit or

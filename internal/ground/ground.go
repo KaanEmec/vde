@@ -18,80 +18,23 @@ const Source = "grounding"
 // safe wherever feedback goes.
 const Message = "value not found in the document"
 
-// DefaultMinLength is the default Options.MinLength.
-const DefaultMinLength = 2
+// minLength: strings with fewer runes (after trimming) are skipped.
+const minLength = 2
 
-// Options tune Check. The zero value is the default.
-type Options struct {
-	// MinLength skips strings with fewer runes (after trimming); 0 means
-	// DefaultMinLength.
-	MinLength int
-	// MaxMisses caps Result.Ungrounded; 0 means no cap. Counts are never capped.
-	MaxMisses int
-}
-
-// Kind is the kind of value a leaf held. It is what a Miss says about the value, which
-// it never carries.
-type Kind uint8
-
-// Kinds.
-const (
-	KindString Kind = iota
-	KindNumber
-	KindDate
-	KindDateTime
-	KindTime
-)
-
-var kindNames = [...]string{"string", "number", "date", "datetime", "time"}
-
-func (k Kind) String() string {
-	if int(k) < len(kindNames) {
-		return kindNames[k]
-	}
-	return "kind(" + strconv.Itoa(int(k)) + ")"
-}
-
-// Miss is one ungrounded leaf: its RFC 6901 pointer, the kind of value it held and
-// whether it is critical. It never carries the value.
+// Miss is one ungrounded leaf: its RFC 6901 pointer and whether it is critical. It
+// never carries the value.
 type Miss struct {
 	Pointer  string
-	Kind     Kind
 	Critical bool
-}
-
-// Misses are the ungrounded leaves of a candidate, in document order.
-type Misses []Miss
-
-// Feedback is a grounding feedback entry. Its fields and tags match extract.Feedback,
-// so the loop converts with extract.Feedback(f).
-type Feedback struct {
-	Pointer string `json:"pointer"`
-	Message string `json:"message"`
-	Source  string `json:"source"`
-}
-
-// Feedback returns one entry per miss with Source and the fixed Message.
-func (m Misses) Feedback() []Feedback {
-	if len(m) == 0 {
-		return nil
-	}
-	out := make([]Feedback, len(m))
-	for i, x := range m {
-		out[i] = Feedback{Pointer: x.Pointer, Message: Message, Source: Source}
-	}
-	return out
 }
 
 // Result is the outcome of Check.
 type Result struct {
-	Ungrounded Misses // capped by Options.MaxMisses
-	Checked    int    // leaves compared against the text
-	// CriticalChecked counts the critical leaves among Checked: a candidate with none
-	// (an empty object, only nulls, booleans or enum values) gives grounding no evidence.
+	Ungrounded []Miss // in document order, capped by Check's maxMisses
+	// CriticalChecked counts the critical leaves compared against the text: a candidate
+	// with none (an empty object, only nulls, booleans or enum values) gives grounding no
+	// evidence.
 	CriticalChecked int
-	Skipped         int // booleans, nulls, enum values, short strings, derived and skip leaves
-	Missed          int // checked leaves not grounded, uncapped
 	CriticalMissed  int // critical leaves not grounded, uncapped
 	// Ungroundable is set when there is no text to check against (nil *Text) or the
 	// candidate is not valid JSON; nothing was checked.
@@ -108,18 +51,15 @@ func (r Result) CriticalOK() bool {
 // Check walks every leaf of candidate in document order and reports the checked leaves
 // that doc does not ground. rules may be nil (schema-less: every leaf checked and
 // critical). When no visited leaf is annotated critical, every checked leaf is critical.
-// A nil doc gives an Ungroundable result with no misses.
-func Check(doc *Text, candidate json.RawMessage, rules Rules, opts Options) Result {
+// Result.Ungrounded holds at most maxMisses entries (0 means no cap); counts are never
+// capped. A nil doc gives an Ungroundable result with no misses.
+func Check(doc *Text, candidate json.RawMessage, rules Rules, maxMisses int) Result {
 	if doc == nil {
 		return Result{Ungroundable: true}
 	}
 	ls, err := leaves(candidate)
 	if err != nil {
 		return Result{Ungroundable: true}
-	}
-	minLen := opts.MinLength
-	if minLen <= 0 {
-		minLen = DefaultMinLength
 	}
 	ruleOf := make([]Rule, len(ls))
 	enumOf := make([][]string, len(ls))
@@ -132,12 +72,10 @@ func Check(doc *Text, candidate json.RawMessage, rules Rules, opts Options) Resu
 	}
 	var res Result
 	for i, l := range ls {
-		kind, ok, checked := checkLeaf(doc, l.tok, ruleOf[i], enumOf[i], minLen)
+		ok, checked := checkLeaf(doc, l.tok, ruleOf[i], enumOf[i])
 		if !checked {
-			res.Skipped++
 			continue
 		}
-		res.Checked++
 		critical := !anyCritical || ruleOf[i] == RuleCritical
 		if critical {
 			res.CriticalChecked++
@@ -145,40 +83,37 @@ func Check(doc *Text, candidate json.RawMessage, rules Rules, opts Options) Resu
 		if ok {
 			continue
 		}
-		res.Missed++
 		if critical {
 			res.CriticalMissed++
 		}
-		if opts.MaxMisses <= 0 || len(res.Ungrounded) < opts.MaxMisses {
-			res.Ungrounded = append(res.Ungrounded, Miss{Pointer: pointer(l.loc), Kind: kind, Critical: critical})
+		if maxMisses <= 0 || len(res.Ungrounded) < maxMisses {
+			res.Ungrounded = append(res.Ungrounded, Miss{Pointer: pointer(l.loc), Critical: critical})
 		}
 	}
 	return res
 }
 
-// checkLeaf reports the kind of a leaf, whether doc grounds it and whether it was
-// checked at all.
-func checkLeaf(doc *Text, tok json.Token, rule Rule, enum []string, minLen int) (k Kind, ok, checked bool) {
+// checkLeaf reports whether doc grounds a leaf and whether it was checked at all
+// (booleans, nulls, enum values, short strings, derived and skip leaves are not).
+func checkLeaf(doc *Text, tok json.Token, rule Rule, enum []string) (ok, checked bool) {
 	if rule == RuleDerived || rule == RuleSkip {
-		return 0, false, false
+		return false, false
 	}
 	switch v := tok.(type) {
 	case string:
 		s := strings.TrimSpace(v)
-		if slices.Contains(enum, v) || utf8.RuneCountInString(s) < minLen || Normalize(s) == "" {
-			return 0, false, false
+		if slices.Contains(enum, v) || utf8.RuneCountInString(s) < minLength || Normalize(s) == "" {
+			return false, false
 		}
-		k, ok := doc.match(s)
-		return k, ok, true
+		return doc.match(s), true
 	case json.Number:
 		f, err := v.Float64()
 		if err == nil && enumHasNumber(enum, f) {
-			return 0, false, false
+			return false, false
 		}
-		ok := err == nil && doc.ContainsNumber(f) || doc.containsPhrase(Normalize(v.String()))
-		return KindNumber, ok, true
+		return err == nil && doc.ContainsNumber(f) || doc.containsPhrase(Normalize(v.String())), true
 	}
-	return 0, false, false // booleans and nulls
+	return false, false // booleans and nulls
 }
 
 func enumHasNumber(enum []string, f float64) bool {

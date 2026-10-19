@@ -38,8 +38,8 @@ func TestLiveOnePagePDF(t *testing.T) {
 	if !strings.Contains(resp.Text, "4711") {
 		t.Errorf("answer = %q, want it to contain the invoice number", resp.Text)
 	}
-	if resp.InputTokens == 0 || resp.OutputTokens == 0 || resp.Model == "" {
-		t.Errorf("response = %+v, want usage and model", resp)
+	if resp.InputTokens == 0 || resp.OutputTokens == 0 {
+		t.Errorf("response = %+v, want usage", resp)
 	}
 }
 

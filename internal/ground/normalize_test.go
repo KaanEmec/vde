@@ -117,12 +117,12 @@ func TestNewText_performance(t *testing.T) {
 	}
 	start := time.Now()
 	doc := NewText(text)
-	res := Check(doc, candidate, nil, Options{})
+	res := Check(doc, candidate, nil, 0)
 	if d := time.Since(start); d > limit {
 		t.Errorf("NewText and Check on %d bytes took %v, want under %v", len(text), d, limit)
 	}
-	if res.Checked != 6 || res.Missed != 2 {
-		t.Errorf("Checked, Missed = %d, %d, want 6, 2", res.Checked, res.Missed)
+	if res.CriticalChecked != 6 || res.CriticalMissed != 2 {
+		t.Errorf("CriticalChecked, CriticalMissed = %d, %d, want 6, 2", res.CriticalChecked, res.CriticalMissed)
 	}
 }
 
@@ -142,10 +142,5 @@ func BenchmarkNewText(b *testing.B) {
 	}
 }
 
-// Contains reports whether the string value is grounded in the text: as an ISO date,
-// datetime or time (dates.go), as a phrase on word boundaries, as reordered words within
-// a short window, or as a number (numbers.go).
-func (t *Text) Contains(value string) bool {
-	_, ok := t.match(value)
-	return ok
-}
+// Contains is match, named for the tests.
+func (t *Text) Contains(value string) bool { return t.match(value) }

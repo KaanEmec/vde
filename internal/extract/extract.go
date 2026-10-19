@@ -397,10 +397,10 @@ func (l *loop) ground(candidate json.RawMessage) (ground.Result, []Feedback) {
 	if l.doc == nil {
 		l.doc = ground.NewText(rep.GroundText)
 	}
-	res := ground.Check(l.doc, candidate, l.in.Schema.GroundingRules(), ground.Options{MaxMisses: maxSchemaFeedback})
+	res := ground.Check(l.doc, candidate, l.in.Schema.GroundingRules(), maxSchemaFeedback)
 	var out []Feedback
-	for _, f := range res.Ungrounded.Feedback() {
-		out = append(out, Feedback(f))
+	for _, m := range res.Ungrounded {
+		out = append(out, Feedback{Pointer: m.Pointer, Message: ground.Message, Source: SourceGrounding})
 	}
 	return res, out
 }

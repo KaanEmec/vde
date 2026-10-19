@@ -12,6 +12,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/kaanemec/vde/internal/extract"
 )
 
 // Report is one evaluation run, saved as JSON. It carries case ids, statuses, counts and
@@ -87,9 +89,6 @@ type Summary struct {
 	Calls        int `json:"calls"`
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
-	// CostUSD is a placeholder for a cost estimate from the token counts; null until
-	// per-model prices are configured.
-	CostUSD *float64 `json:"cost_usd"`
 }
 
 // Summarize aggregates per-case results.
@@ -99,15 +98,15 @@ func Summarize(results []CaseResult) Summary {
 	durations := make([]int64, 0, len(results))
 	for _, r := range results {
 		switch r.Status {
-		case StatusAccepted:
+		case string(extract.StatusAccepted):
 			s.Accepted++
 			accMatched += r.Fields.Matched
 			accTotal += r.Fields.Total
-		case StatusRejected:
+		case string(extract.StatusRejected):
 			s.Rejected++
-		case StatusFailed:
+		case string(extract.StatusFailed):
 			s.Failed++
-		case StatusExtracted:
+		case string(extract.StatusExtracted):
 			s.Extracted++
 			extMatched += r.Fields.Matched
 			extTotal += r.Fields.Total
@@ -119,23 +118,23 @@ func Summarize(results []CaseResult) Summary {
 		}
 		if r.FalseAccept {
 			s.FalseAccepts++
-			if r.Verification == VerificationGrounded {
+			if r.Verification == extract.VerificationGrounded {
 				s.FalseAcceptsGrounded++
 			} else {
 				s.FalseAcceptsJudge++
 			}
 		}
 		switch r.Verification {
-		case VerificationJudge:
+		case extract.VerificationJudge:
 			s.VerifiedJudge++
-		case VerificationGrounded:
+		case extract.VerificationGrounded:
 			s.VerifiedGrounded++
 		}
 		if r.JudgeCalls != nil {
 			s.JudgeCallCases++
 			s.JudgeCalls += *r.JudgeCalls
 		}
-		if r.Decision == DecisionSampled {
+		if r.Decision == extract.DecisionSampled {
 			s.Sampled++
 		}
 		s.Disagreements += r.Disagreements
@@ -320,7 +319,7 @@ func (r Report) WriteTable(w io.Writer) {
 
 func verdict(c CaseResult) string {
 	switch {
-	case c.FalseAccept && c.Verification == VerificationGrounded:
+	case c.FalseAccept && c.Verification == extract.VerificationGrounded:
 		return "FALSE ACCEPT (grounded)"
 	case c.FalseAccept:
 		return "FALSE ACCEPT"
@@ -341,7 +340,7 @@ func orDash(s string) string {
 
 // outcome is a case's status with its verification when something verified it.
 func outcome(c CaseResult) string {
-	if c.Verification == VerificationJudge || c.Verification == VerificationGrounded {
+	if c.Verification == extract.VerificationJudge || c.Verification == extract.VerificationGrounded {
 		return c.Status + "/" + c.Verification
 	}
 	return c.Status

@@ -139,7 +139,7 @@ pointers only, never document content or result values; so does the report.
 | False rejects | Rejected cases whose result matched on every compared field: work sent to a person that did not need one. |
 | Correct cases | Cases with a result that matched on every compared field, whatever the status. |
 | Attempts, duration | Mean extractor attempts; median and p95 wall time per case (with `--url`, queueing included). |
-| Tokens | Input and output tokens and model calls of local runs. The cost estimate is a placeholder (`cost_usd: null`) until per-model prices are configured. |
+| Tokens | Input and output tokens and model calls of local runs. Reports written before v1.1 carry a `cost_usd: null` placeholder, which `--compare` ignores. |
 
 Per case the table shows the status (with the job error code), `VERIFIED` (the job's
 `verification`), `DECISION` (how the last schema-valid candidate was decided: `judged`,

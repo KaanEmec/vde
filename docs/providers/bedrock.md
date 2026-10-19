@@ -37,8 +37,7 @@ The SDK's own retries are off: `vde` retries and fails over by the error kind be
 | text part | `messages[0].content[].text` (role `user`, parts in order) |
 | image part (`image/png`, `image/jpeg`, `image/webp`) | `content[].image` (`format`, raw bytes) |
 | document part (`application/pdf`, `text/plain`, `text/html`, `text/markdown`) | `content[].document` (`format` `pdf`, `txt`, `html`, `md`; raw bytes) |
-| `MaxTokens` (4096 when 0) | `inferenceConfig.maxTokens` |
-| `Temperature`, only when above zero | `inferenceConfig.temperature` |
+| `MaxTokens` (the model's `max_output_tokens`) | `inferenceConfig.maxTokens` |
 
 Documents are named `document 1`, `document 2` and so on: Bedrock places the name in the
 prompt, so a file name is never sent. Image and document bytes travel inside the request;

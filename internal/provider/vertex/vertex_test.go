@@ -70,10 +70,9 @@ func testClient(baseURL string, ts oauth2.TokenSource) *Client {
 
 func request(model string) provider.Request {
 	return provider.Request{
-		Model:       model,
-		System:      "You are the extractor.",
-		MaxTokens:   777,
-		Temperature: 0.25,
+		Model:     model,
+		System:    "You are the extractor.",
+		MaxTokens: 777,
 		Parts: []provider.Part{
 			{Text: secretText},
 			{Image: &provider.Blob{MediaType: "image/png", Data: []byte(secretBlob)}},
@@ -92,7 +91,7 @@ func TestComplete_gemini(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete error: %v", err)
 	}
-	if resp.Text != secretAns || resp.InputTokens != 12 || resp.OutputTokens != 5 || resp.Model != "gemini-example-001" || resp.Truncated {
+	if resp.Text != secretAns || resp.InputTokens != 12 || resp.OutputTokens != 5 || resp.Truncated {
 		t.Errorf("response = %+v", resp)
 	}
 	if want := "/v1/projects/my-project/locations/us-east5/publishers/google/models/gemini-example:generateContent?"; got.path != want {
@@ -136,7 +135,7 @@ func TestComplete_gemini(t *testing.T) {
 		parts[2].InlineData == nil || parts[2].InlineData.MimeType != "application/pdf" {
 		t.Errorf("parts = %+v", parts)
 	}
-	if body.GenerationConfig.MaxOutputTokens != 777 || body.GenerationConfig.Temperature != 0.25 {
+	if body.GenerationConfig.MaxOutputTokens != 777 || body.GenerationConfig.Temperature != 0 {
 		t.Errorf("generationConfig = %+v", body.GenerationConfig)
 	}
 }
@@ -149,7 +148,7 @@ func TestComplete_claude(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete error: %v", err)
 	}
-	if resp.Text != secretAns || resp.InputTokens != 20 || resp.OutputTokens != 9 || resp.Model != "claude-example" || !resp.Truncated {
+	if resp.Text != secretAns || resp.InputTokens != 20 || resp.OutputTokens != 9 || !resp.Truncated {
 		t.Errorf("response = %+v", resp)
 	}
 	if want := "/v1/projects/my-project/locations/us-east5/publishers/anthropic/models/claude-example@20260101:rawPredict?"; got.path != want {
@@ -169,7 +168,7 @@ func TestComplete_claude(t *testing.T) {
 	if _, ok := body["model"]; ok {
 		t.Error("body carries a model: Vertex takes it from the URL")
 	}
-	if body["max_tokens"] != float64(777) || body["system"] != "You are the extractor." || body["temperature"] != 0.25 {
+	if body["max_tokens"] != float64(777) || body["system"] != "You are the extractor." || body["temperature"] != nil {
 		t.Errorf("body = %v", body)
 	}
 	msgs := body["messages"].([]any)
@@ -191,7 +190,7 @@ func TestComplete_claude(t *testing.T) {
 func TestComplete_claudeOmitsZeroTemperature(t *testing.T) {
 	t.Parallel()
 	c, got := serve(t, 200, `{"content":[{"type":"text","text":"ok"}],"usage":{}}`, nil)
-	req := provider.Request{Model: "claude-example", Parts: []provider.Part{{Text: "hi"}}}
+	req := provider.Request{Model: "claude-example", MaxTokens: 4096, Parts: []provider.Part{{Text: "hi"}}}
 	if _, err := c.Complete(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}

@@ -26,7 +26,7 @@ func TestProvider_twoStepScriptRecordsRequests(t *testing.T) {
 	ctx := context.Background()
 
 	resp, err := p.Complete(ctx, provider.Request{Model: "m1", System: "extractor framing", Parts: parts})
-	if err != nil || resp.Text != `{"a": 1}` || resp.Model != "m1" || resp.InputTokens != fake.InputTokens {
+	if err != nil || resp.Text != `{"a": 1}` || resp.InputTokens != fake.InputTokens {
 		t.Fatalf("first Complete() = %+v, %v", resp, err)
 	}
 	resp, err = p.Complete(ctx, provider.Request{Model: "m2", System: "judge framing", Parts: parts})

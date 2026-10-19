@@ -98,33 +98,33 @@ var (
 // matchTemporal grounds an ISO date, datetime or time-of-day string. temporal is false
 // when s is none of those (or names an impossible date), and the caller matches it as an
 // ordinary string.
-func (t *Text) matchTemporal(s string) (k Kind, ok, temporal bool) {
+func (t *Text) matchTemporal(s string) (ok, temporal bool) {
 	if m := isoDateTime.FindStringSubmatch(s); m != nil {
 		y, _ := strconv.Atoi(m[1])
 		mo, _ := strconv.Atoi(m[2])
 		d, _ := strconv.Atoi(m[3])
 		if mo < 1 || mo > 12 || time.Date(y, time.Month(mo), d, 0, 0, 0, 0, time.UTC).Day() != d {
-			return 0, false, false
+			return false, false
 		}
 		if m[4] == "" {
-			return KindDate, t.containsDate(y, mo, d), true
+			return t.containsDate(y, mo, d), true
 		}
 		h, _ := strconv.Atoi(m[4])
 		mi, _ := strconv.Atoi(m[5])
 		if h > 23 || mi > 59 {
-			return 0, false, false
+			return false, false
 		}
-		return KindDateTime, t.containsDate(y, mo, d) && t.containsTime(h, mi), true
+		return t.containsDate(y, mo, d) && t.containsTime(h, mi), true
 	}
 	if m := isoTime.FindStringSubmatch(s); m != nil {
 		h, _ := strconv.Atoi(m[1])
 		mi, _ := strconv.Atoi(m[2])
 		if h > 23 || mi > 59 {
-			return 0, false, false
+			return false, false
 		}
-		return KindTime, t.containsTime(h, mi), true
+		return t.containsTime(h, mi), true
 	}
-	return 0, false, false
+	return false, false
 }
 
 // containsDate reports whether any of DateForms prints the date.

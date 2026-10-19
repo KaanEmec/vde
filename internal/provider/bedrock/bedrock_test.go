@@ -55,10 +55,9 @@ func TestComplete_requestMapping(t *testing.T) {
 	f := &fake{out: answer(secretAns, types.StopReasonEndTurn)}
 	c := &Client{api: f}
 	resp, err := c.Complete(context.Background(), provider.Request{
-		Model:       "anthropic.example-model",
-		System:      "You are the extractor.",
-		MaxTokens:   1234,
-		Temperature: 0.5,
+		Model:     "anthropic.example-model",
+		System:    "You are the extractor.",
+		MaxTokens: 1234,
 		Parts: []provider.Part{
 			{Text: secretText},
 			{Image: &provider.Blob{MediaType: "image/png", Data: []byte(secretBlob)}},
@@ -72,9 +71,6 @@ func TestComplete_requestMapping(t *testing.T) {
 	if resp.Text != secretAns || resp.InputTokens != 11 || resp.OutputTokens != 7 || resp.Truncated {
 		t.Errorf("response = %+v", resp)
 	}
-	if resp.Model != "anthropic.example-model" {
-		t.Errorf("Model = %q, want the requested model", resp.Model)
-	}
 
 	in := f.in
 	if aws.ToString(in.ModelId) != "anthropic.example-model" {
@@ -83,7 +79,7 @@ func TestComplete_requestMapping(t *testing.T) {
 	if len(in.System) != 1 || in.System[0].(*types.SystemContentBlockMemberText).Value != "You are the extractor." {
 		t.Errorf("System = %+v", in.System)
 	}
-	if aws.ToInt32(in.InferenceConfig.MaxTokens) != 1234 || aws.ToFloat32(in.InferenceConfig.Temperature) != 0.5 {
+	if aws.ToInt32(in.InferenceConfig.MaxTokens) != 1234 || in.InferenceConfig.Temperature != nil {
 		t.Errorf("InferenceConfig = %+v", in.InferenceConfig)
 	}
 	if len(in.Messages) != 1 || in.Messages[0].Role != types.ConversationRoleUser || len(in.Messages[0].Content) != 4 {
@@ -110,12 +106,12 @@ func TestComplete_requestMapping(t *testing.T) {
 func TestComplete_defaults(t *testing.T) {
 	t.Parallel()
 	f := &fake{out: answer("ok", types.StopReasonEndTurn)}
-	_, err := (&Client{api: f}).Complete(context.Background(), provider.Request{Model: "m", Parts: []provider.Part{{Text: "hi"}}})
+	_, err := (&Client{api: f}).Complete(context.Background(), provider.Request{Model: "m", MaxTokens: 4096, Parts: []provider.Part{{Text: "hi"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if aws.ToInt32(f.in.InferenceConfig.MaxTokens) != defaultMaxTokens {
-		t.Errorf("MaxTokens = %d, want the default", aws.ToInt32(f.in.InferenceConfig.MaxTokens))
+	if aws.ToInt32(f.in.InferenceConfig.MaxTokens) != 4096 {
+		t.Errorf("MaxTokens = %d, want 4096", aws.ToInt32(f.in.InferenceConfig.MaxTokens))
 	}
 	if f.in.InferenceConfig.Temperature != nil || len(f.in.System) != 0 {
 		t.Errorf("temperature or system sent without being set: %+v", f.in)

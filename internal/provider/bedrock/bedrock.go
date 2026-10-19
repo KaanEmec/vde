@@ -18,8 +18,6 @@ import (
 	"github.com/kaanemec/vde/internal/provider"
 )
 
-const defaultMaxTokens = 4096
-
 // ConverseAPI is the part of the Bedrock runtime client the adapter uses. Tests inject a
 // fake; *bedrockruntime.Client satisfies it.
 type ConverseAPI interface {
@@ -68,7 +66,7 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 	if err != nil {
 		return provider.Response{}, classify(err)
 	}
-	return toResponse(out, req.Model)
+	return toResponse(out)
 }
 
 func buildInput(req provider.Request) (*bedrockruntime.ConverseInput, error) {
@@ -87,14 +85,7 @@ func buildInput(req provider.Request) (*bedrockruntime.ConverseInput, error) {
 		}
 		blocks = append(blocks, b)
 	}
-	maxTokens := int32(req.MaxTokens)
-	if req.MaxTokens <= 0 {
-		maxTokens = defaultMaxTokens
-	}
-	cfg := &types.InferenceConfiguration{MaxTokens: aws.Int32(maxTokens)}
-	if req.Temperature > 0 { // zero means "leave it to the model"
-		cfg.Temperature = aws.Float32(float32(req.Temperature))
-	}
+	cfg := &types.InferenceConfiguration{MaxTokens: aws.Int32(int32(req.MaxTokens))}
 	in := &bedrockruntime.ConverseInput{
 		ModelId:         aws.String(req.Model),
 		Messages:        []types.Message{{Role: types.ConversationRoleUser, Content: blocks}},
@@ -152,7 +143,7 @@ func block(p provider.Part, docs *int) (types.ContentBlock, error) {
 	}
 }
 
-func toResponse(out *bedrockruntime.ConverseOutput, model string) (provider.Response, error) {
+func toResponse(out *bedrockruntime.ConverseOutput) (provider.Response, error) {
 	switch out.StopReason {
 	case types.StopReasonGuardrailIntervened, types.StopReasonContentFiltered:
 		return provider.Response{}, &provider.Error{Message: "bedrock: answer blocked by the provider"}
@@ -172,7 +163,6 @@ func toResponse(out *bedrockruntime.ConverseOutput, model string) (provider.Resp
 	}
 	resp := provider.Response{
 		Text:      text.String(),
-		Model:     model,
 		Truncated: out.StopReason == types.StopReasonMaxTokens,
 	}
 	if out.Usage != nil {
