@@ -89,8 +89,9 @@ Each row is one MUST sentence (or a required behavior stated as fact in a table 
 contract makes binding), abridged; the number is section.sequence. "not testable
 automatically, verified by: …" marks what this suite cannot reach from outside the
 service, with what covers it instead. The defects the suite found (D1 to D3) are fixed and
-their tests no longer skip; their history and resolution are in the
-[job file](../roadmap/v0.2-service/09-contract-conformance/01-acceptance-checklist-tests.md#defects-found).
+their tests no longer skip; their history and resolution are in the job file at tag
+`v0.3.0` (`docs/roadmap/v0.2-service/09-contract-conformance/`, now
+[collapsed](../roadmap/v0.2-history.md#09-01-acceptance-checklist-as-automated-tests)).
 
 | # | MUST (abridged) | Evidence |
 | --- | --- | --- |
@@ -210,7 +211,7 @@ their tests no longer skip; their history and resolution are in the
 
 ## Live test and evaluation run
 
-Roadmap job `v0.2-service/09-contract-conformance/02-travelinbox-live-test`, contract
+Roadmap job [v0.2 09-02](../roadmap/v0.2-history.md#09-02-travelinbox-live-test-and-evaluation-run), contract
 section 14 (the live check and item 10).
 
 | | |

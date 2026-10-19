@@ -26,11 +26,11 @@ endpoint); the release workflow built the image and four archives.
 
 | Version | Status | Tag | Scope |
 | --- | --- | --- | --- |
-| [v0.1 Core engine](docs/roadmap/v0.1-core-engine/README.md) | done 2026-10-16 | none (CHANGELOG 0.1.0) | Config, Anthropic/OpenAI-compatible/Gemini adapters, failover, representation incl. email, the loop, `vde extract` |
-| [v0.2 Service](docs/roadmap/v0.2-service/README.md) | done 2026-10-16 | none (CHANGELOG 0.2.0) | HTTP API, applications and tokens, jobs, quota, retention, operations, admin API, packaging, contract conformance |
-| [v0.3 Hardening and extensions](docs/roadmap/v0.3-hardening-and-extensions/README.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
-| [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
-| [v1.0 Stable](docs/roadmap/v1.0-stable/README.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
+| [v0.1 Core engine](docs/roadmap/v0.1-history.md) | done 2026-10-16 | none (CHANGELOG 0.1.0) | Config, Anthropic/OpenAI-compatible/Gemini adapters, failover, representation incl. email, the loop, `vde extract` |
+| [v0.2 Service](docs/roadmap/v0.2-history.md) | done 2026-10-16 | none (CHANGELOG 0.2.0) | HTTP API, applications and tokens, jobs, quota, retention, operations, admin API, packaging, contract conformance |
+| [v0.3 Hardening and extensions](docs/roadmap/v0.3-history.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
+| [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-history.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
+| [v1.0 Stable](docs/roadmap/v1.0-history.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
 | [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | in progress: epic 00 jobs 02 and 03 (local CI and release) merged into `main` 2026-10-19, not pushed | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
 | [v1.2 Extraction quality](docs/roadmap/v1.2-extraction-quality/README.md) | planned 2026-10-19 (roadmap only) | none | One epic, nine jobs: prompt order and wording, context line and page markers, email section labels, HTML data tables, analysis blocks for extractor and judge, native structured outputs, caller schema guide, multi-pass extraction after ADR 0011; each measured against the previous report |
 
@@ -41,7 +41,7 @@ endpoint); the release workflow built the image and four archives.
   `cmd/vde` (`serve_e2e_test.go`, `admin_e2e_test.go`, `webhook_e2e_test.go`,
   `TestServeJudgePolicies`), and v0.4's criteria (`TestRun_autoNeverGroundsInvented`,
   `TestCheck_eventInvoice`, `TestExtractPDFWithoutPages`); details in the
-  [v0.4 exit criterion check](docs/roadmap/v0.4-judge-policy-and-preprocessing/README.md#exit-criterion-check-2026-10-18).
+  [v0.4 exit criterion check](docs/roadmap/v0.4-history.md#exit-criterion-check-2026-10-18).
 - **Contract conformance** (`make conformance`): contract §14 items 1 to 9 against the built
   binary, unchanged under `always` after v0.4 and after the v1.0 limits; MUST traceability in
   [travelinbox-v1.md](docs/conformance/travelinbox-v1.md).
@@ -56,11 +56,11 @@ endpoint); the release workflow built the image and four archives.
   on 2026-10-18.
 - **Storage and scaling**: Postgres and S3 suites (opt-in env vars); two worker pools run
   100 jobs exactly once and resume a killed pool's job; `examples/compose/scaled` ran
-  locally with PostgreSQL 17 and RustFS ([v0.3 check](docs/roadmap/v0.3-hardening-and-extensions/README.md#exit-criterion-check-2026-10-17)).
+  locally with PostgreSQL 17 and RustFS ([v0.3 check](docs/roadmap/v0.3-history.md#exit-criterion-check-2026-10-17)).
 - **Smoke test, real model** (2026-10-16, `make live` via Nous Research,
   `google/gemini-3.8-flash`): samples (text, HTML, email, PDF, JPEG, with and without schema)
   and the owner's ten documents all `accepted`
-  ([job record](docs/roadmap/v0.1-core-engine/06-cli-and-developer-experience/04-real-provider-smoke-test.md)).
+  ([job record](docs/roadmap/v0.1-history.md#06-04-real-provider-smoke-test)).
 - **TravelInbox live test** (2026-10-16, local `vde serve`, same model): `TestServiceLive`
   PASS (`one_document`; `corpus_end_to_end` skipped). TravelInbox's evaluation: 50 documents,
   0 failed, no-correction share flights 33.3 %, lodging 5.9 % (below TravelInbox's 90 %
@@ -117,7 +117,7 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
 - pdfium: no system fonts, about 500 MB per `documents.pdf.workers`, interpreted outside
   amd64/arm64. No OCR: images and scanned PDFs are ungroundable.
 - `debug.log_content` sink opened but not written by provider adapters
-  ([v0.2 06-03](docs/roadmap/v0.2-service/06-retention-and-privacy/03-log-redaction.md), in progress).
+  ([v0.2 06-03](docs/roadmap/v0.2-history.md#06-03-log-redaction-and-the-debug-content-switch), in progress).
 - Idea, not documented or implemented elsewhere: `auto` thresholds per application
   (`max_document_chars`, `max_items`, `min_grounded_share`) that send large or weakly
   grounded results to the judge.

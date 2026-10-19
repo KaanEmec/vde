@@ -200,7 +200,7 @@ Complete every item; the service does not check them for you.
 ## Hardening review (v1.0)
 
 Internal review of 2026-10-18 against the code at that date (job
-[v1.0 02-01](roadmap/v1.0-stable/02-security-review/01-hardening-pass.md)), area by area,
+[v1.0 02-01](roadmap/v1.0-history.md#02-01-internal-threat-model-review-and-hardening-pass)), area by area,
 with the fix or the reason no change is needed. Severity: High (an unauthenticated or
 token holder can exhaust or crash the service), Medium (resource exhaustion or a crash
 needing a token and a crafted input), Low (defense in depth), None (checked, no change).
@@ -260,7 +260,7 @@ seed. Each ran clean locally for 30 s (the three new ones) or 20 s.
 ## Independent review (v1.0)
 
 A second review of 2026-10-18 (job
-[v1.0 02-02](roadmap/v1.0-stable/02-security-review/02-external-review.md)), read-only and
+[v1.0 02-02](roadmap/v1.0-history.md#02-02-external-review-or-audit)), read-only and
 separate from the hardening pass, of authentication, authorization, data handling and the
 provider boundary. It found no way across an application or scope boundary: every `/v1` job
 read, delete and replay is scoped to the application in SQL, admin and application tokens
