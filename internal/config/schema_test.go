@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+	"gopkg.in/yaml.v3"
 )
 
 // schemaFiles are every configuration file in the repository that must validate against
@@ -24,18 +27,50 @@ var schemaFiles = []string{
 	"testdata/*.yaml",
 }
 
-func TestSchemaCompiles(t *testing.T) {
-	t.Parallel()
-	if !json.Valid(config.Schema()) {
-		t.Fatal("schema.json is not valid JSON")
+// compileSchema compiles schema.json, as an editor would.
+func compileSchema(t *testing.T) *jsonschema.Schema {
+	t.Helper()
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(config.Schema()))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := config.CheckSchema([]byte("endpoints: {}\ngroups: {}\nroles: {extractor: {group: a}, judge: {group: a}}\n")); err != nil {
-		t.Fatalf("CheckSchema: %v", err)
+	const url = "https://github.com/kaanemec/vde/internal/config/schema.json"
+	c := jsonschema.NewCompiler()
+	c.DefaultDraft(jsonschema.Draft2020)
+	if err := c.AddResource(url, doc); err != nil {
+		t.Fatal(err)
 	}
+	s, err := c.Compile(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// jsonOf turns decoded YAML into JSON values, dropping null entries (absent for Parse).
+func jsonOf(v any) any {
+	switch node := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(node))
+		for k, child := range node {
+			if child != nil {
+				out[k] = jsonOf(child)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, len(node))
+		for i, child := range node {
+			out[i] = jsonOf(child)
+		}
+		return out
+	}
+	return v
 }
 
 func TestExamplesMatchSchema(t *testing.T) {
 	t.Parallel()
+	schema := compileSchema(t)
 	var files []string
 	for _, pattern := range schemaFiles {
 		m, err := filepath.Glob(pattern)
@@ -54,12 +89,20 @@ func TestExamplesMatchSchema(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			issues, err := config.CheckSchema(data)
+			var raw any
+			if err := yaml.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			js, err := json.Marshal(jsonOf(raw))
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, i := range issues {
-				t.Errorf("%s", i)
+			inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(js))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := schema.Validate(inst); err != nil {
+				t.Error(err)
 			}
 		})
 	}
@@ -80,95 +123,72 @@ roles:
   judge: {group: main}
 `
 
-func TestCheckSchemaViolations(t *testing.T) {
+// TestFormerSchemaViolations: every file the schema refused when config check still ran
+// it is refused by Parse or Validate, so by config check and serve alike, at the key.
+func TestFormerSchemaViolations(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, extra, key, message string
+		name, extra, key string
 	}{
-		{"typo in a key", "server: {listne: ':8090'}", "server.listne", "unknown key"},
-		{"typo at the top level", "limit: {max_attempts: 3}", "limit", "unknown key"},
-		{"wrong enum value", "documents: {pdf: {mode: images}}", "documents.pdf.mode", "value must be one of"},
-		{"wrong enum value in a list", "applications: [{id: a, judge: {policy: sometimes}}]", "applications[0].judge.policy", "value must be one of"},
-		{"wrong type", "limits: {max_attempts: three}", "limits.max_attempts", "want integer"},
-		{"bare number duration", "limits: {job_timeout: 300}", "limits.job_timeout", "want string"},
-		{"malformed duration", "worker: {lease: 2 minutes}", "worker.lease", `"2 minutes" does not have the expected form; expected: A Go duration`},
-		{"out of range", "documents: {pdf: {dpi: 600}}", "documents.pdf.dpi", "maximum"},
-		{"missing required key", "applications: [{name: no id}]", "applications[0].id", "is required"},
-		{"numeric map key", "endpoints: {7: {provider: fake, models: {m: {accepts: [text/plain], extra: 1}}}}", "endpoints.7.models.m.extra", "unknown key"},
+		{"typo in a key", "server: {listne: ':8090'}", "server.listne"},
+		{"typo at the top level", "limit: {max_attempts: 3}", "limit"},
+		{"wrong enum value", "documents: {pdf: {mode: images}}", "documents.pdf.mode"},
+		{"wrong enum value in a list", "applications: [{id: a, judge: {policy: sometimes}}]", "applications[0].judge.policy"},
+		{"wrong type", "limits: {max_attempts: three}", "limits.max_attempts"},
+		{"number for a string", "applications: [{id: a, name: 42}]", "applications[0].name"},
+		{"bare number duration", "limits: {job_timeout: 300}", "limits.job_timeout"},
+		{"malformed duration", "worker: {lease: 2 minutes}", "worker.lease"},
+		{"out of range", "documents: {pdf: {dpi: 600}}", "documents.pdf.dpi"},
+		{"negative feedback cap", "limits: {feedback_message_chars: -1}", "limits.feedback_message_chars"},
+		{"pool out of range with sqlite", "storage: {max_open_conns: 1001}", "storage.max_open_conns"},
+		{"unknown sse with fs", "blobs: {sse: aws:kms}", "blobs.sse"},
+		{"missing required key", "applications: [{name: no id}]", "applications[0].id"},
+		{"numeric map key", "endpoints: {7: {provider: fake, models: {m: {accepts: [text/plain], extra: 1}}}}", "endpoints.7.models.m.extra"},
+		{"not a mapping", "- a", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			data := schemaBase + tc.extra + "\n"
-			if strings.HasPrefix(tc.extra, "endpoints:") { // replaces the base's endpoints
+			switch {
+			case strings.HasPrefix(tc.extra, "endpoints:"): // replaces the base's endpoints
 				data = tc.extra + "\n" + schemaBase[strings.Index(schemaBase, "groups:"):]
+			case strings.HasPrefix(tc.extra, "- "):
+				data = tc.extra + "\n"
 			}
-			issues, err := config.CheckSchema([]byte(data))
+			cfg, err := config.Parse([]byte(data), func(string) string { return "" })
 			if err != nil {
-				t.Fatal(err)
+				if !strings.Contains(err.Error(), tc.key) {
+					t.Errorf("Parse: %v, want it at %s", err, tc.key)
+				}
+				return
 			}
-			if len(issues) != 1 {
-				t.Fatalf("got %d violations, want 1: %v", len(issues), issues)
+			issues := cfg.Validate()
+			if issues.Err(false) == nil {
+				t.Fatalf("accepted; issues %v", issues)
 			}
-			if issues[0].Key != tc.key || !strings.Contains(issues[0].Message, tc.message) || issues[0].Warning {
-				t.Errorf("got %v, want error at %s containing %q", issues[0], tc.key, tc.message)
+			found := false
+			for _, i := range issues {
+				found = found || (!i.Warning && i.Key == tc.key)
+			}
+			if !found {
+				t.Errorf("issues %v, want an error at %s", issues, tc.key)
 			}
 		})
 	}
-}
-
-func TestCheckSchemaInput(t *testing.T) {
-	t.Parallel()
-	t.Run("not YAML", func(t *testing.T) {
-		t.Parallel()
-		if _, err := config.CheckSchema([]byte("endpoints: [unclosed")); err == nil {
-			t.Error("no error for a YAML syntax error")
-		}
-	})
-	t.Run("null counts as absent", func(t *testing.T) {
-		t.Parallel()
-		issues, err := config.CheckSchema([]byte(schemaBase + "server:\nlimits: {pages: ~}\n"))
-		if err != nil || len(issues) != 0 {
-			t.Errorf("got %v, %v; want no violations", issues, err)
-		}
-	})
-	t.Run("empty strings take the defaults", func(t *testing.T) {
+	t.Run("empty strings and nulls take the defaults", func(t *testing.T) {
 		t.Parallel()
 		for _, extra := range []string{
 			`applications: [{id: a, quota: {window: ""}}]`,
 			`applications: [{id: a, retention: {default: ""}}]`,
+			"server:\nlimits: {pages: ~}",
 		} {
-			data := []byte(schemaBase + extra + "\n")
-			if issues, err := config.CheckSchema(data); err != nil || len(issues) != 0 {
-				t.Errorf("%s: got %v, %v; want no violations", extra, issues, err)
-			}
-			cfg, err := config.Parse(data, func(string) string { return "" })
+			cfg, err := config.Parse([]byte(schemaBase+extra+"\n"), func(string) string { return "" })
 			if err != nil {
 				t.Fatalf("%s: Parse: %v", extra, err)
 			}
 			if err := cfg.Validate().Err(false); err != nil {
 				t.Errorf("%s: Validate: %v", extra, err)
 			}
-		}
-	})
-	t.Run("empty file", func(t *testing.T) {
-		t.Parallel()
-		issues, err := config.CheckSchema(nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var keys []string
-		for _, i := range issues {
-			keys = append(keys, i.Key)
-		}
-		if want := []string{"endpoints", "groups", "roles"}; !slices.Equal(keys, want) {
-			t.Errorf("got %v, want missing %v", keys, want)
-		}
-	})
-	t.Run("not a mapping", func(t *testing.T) {
-		t.Parallel()
-		issues, err := config.CheckSchema([]byte("- a\n"))
-		if err != nil || len(issues) != 1 || issues[0].Key != "(root)" {
-			t.Errorf("got %v, %v; want one violation at (root)", issues, err)
 		}
 	})
 }

@@ -1,6 +1,6 @@
 # Job: One configuration validator
 
-Version: v1.1 · Epic: 03 Single source · Status: planned · Depends on: 01-01; owner decision L2, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
+Version: v1.1 · Epic: 03 Single source · Status: done (Gate task left to the orchestrator) · Depends on: 01-01; owner decision L2, decided 2026-10-19 ([open questions](../../open-questions.md#decided), item 17)
 
 ## Goal
 
@@ -24,23 +24,23 @@ only the schema refuses, so it needed the owner's agreement (L2, given 2026-10-1
 
 ## Tasks
 
-- [ ] Prove the schema catches nothing that `Validate` misses.
+- [x] Prove the schema catches nothing that `Validate` misses.
   - Skill: EVID.
   - Prompt: "Run every case of TestCheckSchemaViolations and TestCheckSchemaInput through
     config.Parse plus Validate only; list the cases that Validate accepts but the schema
     refuses. Report only."
-- [ ] Close the gaps found, in `Validate`.
+- [x] Close the gaps found, in `Validate`.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Execute mode: for each case the schema refuses and
     Validate accepts, add the check to the validators in internal/config with a test.
     Guardrails: skills.md."
-- [ ] Remove the runtime schema check.
+- [x] Remove the runtime schema check.
   - Skill: SIMPLIFY.
   - Prompt: "/simplify internal/config/schema.go cmd/vde/config.go — remove CheckSchema
     and its helpers and the schemaViolations path of `config check`; keep `vde config
     schema`, schema.json, TestSchemaMatchesStructs and TestExamplesMatchSchema. Update
     docs/operator/configuration.md ('Schema') and CHANGELOG. Guardrails: skills.md."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW.
   - Prompt: `/code-review high <first>^..<last>`.
 
@@ -52,3 +52,38 @@ only the schema refuses, so it needed the owner's agreement (L2, given 2026-10-1
 ## Out of scope
 
 - Generating `configuration.md` from the schema (08-02).
+
+## Result
+
+Evidence (a throwaway test, not committed): every case of `TestCheckSchemaViolations` and
+`TestCheckSchemaInput` was already refused by `Parse` or `Validate`. A wider sweep, one
+violating value per schema constraint (16 enums, the minimums, maximums, exclusive
+minimums and patterns, top level, lists and maps), found three gaps, and the CLI test
+`TestRunConfigSchema` a fourth:
+
+- `limits.feedback_message_chars` negative (the loop read it as the default);
+- `storage.max_open_conns` outside 0 to 1000 with `sqlite` (checked only for postgres);
+- `blobs.sse` other than `AES256` or `""` with `fs` (checked only for s3);
+- a non-string scalar where a string is expected (`name: 42`, `accepts: [text/plain,
+  true]`): yaml.v3 read it as `"42"`.
+
+Closed, each with a failing test first: the three range and enum checks in `Validate`
+(`limits`, `storage`); the type check in `Parse` (`stringScalars`, walking the YAML node
+tree beside the struct types, `config: line N: <key>: got number, want string`). These
+four now refuse in `vde serve` too (owner decision L2; CHANGELOG, "Changed").
+
+Removed: `CheckSchema`, `collectViolations`, `normalizeYAML`, `schemaPath`,
+`schemaDescription`, `cmpIssue`, the compiled schema and the CLI's `schemaViolations`
+pass; `config check` help text and `docs/operator/configuration.md` ("Schema") say it
+validates as `serve` does. Kept: `vde config schema`, `schema.json`,
+`TestSchemaMatchesStructs`, `TestDocumentedKeysAreInSchema` and `TestExamplesMatchSchema`
+(which now compiles the schema itself). `TestCheckSchemaViolations` became
+`TestFormerSchemaViolations` (each case, the four gaps included, refused by Parse or
+Validate at its key); `TestCheckSchemaInput` went, its accepted cases moved there.
+
+Checks: `make check`, `make scenarios` and `make ci` green. The first `make ci` run hit a
+sampling flake in `TestPDFPreparedByService` (5 % default rate keyed by the random job
+id), fixed in its own commit before this one.
+
+`git diff --stat` (Go): production 5 files, +90 −260 (net −170); tests 5 files, +123 −81
+(net +42: the gap tests and the test-side schema compile).

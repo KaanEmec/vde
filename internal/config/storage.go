@@ -87,9 +87,13 @@ func (s *Storage) resolve(getenv func(string) string) {
 // storage checks the storage and blobs keys. The DSN is never printed.
 func (v *validator) storage(c *Config) {
 	s := c.Storage
+	conns := s.MaxOpenConns >= 0 && s.MaxOpenConns <= maxPostgresConns
+	if !conns {
+		v.errorf("storage.max_open_conns", "%d is not between 0 and %d", s.MaxOpenConns, maxPostgresConns)
+	}
 	switch s.Driver {
 	case StorageSQLite:
-		if s.DSNEnv != "" || s.MaxOpenConns != 0 {
+		if conns && (s.DSNEnv != "" || s.MaxOpenConns != 0) {
 			v.warnf("storage", "dsn_env and max_open_conns are ignored with driver sqlite")
 		}
 	case StoragePostgres:
@@ -101,10 +105,7 @@ func (v *validator) storage(c *Config) {
 		case !strings.HasPrefix(s.dsn, "postgres://") && !strings.HasPrefix(s.dsn, "postgresql://") && !strings.Contains(s.dsn, "="):
 			v.errorf("storage.dsn_env", "environment variable %s is neither a postgres:// URL nor a key=value connection string", s.DSNEnv)
 		}
-		switch {
-		case s.MaxOpenConns < 0 || s.MaxOpenConns > maxPostgresConns:
-			v.errorf("storage.max_open_conns", "%d is not between 0 and %d", s.MaxOpenConns, maxPostgresConns)
-		case s.MaxOpenConns > 0 && s.MaxOpenConns < c.Worker.Size+2:
+		if conns && s.MaxOpenConns > 0 && s.MaxOpenConns < c.Worker.Size+2 {
 			v.warnf("storage.max_open_conns", "%d connections for %d workers plus the API and the sweeper: "+
 				"requests will wait for a connection", s.MaxOpenConns, c.Worker.Size)
 		}
@@ -113,6 +114,9 @@ func (v *validator) storage(c *Config) {
 	}
 
 	b := c.Blobs
+	if !slices.Contains([]string{"", SSEAES256}, b.SSE) {
+		v.errorf("blobs.sse", "%q is not AES256 or empty", b.SSE)
+	}
 	switch b.Driver {
 	case BlobsFS:
 		if b.Bucket != "" || b.Endpoint != "" || b.Region != "" || b.PathStyle {
@@ -137,9 +141,6 @@ func (v *validator) storage(c *Config) {
 			case u.Scheme == "http" && !isLoopback(u.Hostname()):
 				v.warnf("blobs.endpoint", "%q is plain HTTP on a non-loopback host: documents cross the network unencrypted", b.Endpoint)
 			}
-		}
-		if !slices.Contains([]string{"", SSEAES256}, b.SSE) {
-			v.errorf("blobs.sse", "%q is not AES256 or empty", b.SSE)
 		}
 	default:
 		v.errorf("blobs.driver", "%q is not fs or s3", b.Driver)

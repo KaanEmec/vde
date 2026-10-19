@@ -23,14 +23,12 @@ The keys of 1.x are described by a JSON Schema (draft 2020-12) built into the bi
 to the file with `vde config schema > vde.schema.json` and make
 `# yaml-language-server: $schema=./vde.schema.json` the file's first line; VS Code's YAML
 extension and other editors using yaml-language-server read that comment.
-Save the schema again after upgrading `vde`. `vde config check` validates the file against
-the same schema after its own checks and reports each violation as
-`error: schema: <key>: <message>`; any violation fails the check. The schema checks key
-names, types, accepted values, ranges and the form of durations; rules across keys (a
-group's model declared on its endpoint, `failover.max_total_time` below
-`limits.job_timeout`, a named variable being set) are only in `config check`'s own
-validation, which is also all that `serve` and `extract` run. A key with no value
-(`server:`) counts as absent, as it does for `vde`.
+Save the schema again after upgrading `vde`. The schema describes key names, types,
+accepted values, ranges and the form of durations for editors; `vde` itself does not
+validate against it. `vde config check`, `serve` and `extract` run the same validation,
+which covers everything the schema refuses plus the rules across keys (a group's model
+declared on its endpoint, `failover.max_total_time` below `limits.job_timeout`, a named
+variable being set). A key with no value (`server:`) counts as absent.
 
 **Changes within 1.x.** The keys of 1.0 are the keys of every 1.x release. A new key
 arrives with a default that reproduces the previous behaviour. If a key ever has to be
@@ -93,7 +91,7 @@ needs no rewrite: no key changed on the way to 1.0, so there is no migration com
 | `limits.max_attempts` | int | `3` | Default attempt limit per application; a request can only lower it. At least 1. |
 | `limits.job_timeout` | duration | `5m` | Deadline per job, counted from its creation, so time spent queued counts; positive and at most `8m`. Expiry fails the job with `timeout`. |
 | `limits.judge_reparse_tries` | int | `1` | Extra judge calls when its verdict cannot be parsed; `0` or more. When all fail the job ends `judge_failed`. |
-| `limits.feedback_message_chars` | int | `4000` (when `0` or omitted) | Characters kept per feedback message, the last replaced by an ellipsis; the contract asks for at least 2,000. |
+| `limits.feedback_message_chars` | int | `4000` (when `0` or omitted) | Characters kept per feedback message, the last replaced by an ellipsis; the contract asks for at least 2,000. Must not be negative. |
 | `limits.document_bytes` | int | `26214400` (25 MiB) | Largest document; over it `413`. Positive; below the contract minimum is a warning. |
 | `limits.page_bytes` | int | `10485760` (10 MiB) | Largest page image; below the contract minimum is a warning. |
 | `limits.pages` | int | `20` | Most page images per job; below the contract minimum is a warning; at most `999` (stored page names have three digits). |
@@ -227,7 +225,7 @@ the bucket lifecycle rule: [storage](storage.md). Every command that opens the s
 | --- | --- | --- | --- |
 | `storage.driver` | string | `sqlite` | `sqlite` (`server.data_dir/vde.db`, one `vde serve` process) or `postgres` (PostgreSQL 13 or later, any number of replicas). Anything else is an error. |
 | `storage.dsn_env` | string | `VDE_DATABASE_URL` with `postgres` | Name of the environment variable holding the PostgreSQL connection string, a `postgres://` URL or a `key=value` string. Must be set with `postgres`. The DSN carries the password: it is never in the file, never printed by `config check` and redacted from errors. Ignored (a warning) with `sqlite`. |
-| `storage.max_open_conns` | int | `16` (when `0`) | PostgreSQL connection pool size, 0 to 1000; half of it is kept idle, connections are recycled after 30 minutes. Fewer than `worker.size` + 2 is a warning. Ignored with `sqlite`. |
+| `storage.max_open_conns` | int | `16` (when `0`) | PostgreSQL connection pool size, 0 to 1000; half of it is kept idle, connections are recycled after 30 minutes. Fewer than `worker.size` + 2 is a warning. Ignored with `sqlite`, but still 0 to 1000. |
 | `blobs.driver` | string | `fs` | `fs` (files under `server.data_dir/blobs`) or `s3` (an S3-compatible bucket: AWS S3, MinIO, Cloudflare R2, Backblaze B2). `fs` with `storage.driver: postgres` is a warning, since replicas on other hosts cannot read each other's documents. |
 | `blobs.bucket` | string | required with `s3` | Bucket name (3 to 63 lowercase letters, digits, dots, hyphens). Must exist: `serve` checks it at start. Objects are `jobs/<job id>/document` and `jobs/<job id>/page-NN`. |
 | `blobs.region` | string | required with `s3` | The bucket's region (`eu-central-1`; `auto` for R2; any value for MinIO). It decides where documents are stored: see [privacy](privacy.md#data-residency). |

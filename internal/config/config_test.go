@@ -242,6 +242,21 @@ func TestParse_errors(t *testing.T) {
 			want: []string{"line 2: limits.pages: cannot unmarshal"},
 		},
 		{
+			name: "number for a string",
+			yaml: "applications: [{id: inbox, name: 42}]\n",
+			want: []string{"line 1: applications[0].name: got number, want string"},
+		},
+		{
+			name: "boolean in a list of strings",
+			yaml: "endpoints:\n  a:\n    models:\n      m: {accepts: [text/plain, true]}\n",
+			want: []string{"line 4: endpoints.a.models.m.accepts[1]: got boolean, want string"},
+		},
+		{
+			name: "number for an inlined role key",
+			yaml: "roles:\n  judge: {group: 7}\n",
+			want: []string{"line 2: roles.judge.group: got number, want string"},
+		},
+		{
 			name: "all problems reported",
 			yaml: "nope: 1\nlimits:\n  pages: many\n  job_timeout: soon\ndebug: {log_contents: true}\n",
 			want: []string{

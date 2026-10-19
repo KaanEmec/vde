@@ -311,23 +311,20 @@ func TestRunConfigSchema(t *testing.T) {
 			wantStderr: []string{`vde config schema: unexpected argument "--config"`},
 		},
 		{
-			name:     "violations after the validation errors",
+			name:     "no schema pass after the validation errors",
 			args:     []string{"config", "check", "--config", writeConfig(t, brokenConfig)},
 			wantCode: exitFailure,
 			wantStderr: []string{
 				"warning: debug.log_content:",
-				"error: schema: endpoints.anthropic.models.claude.accepts[1]: value must be one of",
+				`error: endpoints.anthropic.models.claude.accepts: unknown media type "image/gif"`,
 				"4 blocking problem(s)",
 			},
 		},
 		{
-			name:     "a violation alone fails the check",
-			args:     []string{"config", "check", "--config", writeConfig(t, goodConfig+"applications: [{id: inbox, name: 42}]\n")},
-			wantCode: exitFailure,
-			wantStderr: []string{
-				"error: schema: applications[0].name: got number, want string",
-				"has 1 schema violation(s)",
-			},
+			name:       "a former schema-only violation is a parse error",
+			args:       []string{"config", "check", "--config", writeConfig(t, goodConfig+"applications: [{id: inbox, name: 42}]\n")},
+			wantCode:   exitFailure,
+			wantStderr: []string{"applications[0].name: got number, want string"},
 		},
 	}
 	for _, tt := range tests {

@@ -1,6 +1,6 @@
 # Epic 03: One source for each rule
 
-Version: v1.1 · Status: in progress · Depends on: 01
+Version: v1.1 · Status: done · Depends on: 01
 
 The same rule is written in several places today: representation selection three times,
 job error messages three times, token handling in the CLI and in the admin API, the local
@@ -16,4 +16,4 @@ in order; 06 can run in parallel.
 | 03 | [CLI and admin API share one code path](03-cli-admin-shared-paths.md) | done |
 | 04 | [CLI boilerplate and one local runner](04-cli-boilerplate.md) | done |
 | 05 | [Small shared helpers](05-small-shared-helpers.md) | done |
-| 06 | [One configuration validator](06-config-single-validator.md) | planned |
+| 06 | [One configuration validator](06-config-single-validator.md) | done |

@@ -246,6 +246,12 @@ func TestValidate(t *testing.T) {
 			wantMessage: "must not be negative",
 		},
 		{
+			name:        "feedback message chars negative",
+			edit:        func(c *Config) { c.Limits.FeedbackMessageChars = -1 },
+			wantKey:     "limits.feedback_message_chars",
+			wantMessage: "must not be negative",
+		},
+		{
 			name:        "max queued jobs negative",
 			edit:        func(c *Config) { c.Limits.MaxQueuedJobs = -1 },
 			wantKey:     "limits.max_queued_jobs",

@@ -74,6 +74,8 @@ func TestStorageValidate(t *testing.T) {
 			wantKey: "storage.max_open_conns", wantMessage: "is not between 0 and 1000"},
 		{name: "pool smaller than the workers", edit: func(c *Config) { pg(c); c.Storage.MaxOpenConns = 2 },
 			wantKey: "storage.max_open_conns", wantMessage: "requests will wait", wantWarning: true},
+		{name: "pool out of range with sqlite", edit: func(c *Config) { c.Storage.MaxOpenConns = 1001 },
+			wantKey: "storage.max_open_conns", wantMessage: "is not between 0 and 1000"},
 		{name: "sqlite with a dsn", edit: func(c *Config) { c.Storage.DSNEnv = "VDE_DATABASE_URL" },
 			wantKey: "storage", wantMessage: "ignored with driver sqlite", wantWarning: true},
 		{name: "unknown blob driver", edit: func(c *Config) { c.Blobs.Driver = "gcs" },
@@ -91,6 +93,8 @@ func TestStorageValidate(t *testing.T) {
 		{name: "plain remote endpoint", edit: func(c *Config) { s3(c); c.Blobs.Endpoint = "http://minio.internal:9000" },
 			wantKey: "blobs.endpoint", wantMessage: "plain HTTP", wantWarning: true},
 		{name: "unknown sse", edit: func(c *Config) { s3(c); c.Blobs.SSE = "aws:kms" },
+			wantKey: "blobs.sse", wantMessage: `"aws:kms" is not AES256 or empty`},
+		{name: "unknown sse with fs", edit: func(c *Config) { c.Blobs.SSE = "aws:kms" },
 			wantKey: "blobs.sse", wantMessage: `"aws:kms" is not AES256 or empty`},
 	}
 	for _, tt := range tests {

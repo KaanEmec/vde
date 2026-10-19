@@ -2,10 +2,12 @@ package config
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -403,6 +405,11 @@ func Parse(data []byte, getenv func(string) string) (*Config, error) {
 		}
 		return nil, decodeError(data, err)
 	}
+	var root yaml.Node
+	_ = yaml.Unmarshal(data, &root) // cannot fail: Decode got past the syntax
+	if err := stringScalars(&root, reflect.TypeFor[Config](), ""); err != nil {
+		return nil, err
+	}
 	cfg.applyDefaults()
 	for _, e := range cfg.Endpoints {
 		if e != nil && e.APIKeyEnv != "" {
@@ -521,6 +528,71 @@ func decodeError(data []byte, err error) error {
 		errs = append(errs, fmt.Errorf("config: line %d: %s", line, detail))
 	}
 	return errors.Join(errs...)
+}
+
+// stringScalars refuses a scalar of another YAML type where the configuration holds a
+// string: yaml.v3 would read name: 42 as "42". t is the type n decodes into, path its key.
+func stringScalars(n *yaml.Node, t reflect.Type, path string) error {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch n.Kind {
+	case yaml.DocumentNode:
+		for _, c := range n.Content {
+			if err := stringScalars(c, t, path); err != nil {
+				return err
+			}
+		}
+	case yaml.ScalarNode:
+		if tag := n.ShortTag(); t.Kind() == reflect.String && tag != "!!str" && tag != "!!null" {
+			got := map[string]string{"!!int": "number", "!!float": "number", "!!bool": "boolean"}[tag]
+			return fmt.Errorf("config: line %d: %s: got %s, want string", n.Line, path, cmp.Or(got, strings.TrimPrefix(tag, "!!")))
+		}
+	case yaml.SequenceNode:
+		if t.Kind() != reflect.Slice {
+			return nil
+		}
+		for i, c := range n.Content {
+			if err := stringScalars(c, t.Elem(), path+"["+strconv.Itoa(i)+"]"); err != nil {
+				return err
+			}
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key := n.Content[i].Value
+			var ft reflect.Type
+			switch t.Kind() {
+			case reflect.Map:
+				ft = t.Elem()
+			case reflect.Struct:
+				ft = yamlField(t, key)
+			}
+			if ft == nil {
+				continue
+			}
+			if err := stringScalars(n.Content[i+1], ft, strings.TrimPrefix(path+"."+key, ".")); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// yamlField returns the type of the field of struct t that decodes the key, inlined
+// structs included, or nil.
+func yamlField(t reflect.Type, key string) reflect.Type {
+	for f := range t.Fields() {
+		name, opts, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		switch {
+		case opts == "inline":
+			if ft := yamlField(f.Type, key); ft != nil {
+				return ft
+			}
+		case name == key:
+			return f.Type
+		}
+	}
+	return nil
 }
 
 // keyPath returns the path (endpoints.local.models, applications[0].id) of the first
