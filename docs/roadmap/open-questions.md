@@ -57,3 +57,30 @@ it changed. New questions go at the bottom under "Open".
 - ~~**Location of TravelInbox assets.**~~ Resolved 2026-10-16: the checkout at
   `~/Developer/TravelInbox` was available; assets are imported into `testdata/travelinbox/`
   by v0.1 01-01.
+
+### v1.1 Lean (asked 2026-10-19)
+
+Each question blocks the job named; the default is what the job does if the owner agrees.
+
+- **L1. Content log sink and `--probe`.** Drop the never-written `debug.log_content` sink
+  (key kept, warns "no effect, deprecated") and the stub `vde config check --probe`, or
+  finish them? Default: drop. → v1.1 01-02.
+- **L2. One configuration validator.** Let `vde config check` validate with
+  `config.Validate` only (after closing any gap), not also against `schema.json`?
+  Default: yes. → v1.1 03-06.
+- **L3. TravelInbox eval corpus in place.** Read `testdata/travelinbox/corpus` directly
+  and remove `vde eval import-travelinbox` and the 350 generated files? Default: yes.
+  → v1.1 06-03.
+- **L4. Prometheus client.** Replace `prometheus/client_golang` (8 modules) with a
+  hand-written text exposition of about the same size? Default: no. → v1.1 07-02.
+- **L5. Example clients.** Delete the Node (web) and Swift (mobile) examples, keep
+  `submit.sh`; or keep and test them? Default: delete. → v1.1 08-03.
+- **L6. Done versions in the roadmap.** Keep as is, archive, or collapse each into one
+  history file? Default: keep (fix stale statuses only). → v1.1 08-04.
+- **L7. Experimental API parts.** Remove the completion webhook, `document.url`, both or
+  neither (keys stay accepted with a warning)? No default. → v1.1 09-01.
+- **L8. Unverified providers and model tiers.** Deprecate in 1.1 (remove in 2.0) Bedrock,
+  Vertex, the classifier judge (asked for in decision 14), escalation, second judge,
+  `feedback_fallback: llm`; per item. No default. → v1.1 09-02.
+- **L9. `vde eval --url`.** Remove the remote-service mode of `vde eval`? No default.
+  → v1.1 09-03.

@@ -1,0 +1,23 @@
+# Epic 09: Deprecations (owner decisions)
+
+Version: v1.1 · Status: planned · Depends on: owner decisions L7 to L9; 02 and 04 done
+
+The largest possible cuts are features nobody uses yet: they are speculative, but they
+sit behind the 1.x compatibility promise. Under [docs/compatibility.md](../../../compatibility.md):
+
+- **Experimental `/v1` parts** (completion webhook, `document.url`) may be removed in a
+  minor release with a CHANGELOG entry.
+- **Configuration keys and values** of 1.0 stay accepted in every 1.x release. Removing
+  them means: deprecate in 1.1 (accepted, a warning from `vde config check` and `vde
+  serve`, CHANGELOG "Deprecated"), remove in 2.0 together with an ADR. The 2.0 removal
+  gets its own version folder only after the owner decides.
+- **CLI surfaces** are operator surfaces, not frozen: removal is a CHANGELOG entry.
+
+Nothing in this epic starts before its decision is recorded in
+[open-questions.md](../../open-questions.md#open).
+
+| # | Job | Status |
+| --- | --- | --- |
+| 01 | [Experimental API parts: completion webhook and `document.url`](01-experimental-api.md) | planned |
+| 02 | [Unverified providers and model tiers](02-unverified-providers-and-tiers.md) | planned |
+| 03 | [`vde eval --url`](03-eval-url.md) | planned |

@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: v0.1, v0.2 and v0.3 done (2026-10-17); v0.4 done (2026-10-18, owner suite run pending); v1.0 done (2026-10-18; performance baseline and release engineering deferred by the owner). Each job file carries its own `Status`.
+Status: v0.1, v0.2 and v0.3 done (2026-10-17); v0.4 done (2026-10-18, owner suite run pending); v1.0 done (2026-10-18; performance baseline and release engineering deferred by the owner); v1.1 Lean planned (2026-10-19). Each job file carries its own `Status`.
 
 The roadmap is organized as **versions → epics → jobs**. A version is a releasable
 milestone with an exit criterion. An epic is a coherent body of work inside a version with
@@ -21,6 +21,7 @@ Ideas deliberately kept out of the first releases are in [`backlog.md`](backlog.
 | [v0.3 Hardening and extensions](v0.3-hardening-and-extensions/README.md) (done; [open items](v0.3-hardening-and-extensions/README.md#exit-criterion-check-2026-10-17)) | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, evaluation harness, multi-replica | A second consumer can use the service without contract changes; the service runs with more than one replica |
 | [v0.4 Judge policy and preprocessing](v0.4-judge-policy-and-preprocessing/README.md) (done; [owner suite run pending](v0.4-judge-policy-and-preprocessing/README.md#exit-criterion-check-2026-10-18)) | Judge policy per application (`always`, `never`, `auto`) with a `verification` field and an `extracted` status, a deterministic grounding check against invented values, PDF text layer and page rendering in the service (pure-Go pdfium, ADR 0010) | On the owner suite under `auto`, no invented value is accepted without a judge, emails skip the judge when grounded, and PDFs are processed without caller-supplied pages |
 | [v1.0 Stable](v1.0-stable/README.md) (done; [scope decision](v1.0-stable/README.md#exit-criterion)) | API and configuration freeze, security review, backpressure; performance baseline and release engineering deferred | `/v1` and the configuration schema are frozen with a 12-month compatibility promise |
+| [v1.1 Lean](v1.1-lean/README.md) (planned) | Remove dead code, single-implementation abstractions, duplicated logic, generated testdata, unused files and duplicated docs without breaking the 1.x promise; each task names a vetted skill and prompt ([skills.md](v1.1-lean/skills.md)); breaking cuts only deprecated, after owner decisions | `v1.1.0` with identical conformance and eval results, at least 1,800 fewer production lines, 1,000 fewer test lines and 350 fewer tracked files |
 
 Versions are sequential: v0.4 comes before v1.0, so the v1.0 freeze covers what v0.4
 adds. Epics inside a version are listed in a suggested order but many can proceed in

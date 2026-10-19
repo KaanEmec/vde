@@ -1,0 +1,96 @@
+# v1.1 Lean
+
+Status: planned (roadmap written 2026-10-19; no code changed yet) · Depends on: v1.0
+
+## Goal
+
+Make the project smaller without changing what it promises: remove dead code, unneeded
+abstractions and layers, duplicated logic, unused files and duplicated documentation, so
+that every remaining line has a production reason. The `/v1` API and the configuration
+schema stay as frozen in v1.0 ([compatibility policy](../../compatibility.md)); anything
+that would break them is only deprecated here (epic 09) and removed in a later major
+version, after an owner decision.
+
+## Scope: backend, web and mobile
+
+The repository is the Go service; it has no web or mobile application. "Web" here means
+the HTTP surface (`internal/api`, `api/openapi.yaml`, the admin API) and the Node example
+client `docs/api/examples/node/client.mjs`; "mobile" is the Swift example client
+`docs/api/examples/swift/VDEClient.swift`. Both clients are decided in
+[08-03](08-docs-and-clients/03-example-clients.md).
+
+## How a job is worked
+
+Each task names a **skill** and a **prompt**. The vetted skills, the guardrails every
+prompt includes ("Guardrails: skills.md") and the review gate that closes each job are in
+[skills.md](skills.md). Read it before the first job. The inventory behind every task is
+the audit of 2026-10-19 (four read-only passes over all packages, files and docs), cited
+in each job's Context with file and line numbers as of commit `78b6486`; re-check the line
+numbers with the tools before editing.
+
+## Baseline (2026-10-19, commit `78b6486`)
+
+| Measure | Value |
+| --- | --- |
+| Go production lines (no `_test.go`) | 23,235 |
+| Go test lines | 32,085 |
+| Tracked files | 1,144 (testdata 609, internal 257, docs 189) |
+| Roadmap | 139 files, 6,818 lines |
+| Direct dependencies (`go.mod`) | 17 |
+| Binary, linux/amd64, stripped | 36.1 MB |
+| `deadcode ./cmd/...` | 24 functions reachable only from tests |
+| `golangci-lint` `unparam` | 9 findings (2 in production code) |
+| Longest functions | `serveAs` 254, `createJob` 163, `extractFile` 147, `loop.run` 138 (cognitive complexity 54), `runEval` 138 |
+
+Job 00-02 re-measures these and stores the eval reference report the later jobs compare
+against.
+
+## Exit criterion
+
+Tag `v1.1.0` with:
+
+- `make check`, `make conformance`, `make scenarios` green; `make eval` numbers identical
+  to the 00-02 reference under `always`, `never` and `auto`.
+- Every 1.0 configuration file still loads; `TestOpenAPISupersetOfSnapshot` passes.
+- Production Go lines down by at least 1,800 (about 8 %), test lines by at least 1,000,
+  tracked files by at least 350, with no new dependency, production package or
+  interface (04-03 adds one test-support package that replaces five copies).
+- No function in `deadcode ./cmd/...` output without a recorded reason; no production
+  interface with one implementation outside the three that overview principle 2 names.
+- Epic 09 decisions recorded in [open-questions.md](../open-questions.md); every
+  deprecation listed in the CHANGELOG and warned about by `vde config check` and
+  `vde serve`.
+
+## Epics
+
+| # | Epic | Depends on | Status |
+| --- | --- | --- | --- |
+| 00 | [Preparation: skills and baseline](00-preparation/README.md) | none | planned |
+| 01 | [Dead code and dead features](01-dead-code/README.md) | 00 | planned |
+| 02 | [Remove unneeded abstractions](02-de-abstraction/README.md) | 01 | planned |
+| 03 | [One source for each rule](03-single-source/README.md) | 01 | planned |
+| 04 | [Provider adapters](04-providers/README.md) | 01-03 | planned |
+| 05 | [Long functions](05-long-functions/README.md) | 02, 03 | planned |
+| 06 | [Tests and testdata](06-tests-and-testdata/README.md) | 00 | planned |
+| 07 | [Dependencies, CI and build](07-dependencies-and-build/README.md) | 00 | planned |
+| 08 | [Documentation and example clients](08-docs-and-clients/README.md) | 00; 08-01 last of all docs edits | planned |
+| 09 | [Deprecations (owner decisions)](09-deprecations/README.md) | owner decisions; 02, 04 | planned |
+| 10 | [Closeout](10-closeout/README.md) | all | planned |
+
+## Order and parallel waves
+
+Parallel agents must own disjoint files (AGENTS.md); one orchestrator commits. Suggested
+waves:
+
+| Wave | Jobs (in parallel) | Files owned |
+| --- | --- | --- |
+| 0 | 00-01, 00-02 | none (setup, measurements) |
+| 1 | 01-01; 06-03; 07-01; 07-03; 08-03 | 01-01: Go code across packages (alone in Go); 06-03: `internal/eval`, `testdata/eval`, `testdata/travelinbox`, `cmd/vde/eval.go`; 07-01: `internal/job/job.go`, `internal/api/middleware.go`; 07-03: `.github/`, `Makefile`, `Dockerfile`, `.dockerignore`; 08-03: `docs/api/examples/` |
+| 2 | 01-02, 01-03 (sequential); 03-06 | 01-02/03: `internal/logging`, `cmd/vde/config.go`, `internal/provider`, `internal/ground`; 03-06: `internal/config/schema*.go` |
+| 3 | 02-01, 02-02, 02-03, 02-04 (sequential: all touch `internal/api` and `cmd/vde/serve.go`) | |
+| 4 | 03-01 … 03-05 (sequential); 04-01, 04-02 (sequential) in parallel with them | 03: `internal/api`, `internal/worker`, `internal/sweeper`, `cmd/vde`; 04: `internal/provider/**` |
+| 5 | 05-01, 05-02; 08-02 | 05-01: `internal/extract/extract.go`, `verdict.go`; 05-02: `cmd/vde/serve.go`, `cmd/vde/extract.go`, `internal/api/submit*.go`; 08-02: `internal/config`, `docs/operator/configuration.md` |
+| 6 | 06-01, 06-02; 07-02 (if decided) | 06-01: scenario tests in `cmd/vde/extract_test.go`, `internal/extract/*_test.go`, `testdata/scenarios`; 06-02: the other `_test.go` files; 07-02: `internal/metrics` |
+| 7 | 09-01, 09-02, 09-03 (as decided, in order) | |
+| 8 | 08-04, then 08-01 (docs last, after every job that edits docs) | |
+| 9 | 10-01 | |
