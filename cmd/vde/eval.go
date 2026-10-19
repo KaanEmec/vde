@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -28,7 +27,6 @@ import (
 	"github.com/kaanemec/vde/internal/pdf"
 	"github.com/kaanemec/vde/internal/provider"
 	"github.com/kaanemec/vde/internal/provider/fake"
-	"github.com/kaanemec/vde/internal/version"
 )
 
 const evalUsage = `Usage: vde eval --corpus dir [--config file | --url URL --token-env NAME]
@@ -80,12 +78,7 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 		return runEvalImport(args[1:], stdout, stderr)
 	}
 	var o evalOptions
-	fs := flag.NewFlagSet("vde eval", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		fmt.Fprint(stderr, evalUsage)
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("vde eval", evalUsage, stderr)
 	fs.StringVar(&o.corpus, "corpus", "", "the corpus directory (required)")
 	fs.StringVar(&o.config, "config", defaultConfigPath, "configuration file (local runs)")
 	fs.StringVar(&o.url, "url", "", "run against this deployment instead of locally")
@@ -96,11 +89,8 @@ func runEval(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.out, "out", "eval-reports", `directory for the JSON report ("" to not save it)`)
 	fs.StringVar(&o.compare, "compare", "", "an earlier JSON report to compare with")
 	fs.StringVar(&o.providerScript, "provider-script", "", "replace every provider with a fake replaying this script")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return exitOK
-		}
-		return exitUsage
+	if code, done := parseFlags(fs, args); done {
+		return code
 	}
 	configSet := false
 	fs.Visit(func(f *flag.Flag) { configSet = configSet || f.Name == "config" })
@@ -244,6 +234,7 @@ func describeCase(r eval.CaseResult) string {
 	return line
 }
 
+// groupPairs lists a group's endpoint/model pairs in failover order, nil for no group.
 func groupPairs(cfg *config.Config, group string) []string {
 	g := cfg.Groups[group]
 	if g == nil {
@@ -259,18 +250,14 @@ func groupPairs(cfg *config.Config, group string) []string {
 // localEngine runs cases through extract.Run like vde extract: one fresh set of role
 // groups per case, so each case's calls and tokens are its own.
 type localEngine struct {
-	cfg            *config.Config
-	judgePolicy    config.JudgePolicy // roles.judge.policy or --judge
-	serviceVersion string
-	policy         document.HTMLPolicy
-	script         fake.Script  // nil for the configured providers
-	pdf            *pdf.Engine  // one per process, started by the first PDF that needs it
-	logger         *slog.Logger // the redacting logger on stderr, for the loop's warnings
+	*localRun
+	policy document.HTMLPolicy
+	script fake.Script // nil for the configured providers
+	pdf    *pdf.Engine // one per process, started by the first PDF that needs it
 }
 
 func newLocalEngine(o evalOptions, stderr io.Writer) (*localEngine, error) {
 	e := &localEngine{}
-	getenv := os.Getenv
 	if o.providerScript != "" {
 		data, err := os.ReadFile(o.providerScript)
 		if err != nil {
@@ -279,33 +266,13 @@ func newLocalEngine(o evalOptions, stderr io.Writer) (*localEngine, error) {
 		if e.script, err = fake.Parse(data); err != nil {
 			return nil, fmt.Errorf("%s: %w", o.providerScript, err)
 		}
-		getenv = func(k string) string {
-			if v := os.Getenv(k); v != "" {
-				return v
-			}
-			return "unused-with-provider-script"
-		}
 	}
-	cfg, issues, err := loadConfigEnv(o.config, false, getenv)
-	for _, i := range issues {
-		fmt.Fprintln(stderr, i)
-	}
-	if err != nil {
+	var err error
+	if e.localRun, err = newLocalRun(o.config, o.judge, o.providerScript != "", stderr); err != nil {
 		return nil, err
 	}
-	e.cfg = cfg
-	e.logger = newLogger(stderr, cfg.Logging)
-	e.judgePolicy = cfg.RolePolicy()
-	if o.judge != "" {
-		if e.judgePolicy, err = config.ParseJudgePolicy(o.judge); err != nil {
-			return nil, fmt.Errorf("--judge: %w", err)
-		}
-	}
-	vcfg := *cfg
-	vcfg.Roles.Judge.Policy = e.judgePolicy
-	e.serviceVersion = extract.ServiceVersion(&vcfg, version.Version)
-	e.policy = document.HTMLPolicy(cfg.Documents.HTML)
-	if e.pdf, err = newPDFEngine(cfg, cliPDFCacheDir()); err != nil {
+	e.policy = document.HTMLPolicy(e.cfg.Documents.HTML)
+	if e.pdf, err = newPDFEngine(e.cfg, cliPDFCacheDir()); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -316,23 +283,9 @@ func (e *localEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error
 	if err != nil {
 		return eval.Outcome{}, err
 	}
-	extractor, err := os.ReadFile(c.ExtractorInstructions)
+	files, err := readJobFiles(c.ExtractorInstructions, c.JudgeInstructions, c.Schema, eval.FileSchema)
 	if err != nil {
 		return eval.Outcome{}, err
-	}
-	judge, err := os.ReadFile(c.JudgeInstructions)
-	if err != nil {
-		return eval.Outcome{}, err
-	}
-	var schema *extract.Schema
-	if c.Schema != "" {
-		b, err := os.ReadFile(c.Schema)
-		if err != nil {
-			return eval.Outcome{}, err
-		}
-		if schema, err = extract.CompileSchema(b); err != nil {
-			return eval.Outcome{}, fmt.Errorf("%s: %w", eval.FileSchema, err)
-		}
 	}
 	rep, err := selectRepresentation(ctx, e.cfg, doc, e.policy, e.pdf, e.judgePolicy)
 	if err != nil {
@@ -347,18 +300,7 @@ func (e *localEngine) run(ctx context.Context, c eval.Case) (eval.Outcome, error
 	if err != nil {
 		return eval.Outcome{}, err
 	}
-	res := extract.Run(ctx, extract.Input{
-		Representation:        rep,
-		ExtractorInstructions: string(extractor),
-		JudgeInstructions:     string(judge),
-		Schema:                schema,
-		MaxAttempts:           e.cfg.Limits.MaxAttempts,
-		JudgePolicy:           e.judgePolicy,
-		SampleRate:            config.DefaultSampleRate,
-		SampleKey:             doc.Data,
-		Deadline:              time.Now().Add(e.cfg.Limits.JobTimeout),
-		Logger:                e.logger,
-	}, roles)
+	res := extract.Run(ctx, e.input(doc, rep, files, e.cfg.Limits.MaxAttempts, e.cfg.Limits.JobTimeout), roles)
 	calls, in, out := obs.usage()
 	o := eval.Outcome{
 		Status:         string(res.Status),
@@ -623,19 +565,11 @@ Flags:
 `
 
 func runEvalImport(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("vde eval import-travelinbox", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		fmt.Fprint(stderr, evalImportUsage)
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("vde eval import-travelinbox", evalImportUsage, stderr)
 	from := fs.String("from", "", "the TravelInbox assets or checkout (required)")
 	to := fs.String("to", "", "the corpus directory to write (required)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return exitOK
-		}
-		return exitUsage
+	if code, done := parseFlags(fs, args); done {
+		return code
 	}
 	if fs.NArg() > 0 || *from == "" || *to == "" {
 		fmt.Fprintln(stderr, "vde eval import-travelinbox: --from and --to are required, no arguments")

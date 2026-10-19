@@ -2,6 +2,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -77,4 +79,41 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "vde: unknown command %q\n\n%s", args[0], usage)
 		return exitUsage
 	}
+}
+
+// newFlagSet returns the flag set of a subcommand (name as in "vde app list"): errors and
+// the usage text, followed by the flags, go to stderr.
+func newFlagSet(name, usage string, stderr io.Writer) *flag.FlagSet {
+	set := flag.NewFlagSet(name, flag.ContinueOnError)
+	set.SetOutput(stderr)
+	set.Usage = func() {
+		fmt.Fprint(stderr, usage)
+		set.PrintDefaults()
+	}
+	return set
+}
+
+// parseFlags parses args and reports whether the command is done (help or a usage
+// error) with its exit code.
+func parseFlags(set *flag.FlagSet, args []string) (int, bool) {
+	if err := set.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK, true
+		}
+		return exitUsage, true
+	}
+	return 0, false
+}
+
+// parseArgs is parseFlags for a command without positional arguments: one is a usage
+// error.
+func parseArgs(set *flag.FlagSet, args []string, stderr io.Writer) (int, bool) {
+	if code, done := parseFlags(set, args); done {
+		return code, true
+	}
+	if set.NArg() > 0 {
+		fmt.Fprintf(stderr, "%s: unexpected argument %q\n", set.Name(), set.Arg(0))
+		return exitUsage, true
+	}
+	return 0, false
 }

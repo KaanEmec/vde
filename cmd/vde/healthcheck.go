@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -22,19 +21,10 @@ The container image's HEALTHCHECK runs it; the image has no curl.
 const healthcheckTimeout = 3 * time.Second
 
 func runHealthcheck(args []string, stdout, stderr io.Writer) int {
-	set := flag.NewFlagSet("vde healthcheck", flag.ContinueOnError)
-	set.SetOutput(stderr)
-	set.Usage = func() {
-		fmt.Fprint(stderr, healthcheckUsage+flagsHeading)
-		set.PrintDefaults()
-	}
+	set := newFlagSet("vde healthcheck", healthcheckUsage+flagsHeading, stderr)
 	configPath := operatorFlags(set)
-	if code, done := parseFlags(set, args); done {
+	if code, done := parseArgs(set, args, stderr); done {
 		return code
-	}
-	if set.NArg() > 0 {
-		fmt.Fprintf(stderr, "vde healthcheck: unexpected argument %q\n", set.Arg(0))
-		return exitUsage
 	}
 	cfg, err := loadOperatorConfig(configPath())
 	if err != nil {

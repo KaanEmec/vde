@@ -56,13 +56,7 @@ func runToken(args []string, stdout, stderr io.Writer) int {
 }
 
 func tokenFlagSet(name string, stderr io.Writer) *flag.FlagSet {
-	set := flag.NewFlagSet("vde token "+name, flag.ContinueOnError)
-	set.SetOutput(stderr)
-	set.Usage = func() {
-		fmt.Fprint(stderr, tokenUsage+flagsHeading)
-		set.PrintDefaults()
-	}
-	return set
+	return newFlagSet("vde token "+name, tokenUsage+flagsHeading, stderr)
 }
 
 // openOperatorStore loads the configuration at path and opens its database.
@@ -89,12 +83,8 @@ func runTokenCreate(args []string, stdout, stderr io.Writer) int {
 	admin := set.Bool("admin", false, "create an admin token (admin API only) instead of an application token")
 	expires := set.String("expires", "", "expiry: date, RFC 3339 time or duration such as 90d (required)")
 	label := set.String("label", "", "free text shown by vde token list")
-	if code, done := parseFlags(set, args); done {
+	if code, done := parseArgs(set, args, stderr); done {
 		return code
-	}
-	if set.NArg() > 0 {
-		fmt.Fprintf(stderr, "vde token create: unexpected argument %q\n", set.Arg(0))
-		return exitUsage
 	}
 	var scopeList []string
 	switch {

@@ -14,6 +14,6 @@ in order; 06 can run in parallel.
 | 01 | [One representation selection](01-representation-selection.md) | done |
 | 02 | [Job outcomes, error messages and the sweeper](02-job-outcomes-and-sweeper.md) | done |
 | 03 | [CLI and admin API share one code path](03-cli-admin-shared-paths.md) | done |
-| 04 | [CLI boilerplate and one local runner](04-cli-boilerplate.md) | planned |
+| 04 | [CLI boilerplate and one local runner](04-cli-boilerplate.md) | done |
 | 05 | [Small shared helpers](05-small-shared-helpers.md) | planned |
 | 06 | [One configuration validator](06-config-single-validator.md) | planned |

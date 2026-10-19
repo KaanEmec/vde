@@ -1,6 +1,6 @@
 # Job: CLI boilerplate and one local runner
 
-Version: v1.1 · Epic: 03 Single source · Status: planned · Depends on: 03-03
+Version: v1.1 · Epic: 03 Single source · Status: done (Polish and Gate tasks left to the orchestrator) · Depends on: 03-03
 
 ## Goal
 
@@ -25,7 +25,7 @@ flags, output and exit codes stay.
 
 ## Tasks
 
-- [ ] Plan and execute.
+- [x] Plan and execute.
   - Skill: GOREF.
   - Prompt: "/golang-refactoring Plan mode: in cmd/vde add one flag helper (new flag
     set, usage, parse with ErrHelp and the positional-argument check) used by every
@@ -33,12 +33,12 @@ flags, output and exit codes stay.
     shared by extract and eval; one pair formatter. Help text, flags, output and exit
     codes must not change (the cmd/vde tests compare them). Guardrails: skills.md." Then
     "/golang-refactoring Execute mode: step <n>."
-- [ ] Polish.
+- [ ] Polish (orchestrator).
   - Skill: SIMPLIFIER.
   - Prompt: "Use the code-simplifier agent on cmd/vde (all non-test files) to remove what
     the shared helpers made redundant. Go project; follow AGENTS.md; ignore the JS/React
     standards. Do not split serveAs (05-02). Guardrails: skills.md."
-- [ ] Gate.
+- [ ] Gate (orchestrator).
   - Skill: REVIEW.
   - Prompt: `/code-review high <first>^..<last>`, then `make scenarios` and `make eval`.
 
@@ -50,3 +50,31 @@ flags, output and exit codes stay.
 ## Out of scope
 
 - Adopting a CLI library (a new dependency).
+
+## Result
+
+- Flags: `newFlagSet(name, usage, stderr)` (main.go) builds every subcommand's set;
+  `parseFlags` moved to main.go and `parseArgs` adds the "<name>: unexpected argument"
+  check. serve, extract, config check, app list, audit list, migrate, healthcheck and
+  token create use `parseArgs` (one call); eval, eval import-travelinbox, token list and
+  token revoke keep `parseFlags` because their positional-argument message differs.
+  `tokenFlagSet` is a one-line wrapper. Every message was identical before.
+- Operator store: `openOperator(name, path, stderr)` for app, audit and migrate (config
+  errors printed as they are, database errors after the command name, as before).
+  Token keeps `openOperatorStore`: its config errors carry the command prefix and it
+  checks `auth.max_token_ttl`, so sharing would change its output.
+- Local run: `localRun` (configuration with the provider-script key stub, issues on
+  stderr, judge policy, `service_version`, logger), `readJobFiles` and `localRun.input`
+  are shared by `vde extract` and the eval `localEngine` (which embeds `*localRun`).
+  Differences kept at the callers: extract loads the scenario script with `fake.Load`,
+  eval parses it with `fake.Parse` and fills the expected answer per case; extract has
+  `--html`, `--max-attempts`, `--timeout`, `OnAttempt` and one PDF engine per run; the
+  schema compile error names the file (extract) or `eval.FileSchema` (eval). The logger
+  is created before `--judge` is parsed in both now (it writes nothing on creation).
+- `groupPairs` serves `vde config check` too.
+
+Checks: `make check`, `make scenarios`, `make conformance` green; `make eval` identical to
+`eval-reports/lean-baseline` (timings and the removed `summary.cost_usd` aside); no test
+changed.
+
+`git diff --stat` (Go): production 10 files, +200 −290 (net −90); tests unchanged.

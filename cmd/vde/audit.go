@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"slices"
@@ -32,23 +31,14 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, auditUsage)
 		return exitUsage
 	}
-	set := flag.NewFlagSet("vde audit list", flag.ContinueOnError)
-	set.SetOutput(stderr)
-	set.Usage = func() {
-		fmt.Fprint(stderr, auditUsage+flagsHeading)
-		set.PrintDefaults()
-	}
+	set := newFlagSet("vde audit list", auditUsage+flagsHeading, stderr)
 	configPath := operatorFlags(set)
 	app := set.String("app", "", "only this application's events")
 	since := set.String("since", "24h", "events at or after: a duration back from now (24h, 7d) or an RFC 3339 time")
 	kind := set.String("kind", "", "only events of this kind")
 	limit := set.Int("limit", 100, "at most this many events (0 for all)")
-	if code, done := parseFlags(set, args[1:]); done {
+	if code, done := parseArgs(set, args[1:], stderr); done {
 		return code
-	}
-	if set.NArg() > 0 {
-		fmt.Fprintf(stderr, "vde audit list: unexpected argument %q\n", set.Arg(0))
-		return exitUsage
 	}
 	now := time.Now()
 	from, err := audit.ParseSince(*since, now)
@@ -64,14 +54,8 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "vde audit list: --limit must not be negative")
 		return exitUsage
 	}
-	cfg, err := loadOperatorConfig(configPath())
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return exitFailure
-	}
-	store, err := openStore(context.Background(), cfg)
-	if err != nil {
-		fmt.Fprintf(stderr, "vde audit list: %v\n", err)
+	_, store, ok := openOperator(set.Name(), configPath(), stderr)
+	if !ok {
 		return exitFailure
 	}
 	defer store.Close()

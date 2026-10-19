@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -66,23 +65,11 @@ const (
 )
 
 func runServe(args []string, _, stderr io.Writer) int {
-	fs := flag.NewFlagSet("vde serve", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		fmt.Fprint(stderr, serveUsage)
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("vde serve", serveUsage, stderr)
 	path := fs.String("config", defaultConfigPath, "configuration file")
 	role := fs.String("role", api.RoleAll, "process role: all, api or worker")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return exitOK
-		}
-		return exitUsage
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "vde serve: unexpected argument %q\n", fs.Arg(0))
-		return exitUsage
+	if code, done := parseArgs(fs, args, stderr); done {
+		return code
 	}
 	if !slices.Contains([]string{api.RoleAll, api.RoleAPI, api.RoleWorker}, *role) {
 		fmt.Fprintf(stderr, "vde serve: --role %q is not all, api or worker\n", *role)

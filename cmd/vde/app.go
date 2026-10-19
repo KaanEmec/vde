@@ -55,6 +55,23 @@ func loadOperatorConfig(path string) (*config.Config, error) {
 	return config.Parse(data, os.Getenv)
 }
 
+// openOperator loads the operator configuration at path and opens its database for the
+// command name. On failure it prints the error (a database error after name) to stderr
+// and reports false.
+func openOperator(name, path string, stderr io.Writer) (*config.Config, *job.DB, bool) {
+	cfg, err := loadOperatorConfig(path)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return nil, nil, false
+	}
+	store, err := openStore(context.Background(), cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		return nil, nil, false
+	}
+	return cfg, store, true
+}
+
 // cliAudit is the recorder of the operator commands: the store, actor cli.
 func cliAudit(store job.Store) *audit.Recorder {
 	return audit.New(store, audit.Options{}).WithActor(audit.ActorCLI)
@@ -118,28 +135,13 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, appUsage)
 		return exitUsage
 	}
-	set := flag.NewFlagSet("vde app list", flag.ContinueOnError)
-	set.SetOutput(stderr)
-	set.Usage = func() {
-		fmt.Fprint(stderr, appUsage+flagsHeading)
-		set.PrintDefaults()
-	}
+	set := newFlagSet("vde app list", appUsage+flagsHeading, stderr)
 	configPath := operatorFlags(set)
-	if code, done := parseFlags(set, args[1:]); done {
+	if code, done := parseArgs(set, args[1:], stderr); done {
 		return code
 	}
-	if set.NArg() > 0 {
-		fmt.Fprintf(stderr, "vde app list: unexpected argument %q\n", set.Arg(0))
-		return exitUsage
-	}
-	cfg, err := loadOperatorConfig(configPath())
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return exitFailure
-	}
-	store, err := openStore(context.Background(), cfg)
-	if err != nil {
-		fmt.Fprintf(stderr, "vde app list: %v\n", err)
+	_, store, ok := openOperator(set.Name(), configPath(), stderr)
+	if !ok {
 		return exitFailure
 	}
 	defer store.Close()
@@ -183,16 +185,4 @@ func dash(s string) string {
 		return "-"
 	}
 	return s
-}
-
-// parseFlags parses args and reports whether the command is done (help or a usage
-// error) with its exit code.
-func parseFlags(set *flag.FlagSet, args []string) (int, bool) {
-	if err := set.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return exitOK, true
-		}
-		return exitUsage, true
-	}
-	return 0, false
 }

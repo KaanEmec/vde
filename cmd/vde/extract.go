@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -113,12 +111,7 @@ type jobOutput struct {
 
 func runExtract(args []string, stdout, stderr io.Writer) int {
 	var o extractOptions
-	fs := flag.NewFlagSet("vde extract", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		fmt.Fprint(stderr, extractUsage)
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("vde extract", extractUsage, stderr)
 	fs.StringVar(&o.config, "config", defaultConfigPath, "configuration file")
 	fs.StringVar(&o.document, "document", "", "the document file (required)")
 	fs.StringVar(&o.mediaType, "type", "", "the document's media type (default: from the file extension)")
@@ -132,15 +125,8 @@ func runExtract(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.judge, "judge", "", "judge policy, always, never or auto (default: roles.judge.policy)")
 	fs.StringVar(&o.providerScript, "provider-script", "", "replace every provider with the fake replaying this script")
 	fs.BoolVar(&o.verbose, "verbose", false, "progress lines on stderr (never content)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return exitOK
-		}
-		return exitUsage
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "vde extract: unexpected argument %q\n", fs.Arg(0))
-		return exitUsage
+	if code, done := parseArgs(fs, args, stderr); done {
+		return code
 	}
 	for _, req := range []struct{ name, value string }{
 		{"--document", o.document},
@@ -188,7 +174,6 @@ func runExtract(args []string, stdout, stderr io.Writer) int {
 // extractFile prepares and runs one job. Its errors are usage or configuration errors:
 // once the loop runs, every outcome, failures included, is a jobOutput.
 func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOutput, error) {
-	getenv := os.Getenv
 	var script provider.Provider
 	if o.providerScript != "" {
 		// A scenario file holds the script as its first YAML document; fake.Load reads
@@ -198,33 +183,13 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 			return jobOutput{}, err
 		}
 		script = f
-		// No endpoint is called, so a key the configuration names need not be set.
-		getenv = func(k string) string {
-			if v := os.Getenv(k); v != "" {
-				return v
-			}
-			return "unused-with-provider-script"
-		}
 	}
-	cfg, issues, err := loadConfigEnv(o.config, false, getenv)
-	for _, i := range issues {
-		fmt.Fprintln(stderr, i)
-	}
+	l, err := newLocalRun(o.config, o.judge, script != nil, stderr)
 	if err != nil {
 		return jobOutput{}, err
 	}
-
-	judgePolicy := cfg.RolePolicy()
-	if o.judge != "" {
-		if judgePolicy, err = config.ParseJudgePolicy(o.judge); err != nil {
-			return jobOutput{}, fmt.Errorf("--judge: %w", err)
-		}
-	}
-	logger := newLogger(stderr, cfg.Logging)
-	vcfg := *cfg
-	vcfg.Roles.Judge.Policy = judgePolicy
-	sv := extract.ServiceVersion(&vcfg, version.Version)
-	logger.Info("vde extract", "service_version", sv, "version", version.Version)
+	cfg := l.cfg
+	l.logger.Info("vde extract", "service_version", l.serviceVersion, "version", version.Version)
 
 	maxAttempts := cfg.Limits.MaxAttempts
 	if o.maxAttempts != 0 {
@@ -251,30 +216,16 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 	if err != nil {
 		return jobOutput{}, err
 	}
-	extractorInstructions, err := os.ReadFile(o.extractorInstructions)
+	files, err := readJobFiles(o.extractorInstructions, o.judgeInstructions, o.schema, o.schema)
 	if err != nil {
 		return jobOutput{}, err
-	}
-	judgeInstructions, err := os.ReadFile(o.judgeInstructions)
-	if err != nil {
-		return jobOutput{}, err
-	}
-	var schema *extract.Schema
-	if o.schema != "" {
-		b, err := os.ReadFile(o.schema)
-		if err != nil {
-			return jobOutput{}, err
-		}
-		if schema, err = extract.CompileSchema(b); err != nil {
-			return jobOutput{}, fmt.Errorf("%s: %w", o.schema, err)
-		}
 	}
 	pdfEngine, err := newPDFEngine(cfg, cliPDFCacheDir())
 	if err != nil {
 		return jobOutput{}, err
 	}
 	defer func() { _ = pdfEngine.Close() }()
-	rep, err := selectRepresentation(ctx, cfg, doc, policy, pdfEngine, judgePolicy)
+	rep, err := selectRepresentation(ctx, cfg, doc, policy, pdfEngine, l.judgePolicy)
 	if err != nil {
 		return jobOutput{}, err
 	}
@@ -289,25 +240,15 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		return jobOutput{}, err
 	}
 	obs.logf("document %s, %s representation, %d part(s), schema %t, max %d attempt(s), timeout %s",
-		doc.BaseType(), rep.Kind, len(rep.Parts), schema != nil, maxAttempts, timeout)
+		doc.BaseType(), rep.Kind, len(rep.Parts), files.schema != nil, maxAttempts, timeout)
 
 	run := o.run
 	if run == nil {
 		run = extract.Run
 	}
-	res := run(ctx, extract.Input{
-		Representation:        rep,
-		ExtractorInstructions: string(extractorInstructions),
-		JudgeInstructions:     string(judgeInstructions),
-		Schema:                schema,
-		MaxAttempts:           maxAttempts,
-		JudgePolicy:           judgePolicy,
-		SampleRate:            config.DefaultSampleRate,
-		SampleKey:             doc.Data,
-		Deadline:              time.Now().Add(timeout),
-		OnAttempt:             func(p extract.Progress) { obs.logf("attempt %d: %s", p.Attempts, describeProgress(p)) },
-		Logger:                logger,
-	}, roles)
+	input := l.input(doc, rep, files, maxAttempts, timeout)
+	input.OnAttempt = func(p extract.Progress) { obs.logf("attempt %d: %s", p.Attempts, describeProgress(p)) }
+	res := run(ctx, input, roles)
 
 	calls, in, outTokens := obs.usage()
 	summary := string(res.Status) + ", verification " + res.Verification
@@ -323,7 +264,7 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		Feedback:        res.Feedback,
 		Attempts:        res.Attempts,
 		Usage:           extract.Usage{InputTokens: in, OutputTokens: outTokens, Calls: calls},
-		ServiceVersion:  sv,
+		ServiceVersion:  l.serviceVersion,
 		JudgeConfidence: res.JudgeConfidence,
 		Error:           res.Error,
 		Verification:    res.Verification,
@@ -333,6 +274,96 @@ func extractFile(ctx context.Context, o extractOptions, stderr io.Writer) (jobOu
 		out.Attachments = append(out.Attachments, attachment{Name: a.Filename, MediaType: a.MediaType, Bytes: a.Size})
 	}
 	return out, nil
+}
+
+// localRun is what vde extract and vde eval set up alike to run the loop in this
+// process: the configuration, the run's judge policy (roles.judge.policy or --judge),
+// its service_version and the redacting logger on stderr.
+type localRun struct {
+	cfg            *config.Config
+	judgePolicy    config.JudgePolicy
+	serviceVersion string
+	logger         *slog.Logger
+}
+
+// newLocalRun loads the configuration at path and prints its issues to stderr. With a
+// provider script (scripted) no endpoint is called, so a key the configuration names
+// need not be set.
+func newLocalRun(path, judge string, scripted bool, stderr io.Writer) (*localRun, error) {
+	getenv := os.Getenv
+	if scripted {
+		getenv = func(k string) string {
+			if v := os.Getenv(k); v != "" {
+				return v
+			}
+			return "unused-with-provider-script"
+		}
+	}
+	cfg, issues, err := loadConfigEnv(path, false, getenv)
+	for _, i := range issues {
+		fmt.Fprintln(stderr, i)
+	}
+	if err != nil {
+		return nil, err
+	}
+	l := &localRun{cfg: cfg, judgePolicy: cfg.RolePolicy(), logger: newLogger(stderr, cfg.Logging)}
+	if judge != "" {
+		if l.judgePolicy, err = config.ParseJudgePolicy(judge); err != nil {
+			return nil, fmt.Errorf("--judge: %w", err)
+		}
+	}
+	vcfg := *cfg
+	vcfg.Roles.Judge.Policy = l.judgePolicy
+	l.serviceVersion = extract.ServiceVersion(&vcfg, version.Version)
+	return l, nil
+}
+
+// jobFiles are the instructions and the optional schema of one local job.
+type jobFiles struct {
+	extractor, judge string
+	schema           *extract.Schema // nil for schema-less extraction
+}
+
+// readJobFiles reads the instruction files and the schema file ("" for none); a schema
+// that does not compile is reported as schemaName.
+func readJobFiles(extractorPath, judgePath, schemaPath, schemaName string) (jobFiles, error) {
+	var f jobFiles
+	b, err := os.ReadFile(extractorPath)
+	if err != nil {
+		return f, err
+	}
+	f.extractor = string(b)
+	if b, err = os.ReadFile(judgePath); err != nil {
+		return f, err
+	}
+	f.judge = string(b)
+	if schemaPath != "" {
+		if b, err = os.ReadFile(schemaPath); err != nil {
+			return f, err
+		}
+		if f.schema, err = extract.CompileSchema(b); err != nil {
+			return f, fmt.Errorf("%s: %w", schemaName, err)
+		}
+	}
+	return f, nil
+}
+
+// input is the loop input of one local job, its deadline timeout from now. The sample
+// rate is the default and the document its sampling key, as for a submitted job.
+func (l *localRun) input(doc *document.Document, rep document.Representation, f jobFiles, maxAttempts int,
+	timeout time.Duration) extract.Input {
+	return extract.Input{
+		Representation:        rep,
+		ExtractorInstructions: f.extractor,
+		JudgeInstructions:     f.judge,
+		Schema:                f.schema,
+		MaxAttempts:           maxAttempts,
+		JudgePolicy:           l.judgePolicy,
+		SampleRate:            config.DefaultSampleRate,
+		SampleKey:             doc.Data,
+		Deadline:              time.Now().Add(timeout),
+		Logger:                l.logger,
+	}
 }
 
 // selectRepresentation chooses what both roles read as the service does, the PDF

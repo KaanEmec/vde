@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 )
@@ -18,33 +17,17 @@ but not validated, so provider keys need not be set.
 `
 
 func runMigrate(args []string, stdout, stderr io.Writer) int {
-	set := flag.NewFlagSet("vde migrate", flag.ContinueOnError)
-	set.SetOutput(stderr)
-	set.Usage = func() {
-		fmt.Fprint(stderr, migrateUsage+flagsHeading)
-		set.PrintDefaults()
-	}
+	set := newFlagSet("vde migrate", migrateUsage+flagsHeading, stderr)
 	configPath := operatorFlags(set)
-	if code, done := parseFlags(set, args); done {
+	if code, done := parseArgs(set, args, stderr); done {
 		return code
 	}
-	if set.NArg() > 0 {
-		fmt.Fprintf(stderr, "vde migrate: unexpected argument %q\n", set.Arg(0))
-		return exitUsage
-	}
-	cfg, err := loadOperatorConfig(configPath())
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return exitFailure
-	}
-	ctx := context.Background()
-	store, err := openStore(ctx, cfg)
-	if err != nil {
-		fmt.Fprintf(stderr, "vde migrate: %v\n", err)
+	cfg, store, ok := openOperator(set.Name(), configPath(), stderr)
+	if !ok {
 		return exitFailure
 	}
 	defer store.Close()
-	v, err := store.SchemaVersion(ctx)
+	v, err := store.SchemaVersion(context.Background())
 	if err != nil {
 		fmt.Fprintf(stderr, "vde migrate: %v\n", err)
 		return exitFailure

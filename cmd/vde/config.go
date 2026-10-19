@@ -2,8 +2,6 @@ package main
 
 import (
 	"cmp"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"maps"
@@ -51,23 +49,11 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, configUsage)
 		return exitUsage
 	}
-	fs := flag.NewFlagSet("vde config check", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		fmt.Fprint(stderr, configUsage)
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("vde config check", configUsage, stderr)
 	path := fs.String("config", defaultConfigPath, "configuration file")
 	strict := fs.Bool("strict", false, "treat warnings as errors")
-	if err := fs.Parse(args[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return exitOK
-		}
-		return exitUsage
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "vde config check: unexpected argument %q\n", fs.Arg(0))
-		return exitUsage
+	if code, done := parseArgs(fs, args[1:], stderr); done {
+		return code
 	}
 
 	cfg, issues, err := loadConfigEnv(*path, *strict, os.Getenv)
@@ -154,12 +140,8 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 	fmt.Fprintln(tw, "\ngroups")
 	for _, name := range slices.Sorted(maps.Keys(cfg.Groups)) {
 		g := cfg.Groups[name]
-		pairs := make([]string, 0, len(g.Endpoints))
-		for _, entry := range g.Endpoints {
-			pairs = append(pairs, entry.Endpoint+"/"+entry.Model)
-		}
 		fmt.Fprintf(tw, "  %s\t%s\tfailover %d tries, %s\n",
-			name, strings.Join(pairs, " -> "), g.Failover.MaxTries, g.Failover.MaxTotalTime)
+			name, strings.Join(groupPairs(cfg, name), " -> "), g.Failover.MaxTries, g.Failover.MaxTotalTime)
 	}
 	fmt.Fprintln(tw, "\nroles")
 	extractorCaps, judgeCaps := extract.RoleCapabilities(cfg)
