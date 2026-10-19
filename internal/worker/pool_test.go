@@ -818,7 +818,8 @@ func (stubPDFDoc) Close() {}
 // TestPDFPreparedByService: a PDF without pages for groups that read no application/pdf
 // is selected again with the PDF engine (ADR 0010): a text-rich one is sent as its text
 // layer, a thin one as its rendered pages, and both are grounded on the text layer, so
-// under auto the candidate is accepted without a judge.
+// under auto the candidate is accepted without a judge. The application samples nothing:
+// the sample key is the random job id.
 func TestPDFPreparedByService(t *testing.T) {
 	rich := strings.Repeat("Booking for SENTINEL-RESULT. ", 10)
 	for _, tt := range []struct {
@@ -832,6 +833,14 @@ func TestPDFPreparedByService(t *testing.T) {
 			ext, judge := accepting()
 			engine := &stubPDF{text: tt.text}
 			r := newRig(t, ext, judge, worker.Options{PDF: engine})
+			app, err := r.store.GetApplication(t.Context(), "app")
+			if err != nil {
+				t.Fatal(err)
+			}
+			app.JudgeSampleRate = new(0.0)
+			if err := r.store.UpsertApplication(t.Context(), app, time.Now()); err != nil {
+				t.Fatal(err)
+			}
 			j := r.submit(t, "app", func(j *job.Job) {
 				j.MediaType, j.Representation, j.JudgePolicy = "application/pdf", tt.label, tt.policy
 			})
