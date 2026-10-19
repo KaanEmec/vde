@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/provider/providertest"
 )
 
 const (
@@ -24,46 +23,36 @@ const (
 
 var docBytes = []byte("%PDF-1.7 CONFIDENTIAL-PDF-BYTES")
 
+// secrets must never appear in an error message: document bytes, answer text, the key.
+var secrets = []string{docText, answer, string(docBytes), "CONFIDENTIAL-PDF-BYTES", secretKey,
+	base64.StdEncoding.EncodeToString(docBytes)}
+
 // endpoint builds an endpoint through config.Parse, the only way to set a resolved key.
 func endpoint(t *testing.T, baseURL, preset, key string) *config.Endpoint {
 	t.Helper()
-	yml := "endpoints:\n  e:\n    provider: openai_compatible\n    base_url: " + baseURL + "\n    timeout: 5s\n"
+	lines := []string{"provider: openai_compatible", "base_url: " + baseURL, "timeout: 5s"}
 	if preset != "" {
-		yml += "    preset: " + preset + "\n"
+		lines = append(lines, "preset: "+preset)
 	}
 	if key != "" {
-		yml += "    api_key_env: TEST_KEY\n"
+		lines = append(lines, "api_key_env: TEST_KEY")
 	}
-	cfg, err := config.Parse([]byte(yml), func(string) string { return key })
-	if err != nil {
-		t.Fatalf("config.Parse: %v", err)
-	}
-	return cfg.Endpoints["e"]
+	return providertest.Endpoint(t, key, lines...)
 }
 
-// capture is a server that records the last request and replies with status and body.
-type capture struct {
-	header http.Header
-	path   string
-	body   map[string]any
-}
-
-func serve(t *testing.T, status int, reply string, hdr http.Header) (*httptest.Server, *capture) {
+func serve(t *testing.T, status int, reply string, hdr http.Header) (*httptest.Server, *providertest.Captured) {
 	t.Helper()
-	c := &capture{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c.header = r.Header.Clone()
-		c.path = r.URL.Path
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &c.body)
-		for k, v := range hdr {
-			w.Header()[k] = v
-		}
-		w.WriteHeader(status)
-		_, _ = io.WriteString(w, reply)
-	}))
-	t.Cleanup(srv.Close)
-	return srv, c
+	return providertest.Serve(t, providertest.Reply(status, hdr, reply))
+}
+
+// jsonBody decodes the request body the server saw.
+func jsonBody(t *testing.T, got *providertest.Captured) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(got.Body, &body); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	return body
 }
 
 const okReply = `{"model":"gpt-x-2026","choices":[{"message":{"role":"assistant","content":"` + answer + `"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":7}}`
@@ -88,22 +77,22 @@ func TestRequestShape(t *testing.T) {
 	if _, err := c.Complete(t.Context(), request()); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if got.path != "/v1/chat/completions" {
-		t.Errorf("path = %q", got.path)
+	if got.URL.Path != "/v1/chat/completions" {
+		t.Errorf("path = %q", got.URL.Path)
 	}
-	if h := got.header.Get("Authorization"); h != "Bearer "+secretKey {
+	if h := got.Header.Get("Authorization"); h != "Bearer "+secretKey {
 		t.Errorf("Authorization = %q", h)
 	}
-	if h := got.header.Get("Content-Type"); h != "application/json" {
+	if h := got.Header.Get("Content-Type"); h != "application/json" {
 		t.Errorf("Content-Type = %q", h)
 	}
-	if h := got.header.Get("User-Agent"); !strings.HasPrefix(h, "vde/") {
+	if h := got.Header.Get("User-Agent"); !strings.HasPrefix(h, "vde/") {
 		t.Errorf("User-Agent = %q", h)
 	}
-	if got.header.Get("HTTP-Referer") != "" || got.header.Get("X-Title") != "" {
+	if got.Header.Get("HTTP-Referer") != "" || got.Header.Get("X-Title") != "" {
 		t.Error("attribution headers sent without the openrouter preset")
 	}
-	b := got.body
+	b := jsonBody(t, got)
 	if b["model"] != "gpt-x" || b["max_tokens"] != float64(1000) || b["temperature"] != float64(0) {
 		t.Errorf("scalar fields = %v", b)
 	}
@@ -151,14 +140,15 @@ func TestDefaultsAndNoSystem(t *testing.T) {
 	if _, err := c.Complete(t.Context(), req); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if got.body["max_tokens"] != float64(4096) || got.body["temperature"] != float64(0) {
-		t.Errorf("max_tokens, temperature = %v, %v, want 4096, 0", got.body["max_tokens"], got.body["temperature"])
+	body := jsonBody(t, got)
+	if body["max_tokens"] != float64(4096) || body["temperature"] != float64(0) {
+		t.Errorf("max_tokens, temperature = %v, %v, want 4096, 0", body["max_tokens"], body["temperature"])
 	}
-	if n := len(got.body["messages"].([]any)); n != 1 {
+	if n := len(body["messages"].([]any)); n != 1 {
 		t.Errorf("messages = %d, want only the user message", n)
 	}
-	if _, ok := got.header["Authorization"]; ok {
-		t.Errorf("Authorization sent without a key: %q", got.header.Get("Authorization"))
+	if _, ok := got.Header["Authorization"]; ok {
+		t.Errorf("Authorization sent without a key: %q", got.Header.Get("Authorization"))
 	}
 }
 
@@ -169,15 +159,16 @@ func TestOpenRouterPreset(t *testing.T) {
 	if _, err := c.Complete(t.Context(), request()); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if h := got.header.Get("HTTP-Referer"); h != "https://github.com/kaanemec/vde" {
+	if h := got.Header.Get("HTTP-Referer"); h != "https://github.com/kaanemec/vde" {
 		t.Errorf("HTTP-Referer = %q", h)
 	}
-	if h := got.header.Get("X-Title"); h != "vde" {
+	if h := got.Header.Get("X-Title"); h != "vde" {
 		t.Errorf("X-Title = %q", h)
 	}
-	prov, ok := got.body["provider"].(map[string]any)
+	body := jsonBody(t, got)
+	prov, ok := body["provider"].(map[string]any)
 	if !ok || prov["data_collection"] != "deny" {
-		t.Errorf("provider option = %v, want data_collection deny", got.body["provider"])
+		t.Errorf("provider option = %v, want data_collection deny", body["provider"])
 	}
 }
 
@@ -266,10 +257,7 @@ func TestErrors(t *testing.T) {
 			t.Parallel()
 			srv, _ := serve(t, tt.status, tt.reply, tt.hdr)
 			_, err := New(endpoint(t, srv.URL, "", secretKey)).Complete(t.Context(), request())
-			var pe *provider.Error
-			if !errors.As(err, &pe) {
-				t.Fatalf("err = %v, want *provider.Error", err)
-			}
+			pe := providertest.AsError(t, err)
 			if pe.Kind != tt.want {
 				t.Errorf("Kind = %v, want %v", pe.Kind, tt.want)
 			}
@@ -279,7 +267,7 @@ func TestErrors(t *testing.T) {
 			if pe.RetryAfter != tt.retryAfter {
 				t.Errorf("RetryAfter = %v, want %v", pe.RetryAfter, tt.retryAfter)
 			}
-			assertNoContent(t, err)
+			providertest.AssertNoContent(t, err, secrets...)
 		})
 	}
 }
@@ -294,11 +282,10 @@ func TestContextDeadlineIsRetryable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	_, err := New(endpoint(t, srv.URL, "", "")).Complete(ctx, request())
-	var pe *provider.Error
-	if !errors.As(err, &pe) || pe.Kind != provider.Retryable {
+	if pe := providertest.AsError(t, err); pe.Kind != provider.Retryable {
 		t.Fatalf("err = %v, want a Retryable *provider.Error", err)
 	}
-	assertNoContent(t, err)
+	providertest.AssertNoContent(t, err, secrets...)
 }
 
 func TestConnectionRefusedIsRetryable(t *testing.T) {
@@ -307,11 +294,10 @@ func TestConnectionRefusedIsRetryable(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 	_, err := New(endpoint(t, url, "", secretKey)).Complete(t.Context(), request())
-	var pe *provider.Error
-	if !errors.As(err, &pe) || pe.Kind != provider.Retryable {
+	if pe := providertest.AsError(t, err); pe.Kind != provider.Retryable {
 		t.Fatalf("err = %v, want a Retryable *provider.Error", err)
 	}
-	assertNoContent(t, err)
+	providertest.AssertNoContent(t, err, secrets...)
 }
 
 func TestUnsupportedDocumentIsPermanent(t *testing.T) {
@@ -321,24 +307,11 @@ func TestUnsupportedDocumentIsPermanent(t *testing.T) {
 		{Document: &provider.Blob{MediaType: "application/msword", Data: docBytes}},
 	}}
 	_, err := New(endpoint(t, srv.URL, "", "")).Complete(t.Context(), req)
-	var pe *provider.Error
-	if !errors.As(err, &pe) || pe.Kind != provider.Permanent {
+	if pe := providertest.AsError(t, err); pe.Kind != provider.Permanent {
 		t.Fatalf("err = %v, want a Permanent *provider.Error", err)
 	}
-	if got.body != nil {
+	if got.Body != nil {
 		t.Error("a request was sent for an unsupported document")
 	}
-	assertNoContent(t, err)
-}
-
-// assertNoContent fails when an error message carries document bytes, answer text or the key.
-func assertNoContent(t *testing.T, err error) {
-	t.Helper()
-	msg := err.Error()
-	for _, s := range []string{docText, answer, string(docBytes), "CONFIDENTIAL-PDF-BYTES", secretKey,
-		base64.StdEncoding.EncodeToString(docBytes)} {
-		if strings.Contains(msg, s) {
-			t.Errorf("error message %q contains %q", msg, s)
-		}
-	}
+	providertest.AssertNoContent(t, err, secrets...)
 }

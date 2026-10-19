@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/provider/providertest"
 )
 
 const (
@@ -23,38 +22,21 @@ const (
 	secretAns  = "SECRET-ANSWER-TEXT"
 )
 
-// captured is what the fake Gemini server saw.
-type captured struct {
-	path   string
-	rawURL string
-	key    string
-	body   []byte
-}
+// secrets must never appear in an error message.
+var secrets = []string{secretText, secretBlob, secretAns, "SECRET", base64.StdEncoding.EncodeToString([]byte(secretBlob))}
 
 // serve starts a server that records the request and replies with status and body.
-func serve(t *testing.T, status int, reply string, hdr http.Header) (*Client, *captured) {
+func serve(t *testing.T, status int, reply string, hdr http.Header) (*Client, *providertest.Captured) {
 	t.Helper()
-	got := &captured{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got.path = r.URL.Path
-		got.rawURL = r.URL.String()
-		got.key = r.Header.Get("x-goog-api-key")
-		got.body, _ = io.ReadAll(r.Body)
-		for k, v := range hdr {
-			w.Header()[k] = v
-		}
-		w.WriteHeader(status)
-		_, _ = io.WriteString(w, reply)
-	}))
-	t.Cleanup(srv.Close)
-	return newClient(t, srv.URL, 5*time.Second), got
+	srv, got := providertest.Serve(t, providertest.Reply(status, hdr, reply))
+	return newClient(t, srv.URL), got
 }
 
-func newClient(t *testing.T, baseURL string, timeout time.Duration) *Client {
+func newClient(t *testing.T, baseURL string) *Client {
 	t.Helper()
 	var ep config.Endpoint
 	ep.BaseURL = baseURL
-	ep.Timeout = timeout
+	ep.Timeout = 5 * time.Second
 	c := New(&ep)
 	c.apiKey = testKey
 	return c
@@ -76,25 +58,6 @@ func baseRequest() provider.Request {
 const okReply = `{"candidates":[{"content":{"parts":[{"text":"SECRET-"},{"text":"ANSWER-TEXT"}],"role":"model"},"finishReason":"STOP"}],
 "usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":7},"modelVersion":"gemini-test-model-001"}`
 
-func asProviderError(t *testing.T, err error) *provider.Error {
-	t.Helper()
-	var pe *provider.Error
-	if !errors.As(err, &pe) {
-		t.Fatalf("error %v is not a *provider.Error", err)
-	}
-	return pe
-}
-
-func assertNoContent(t *testing.T, err error) {
-	t.Helper()
-	msg := err.Error()
-	for _, s := range []string{secretText, secretBlob, secretAns, "SECRET", base64.StdEncoding.EncodeToString([]byte(secretBlob))} {
-		if strings.Contains(msg, s) {
-			t.Errorf("error message contains content %q: %s", s, msg)
-		}
-	}
-}
-
 func TestCompleteRequest(t *testing.T) {
 	t.Parallel()
 	c, got := serve(t, http.StatusOK, okReply, nil)
@@ -102,14 +65,14 @@ func TestCompleteRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if want := "/v1beta/models/gemini-test-model:generateContent"; got.path != want {
-		t.Errorf("path = %q, want %q", got.path, want)
+	if want := "/v1beta/models/gemini-test-model:generateContent"; got.URL.Path != want {
+		t.Errorf("path = %q, want %q", got.URL.Path, want)
 	}
-	if got.key != testKey {
-		t.Errorf("x-goog-api-key = %q, want the key", got.key)
+	if got.Header.Get("x-goog-api-key") != testKey {
+		t.Errorf("x-goog-api-key = %q, want the key", got.Header.Get("x-goog-api-key"))
 	}
-	if strings.Contains(got.rawURL, testKey) || strings.Contains(strings.ToLower(got.rawURL), "key=") {
-		t.Errorf("URL carries the key: %q", got.rawURL)
+	if strings.Contains(got.URL.String(), testKey) || strings.Contains(strings.ToLower(got.URL.String()), "key=") {
+		t.Errorf("URL carries the key: %q", got.URL.String())
 	}
 
 	var body struct {
@@ -122,7 +85,7 @@ func TestCompleteRequest(t *testing.T) {
 		} `json:"contents"`
 		GenerationConfig map[string]any `json:"generationConfig"`
 	}
-	if err := json.Unmarshal(got.body, &body); err != nil {
+	if err := json.Unmarshal(got.Body, &body); err != nil {
 		t.Fatal(err)
 	}
 	if len(body.SystemInstruction.Parts) != 1 || body.SystemInstruction.Parts[0]["text"] != "be careful" {
@@ -166,7 +129,7 @@ func TestCompleteRequestMaxTokensAndNoSystem(t *testing.T) {
 		t.Fatal(err)
 	}
 	var body map[string]any
-	if err := json.Unmarshal(got.body, &body); err != nil {
+	if err := json.Unmarshal(got.Body, &body); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := body["systemInstruction"]; ok {
@@ -230,12 +193,12 @@ func TestCompleteStatusErrors(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an error")
 			}
-			pe := asProviderError(t, err)
+			pe := providertest.AsError(t, err)
 			if pe.Kind != tc.wantKind || pe.Status != tc.status || pe.RetryAfter != tc.retryAfter {
 				t.Errorf("got kind=%v status=%d retryAfter=%v, want kind=%v status=%d retryAfter=%v",
 					pe.Kind, pe.Status, pe.RetryAfter, tc.wantKind, tc.status, tc.retryAfter)
 			}
-			assertNoContent(t, err)
+			providertest.AssertNoContent(t, err, secrets...)
 		})
 	}
 }
@@ -261,10 +224,10 @@ func TestCompleteRefusals(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an error")
 			}
-			if pe := asProviderError(t, err); pe.Kind != provider.Permanent {
+			if pe := providertest.AsError(t, err); pe.Kind != provider.Permanent {
 				t.Errorf("kind = %v, want permanent", pe.Kind)
 			}
-			assertNoContent(t, err)
+			providertest.AssertNoContent(t, err, secrets...)
 		})
 	}
 }
@@ -278,17 +241,17 @@ func TestCompleteDeadlineIsRetryable(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { close(release) })
 
-	c := newClient(t, srv.URL, 5*time.Second)
+	c := newClient(t, srv.URL)
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	_, err := c.Complete(ctx, baseRequest())
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if pe := asProviderError(t, err); pe.Kind != provider.Retryable {
+	if pe := providertest.AsError(t, err); pe.Kind != provider.Retryable {
 		t.Errorf("kind = %v, want retryable", pe.Kind)
 	}
-	assertNoContent(t, err)
+	providertest.AssertNoContent(t, err, secrets...)
 }
 
 func TestCompleteConnectionFailureIsRetryable(t *testing.T) {
@@ -297,27 +260,27 @@ func TestCompleteConnectionFailureIsRetryable(t *testing.T) {
 	base := srv.URL
 	srv.Close() // nothing listens any more
 
-	c := newClient(t, base, 5*time.Second)
+	c := newClient(t, base)
 	_, err := c.Complete(t.Context(), baseRequest())
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if pe := asProviderError(t, err); pe.Kind != provider.Retryable {
+	if pe := providertest.AsError(t, err); pe.Kind != provider.Retryable {
 		t.Errorf("kind = %v, want retryable", pe.Kind)
 	}
-	assertNoContent(t, err)
+	providertest.AssertNoContent(t, err, secrets...)
 }
 
 func TestCompleteCancelIsPermanent(t *testing.T) {
 	t.Parallel()
-	c := newClient(t, "http://127.0.0.1:1", 5*time.Second)
+	c := newClient(t, "http://127.0.0.1:1")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := c.Complete(ctx, baseRequest())
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if pe := asProviderError(t, err); pe.Kind != provider.Permanent {
+	if pe := providertest.AsError(t, err); pe.Kind != provider.Permanent {
 		t.Errorf("kind = %v, want permanent", pe.Kind)
 	}
 }

@@ -6,15 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/provider/providertest"
 )
 
 const testKey = "sk-ant-test-key"
@@ -29,54 +30,13 @@ const (
 // endpoint builds a config.Endpoint the way the service does, through config.Parse.
 func endpoint(t *testing.T, baseURL string, timeout time.Duration) *config.Endpoint {
 	t.Helper()
-	yml := fmt.Sprintf(`
-endpoints:
-  main:
-    provider: anthropic
-    base_url: %q
-    api_key_env: TEST_KEY
-    timeout: %s
-    models:
-      claude-test:
-        accepts: [application/pdf]
-`, baseURL, timeout)
-	cfg, err := config.Parse([]byte(yml), func(string) string { return testKey })
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cfg.Endpoints["main"]
+	return providertest.Endpoint(t, testKey, "provider: anthropic", "base_url: "+strconv.Quote(baseURL),
+		"api_key_env: TEST_KEY", "timeout: "+timeout.String(), "models:", "  claude-test:", "    accepts: [application/pdf]")
 }
 
-// captured is what the test server saw.
-type captured struct {
-	method string
-	path   string
-	header http.Header
-	body   []byte
-}
-
-// serve starts a server answering every request with handler and records the last one.
-func serve(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *captured) {
-	t.Helper()
-	got := &captured{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("reading request body: %v", err)
-		}
-		got.method, got.path, got.header, got.body = r.Method, r.URL.Path, r.Header.Clone(), body
-		handler(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	return srv, got
-}
-
-func reply(status int, body string) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		fmt.Fprint(w, body)
-	}
+// reply answers 200 with the JSON body.
+func reply(body string) http.HandlerFunc {
+	return providertest.Reply(http.StatusOK, http.Header{"Content-Type": {"application/json"}}, body)
 }
 
 func successBody(text string) string {
@@ -108,24 +68,11 @@ func complete(t *testing.T, srv *httptest.Server, req provider.Request) (provide
 // text leaks none of the content.
 func wantProviderError(t *testing.T, err error, kind provider.Kind, status int) {
 	t.Helper()
-	pe := asProviderError(t, err)
+	pe := providertest.AsError(t, err)
 	if pe.Kind != kind || pe.Status != status {
 		t.Errorf("error = %v, want kind %s status %d", err, kind, status)
 	}
-	for _, secret := range []string{secretText, secretDoc, secretAns, base64.StdEncoding.EncodeToString([]byte(secretDoc)), testKey} {
-		if strings.Contains(err.Error(), secret) {
-			t.Errorf("error message %q contains %q", err, secret)
-		}
-	}
-}
-
-func asProviderError(t *testing.T, err error) *provider.Error {
-	t.Helper()
-	var pe *provider.Error
-	if !errors.As(err, &pe) {
-		t.Fatalf("error = %v, want a *provider.Error", err)
-	}
-	return pe
+	providertest.AssertNoContent(t, err, secretText, secretDoc, secretAns, base64.StdEncoding.EncodeToString([]byte(secretDoc)), testKey)
 }
 
 func TestNewDefaultBaseURL(t *testing.T) {
@@ -142,13 +89,13 @@ func TestNewDefaultBaseURL(t *testing.T) {
 
 func TestCompleteRequestShape(t *testing.T) {
 	t.Parallel()
-	srv, got := serve(t, reply(200, successBody("ok")))
+	srv, got := providertest.Serve(t, reply(successBody("ok")))
 	if _, err := complete(t, srv, request()); err != nil {
 		t.Fatal(err)
 	}
 
-	if got.method != http.MethodPost || got.path != "/v1/messages" {
-		t.Errorf("request = %s %s, want POST /v1/messages", got.method, got.path)
+	if got.Method != http.MethodPost || got.URL.Path != "/v1/messages" {
+		t.Errorf("request = %s %s, want POST /v1/messages", got.Method, got.URL.Path)
 	}
 	wantHeaders := map[string]string{
 		"X-Api-Key":         testKey,
@@ -157,11 +104,11 @@ func TestCompleteRequestShape(t *testing.T) {
 		"User-Agent":        provider.UserAgent(),
 	}
 	for k, want := range wantHeaders {
-		if v := got.header.Get(k); v != want {
+		if v := got.Header.Get(k); v != want {
 			t.Errorf("header %s = %q, want %q", k, v, want)
 		}
 	}
-	if v := got.header.Get("Anthropic-Beta"); v != "" {
+	if v := got.Header.Get("Anthropic-Beta"); v != "" {
 		t.Errorf("anthropic-beta = %q, want none", v)
 	}
 
@@ -183,7 +130,7 @@ func TestCompleteRequestShape(t *testing.T) {
 			} `json:"content"`
 		} `json:"messages"`
 	}
-	if err := json.Unmarshal(got.body, &body); err != nil {
+	if err := json.Unmarshal(got.Body, &body); err != nil {
 		t.Fatalf("request body is not JSON: %v", err)
 	}
 	if body.Model != "claude-test" || body.MaxTokens != 1000 || body.System != "You are an extractor. "+secretText {
@@ -221,7 +168,7 @@ func TestCompleteRequestShape(t *testing.T) {
 
 	// Nothing beyond the modelled fields: no tools, streaming, metadata or caching.
 	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(got.body, &fields); err != nil {
+	if err := json.Unmarshal(got.Body, &fields); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"tools", "stream", "metadata", "cache_control", "thinking", "service_tier"} {
@@ -229,20 +176,20 @@ func TestCompleteRequestShape(t *testing.T) {
 			t.Errorf("request body has unexpected field %q", f)
 		}
 	}
-	if strings.Contains(string(got.body), "cache_control") {
+	if strings.Contains(string(got.Body), "cache_control") {
 		t.Error("request body mentions cache_control")
 	}
 }
 
 func TestCompleteRequestDefaults(t *testing.T) {
 	t.Parallel()
-	srv, got := serve(t, reply(200, successBody("ok")))
+	srv, got := providertest.Serve(t, reply(successBody("ok")))
 	req := provider.Request{Model: "claude-test", MaxTokens: 4096, Parts: []provider.Part{{Text: "hi"}}}
 	if _, err := complete(t, srv, req); err != nil {
 		t.Fatal(err)
 	}
 	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(got.body, &fields); err != nil {
+	if err := json.Unmarshal(got.Body, &fields); err != nil {
 		t.Fatal(err)
 	}
 	if string(fields["max_tokens"]) != "4096" {
@@ -272,7 +219,7 @@ func TestCompleteSuccess(t *testing.T) {
 	body := `{"model":"claude-test-20260101","stop_reason":"end_turn",
 		"content":[{"type":"text","text":"{\"a\":"},{"type":"thinking","thinking":"x"},{"type":"text","text":"1}"}],
 		"usage":{"input_tokens":120,"output_tokens":7}}`
-	srv, _ := serve(t, reply(200, body))
+	srv, _ := providertest.Serve(t, reply(body))
 	got, err := complete(t, srv, request())
 	if err != nil {
 		t.Fatal(err)
@@ -287,7 +234,7 @@ func TestCompleteTruncated(t *testing.T) {
 	t.Parallel()
 	for reason, want := range map[string]bool{"max_tokens": true, "end_turn": false} {
 		body := `{"model":"m","stop_reason":"` + reason + `","content":[{"type":"text","text":"{\"a\":"}],"usage":{"input_tokens":1,"output_tokens":4096}}`
-		srv, _ := serve(t, reply(200, body))
+		srv, _ := providertest.Serve(t, reply(body))
 		got, err := complete(t, srv, request())
 		if err != nil {
 			t.Fatalf("stop_reason %q: %v", reason, err)
@@ -329,7 +276,7 @@ func TestCompleteStatusErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+			srv, _ := providertest.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
 				if tt.header != "" {
 					w.Header().Set("Retry-After", tt.header)
 				}
@@ -338,7 +285,7 @@ func TestCompleteStatusErrors(t *testing.T) {
 			})
 			_, err := complete(t, srv, request())
 			wantProviderError(t, err, tt.want, tt.status)
-			pe := asProviderError(t, err)
+			pe := providertest.AsError(t, err)
 			if !strings.Contains(pe.Message, tt.wantMsg) {
 				t.Errorf("message = %q, want it to contain %q", pe.Message, tt.wantMsg)
 			}
@@ -353,10 +300,10 @@ func TestCompleteRefusal(t *testing.T) {
 	t.Parallel()
 	body := `{"model":"m","stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber","explanation":"` + secretText + `"},
 		"content":[{"type":"text","text":"` + secretAns + `"}],"usage":{"input_tokens":1,"output_tokens":1}}`
-	srv, _ := serve(t, reply(200, body))
+	srv, _ := providertest.Serve(t, reply(body))
 	_, err := complete(t, srv, request())
 	wantProviderError(t, err, provider.Permanent, 0)
-	if pe := asProviderError(t, err); !strings.Contains(pe.Message, "refusal") {
+	if pe := providertest.AsError(t, err); !strings.Contains(pe.Message, "refusal") {
 		t.Errorf("message = %q, want it to say refusal", pe.Message)
 	}
 }
@@ -371,7 +318,7 @@ func TestCompleteEmptyAnswer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			srv, _ := serve(t, reply(200, `{"model":"m","stop_reason":"end_turn","content":`+tt.content+`,"usage":{}}`))
+			srv, _ := providertest.Serve(t, reply(`{"model":"m","stop_reason":"end_turn","content":`+tt.content+`,"usage":{}}`))
 			_, err := complete(t, srv, request())
 			wantProviderError(t, err, provider.Permanent, 0)
 		})
@@ -380,7 +327,7 @@ func TestCompleteEmptyAnswer(t *testing.T) {
 
 func TestCompleteMalformedBody(t *testing.T) {
 	t.Parallel()
-	srv, _ := serve(t, reply(200, `{"content": `+secretAns+`}`))
+	srv, _ := providertest.Serve(t, reply(`{"content": `+secretAns+`}`))
 	_, err := complete(t, srv, request())
 	wantProviderError(t, err, provider.Permanent, 0)
 }
@@ -392,7 +339,7 @@ func TestCompleteCutOffBody(t *testing.T) {
 	for name, body := range map[string]string{"empty": "", "cut off": `{"model":"m","content":[{"type":"text","text":"` + secretAns} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			srv, _ := serve(t, reply(200, body))
+			srv, _ := providertest.Serve(t, reply(body))
 			_, err := complete(t, srv, request())
 			wantProviderError(t, err, provider.Permanent, 0)
 		})
@@ -405,7 +352,7 @@ func TestCompleteTimeouts(t *testing.T) {
 
 	t.Run("context deadline", func(t *testing.T) {
 		t.Parallel()
-		srv, _ := serve(t, hang)
+		srv, _ := providertest.Serve(t, hang)
 		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 		defer cancel()
 		_, err := New(endpoint(t, srv.URL, 5*time.Second)).Complete(ctx, request())
@@ -416,13 +363,13 @@ func TestCompleteTimeouts(t *testing.T) {
 	})
 	t.Run("endpoint timeout", func(t *testing.T) {
 		t.Parallel()
-		srv, _ := serve(t, hang)
+		srv, _ := providertest.Serve(t, hang)
 		_, err := New(endpoint(t, srv.URL, 50*time.Millisecond)).Complete(t.Context(), request())
 		wantProviderError(t, err, provider.Retryable, 0)
 	})
 	t.Run("cancellation is permanent", func(t *testing.T) {
 		t.Parallel()
-		srv, _ := serve(t, hang)
+		srv, _ := providertest.Serve(t, hang)
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		_, err := New(endpoint(t, srv.URL, 5*time.Second)).Complete(ctx, request())
@@ -430,7 +377,7 @@ func TestCompleteTimeouts(t *testing.T) {
 	})
 	t.Run("connection refused", func(t *testing.T) {
 		t.Parallel()
-		srv, _ := serve(t, hang)
+		srv, _ := providertest.Serve(t, hang)
 		url := srv.URL
 		srv.Close()
 		_, err := New(endpoint(t, url, 5*time.Second)).Complete(t.Context(), request())
@@ -440,7 +387,7 @@ func TestCompleteTimeouts(t *testing.T) {
 
 func TestCompleteOversizedResponse(t *testing.T) {
 	t.Parallel()
-	srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+	srv, _ := providertest.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"model":"m","stop_reason":"end_turn","content":[{"type":"text","text":"`)
 		chunk := strings.Repeat("x", 1<<20)
@@ -458,7 +405,7 @@ func TestCompleteOversizedResponse(t *testing.T) {
 
 func TestCompleteInvalidRequests(t *testing.T) {
 	t.Parallel()
-	srv, got := serve(t, reply(200, successBody("ok")))
+	srv, got := providertest.Serve(t, reply(successBody("ok")))
 	blob := &provider.Blob{MediaType: "application/pdf", Data: []byte(secretDoc)}
 	tests := []struct {
 		name string
@@ -479,7 +426,7 @@ func TestCompleteInvalidRequests(t *testing.T) {
 			wantProviderError(t, err, provider.Permanent, 0)
 		})
 	}
-	if got.method != "" {
-		t.Errorf("invalid requests reached the server: %s", got.method)
+	if got.Method != "" {
+		t.Errorf("invalid requests reached the server: %s", got.Method)
 	}
 }

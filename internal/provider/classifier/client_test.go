@@ -2,16 +2,14 @@ package classifier
 
 import (
 	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/provider/providertest"
 )
 
 var questions = []config.Question{
@@ -38,22 +36,8 @@ type verdictOut struct {
 
 func TestClient_Complete(t *testing.T) {
 	t.Parallel()
-	var got Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != Path || r.Header.Get("Content-Type") != "application/json" {
-			http.Error(w, "bad route", http.StatusNotFound)
-			return
-		}
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			http.Error(w, "bad body", http.StatusBadRequest)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(Response{Decisions: []Decision{
-			{Question: "complete", Label: "yes", Probability: prob(0.9)},
-			{Question: "accuracy", Label: "yes", Probability: prob(0.85)},
-		}})
-	}))
-	defer srv.Close()
+	srv, seen := providertest.Serve(t, providertest.Reply(http.StatusOK, nil,
+		`{"decisions": [{"question": "complete", "label": "yes", "probability": 0.9}, {"question": "accuracy", "label": "yes", "probability": 0.85}]}`))
 
 	c := New(endpoint(srv.URL))
 	resp, err := c.Complete(t.Context(), provider.Request{
@@ -63,6 +47,13 @@ func TestClient_Complete(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if seen.Method != http.MethodPost || seen.URL.Path != Path || seen.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("request = %s %s (Content-Type %q), want POST %s as JSON", seen.Method, seen.URL.Path, seen.Header.Get("Content-Type"), Path)
+	}
+	var got Request
+	if err := json.Unmarshal(seen.Body, &got); err != nil {
+		t.Fatalf("request body: %v", err)
 	}
 	if got.Model != "jev" || len(got.Questions) != 2 || got.Questions[0] != (Question{ID: "accuracy", Text: questions[0].Text}) {
 		t.Errorf("request = %+v", got)
@@ -110,12 +101,7 @@ func TestClient_Complete_errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, _ = io.Copy(io.Discard, r.Body)
-				w.WriteHeader(tt.status)
-				_, _ = io.WriteString(w, tt.body)
-			}))
-			defer srv.Close()
+			srv, _ := providertest.Serve(t, providertest.Reply(tt.status, nil, tt.body))
 			model := tt.model
 			if model == "" {
 				model = "jev"
@@ -125,10 +111,7 @@ func TestClient_Complete_errors(t *testing.T) {
 				parts = []provider.Part{{Text: "x"}}
 			}
 			_, err := New(endpoint(srv.URL)).Complete(t.Context(), provider.Request{Model: model, Parts: parts})
-			var pe *provider.Error
-			if !errors.As(err, &pe) {
-				t.Fatalf("error = %v, want a *provider.Error", err)
-			}
+			pe := providertest.AsError(t, err)
 			if pe.Kind != tt.kind || !strings.Contains(pe.Error(), tt.message) {
 				t.Errorf("error = %v (kind %s), want kind %s containing %q", err, pe.Kind, tt.kind, tt.message)
 			}
@@ -138,30 +121,15 @@ func TestClient_Complete_errors(t *testing.T) {
 
 func TestClient_Complete_auth(t *testing.T) {
 	t.Parallel()
-	var auth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth = r.Header.Get("Authorization")
-		_, _ = io.WriteString(w, `{"decisions": [{"question": "accuracy", "probability": 1}, {"question": "complete", "probability": 1}]}`)
-	}))
-	defer srv.Close()
-	cfg, err := config.Parse([]byte(`
-endpoints:
-  jev:
-    provider: classifier
-    base_url: `+srv.URL+`
-    api_key_env: CLASSIFIER_KEY
-    models:
-      jev:
-        accepts: [text/plain]
-        questions: [{id: accuracy, text: "Accurate?", threshold: 0.5}, {id: complete, text: "Complete?", threshold: 0.5}]
-`), func(string) string { return "secret-key" })
-	if err != nil {
+	srv, got := providertest.Serve(t, providertest.Reply(http.StatusOK, nil,
+		`{"decisions": [{"question": "accuracy", "probability": 1}, {"question": "complete", "probability": 1}]}`))
+	ep := providertest.Endpoint(t, "secret-key", "provider: classifier", "base_url: "+srv.URL, "api_key_env: CLASSIFIER_KEY",
+		"models:", "  jev:", "    accepts: [text/plain]",
+		`    questions: [{id: accuracy, text: "Accurate?", threshold: 0.5}, {id: complete, text: "Complete?", threshold: 0.5}]`)
+	if _, err := New(ep).Complete(t.Context(), provider.Request{Model: "jev", Parts: []provider.Part{{Text: "x"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(cfg.Endpoints["jev"]).Complete(t.Context(), provider.Request{Model: "jev", Parts: []provider.Part{{Text: "x"}}}); err != nil {
-		t.Fatal(err)
-	}
-	if auth != "Bearer secret-key" {
+	if auth := got.Header.Get("Authorization"); auth != "Bearer secret-key" {
 		t.Errorf("Authorization = %q", auth)
 	}
 }

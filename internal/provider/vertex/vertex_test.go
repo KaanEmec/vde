@@ -5,11 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +15,7 @@ import (
 
 	"github.com/kaanemec/vde/internal/config"
 	"github.com/kaanemec/vde/internal/provider"
+	"github.com/kaanemec/vde/internal/provider/providertest"
 )
 
 const (
@@ -35,31 +34,15 @@ func (f fakeTokens) Token() (*oauth2.Token, error) { return f.tok, f.err }
 
 var okTokens = fakeTokens{tok: &oauth2.Token{AccessToken: testToken, TokenType: "Bearer"}}
 
-type captured struct {
-	path   string
-	auth   string
-	ctype  string
-	header http.Header
-	body   []byte
+func serve(t *testing.T, status int, reply string, hdr http.Header) (*Client, *providertest.Captured) {
+	t.Helper()
+	srv, got := providertest.Serve(t, providertest.Reply(status, hdr, reply))
+	return testClient(srv.URL, okTokens), got
 }
 
-func serve(t *testing.T, status int, reply string, hdr http.Header) (*Client, *captured) {
-	t.Helper()
-	got := &captured{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got.path = r.URL.EscapedPath() + "?" + r.URL.RawQuery
-		got.auth = r.Header.Get("Authorization")
-		got.ctype = r.Header.Get("Content-Type")
-		got.header = r.Header.Clone()
-		got.body, _ = io.ReadAll(r.Body)
-		for k, v := range hdr {
-			w.Header()[k] = v
-		}
-		w.WriteHeader(status)
-		_, _ = io.WriteString(w, reply)
-	}))
-	t.Cleanup(srv.Close)
-	return testClient(srv.URL, okTokens), got
+// pathAndQuery is the escaped request path, "?" and the query.
+func pathAndQuery(got *providertest.Captured) string {
+	return got.URL.EscapedPath() + "?" + got.URL.RawQuery
 }
 
 func testClient(baseURL string, ts oauth2.TokenSource) *Client {
@@ -94,14 +77,14 @@ func TestComplete_gemini(t *testing.T) {
 	if resp.Text != secretAns || resp.InputTokens != 12 || resp.OutputTokens != 5 || resp.Truncated {
 		t.Errorf("response = %+v", resp)
 	}
-	if want := "/v1/projects/my-project/locations/us-east5/publishers/google/models/gemini-example:generateContent?"; got.path != want {
-		t.Errorf("path = %q, want %q", got.path, want)
+	if want := "/v1/projects/my-project/locations/us-east5/publishers/google/models/gemini-example:generateContent?"; pathAndQuery(got) != want {
+		t.Errorf("path = %q, want %q", pathAndQuery(got), want)
 	}
-	if got.auth != "Bearer "+testToken || got.ctype != "application/json" {
-		t.Errorf("Authorization = %q, Content-Type = %q", got.auth, got.ctype)
+	if got.Header.Get("Authorization") != "Bearer "+testToken || got.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("Authorization = %q, Content-Type = %q", got.Header.Get("Authorization"), got.Header.Get("Content-Type"))
 	}
-	if got.header.Get("User-Agent") != provider.UserAgent() {
-		t.Errorf("User-Agent = %q", got.header.Get("User-Agent"))
+	if got.Header.Get("User-Agent") != provider.UserAgent() {
+		t.Errorf("User-Agent = %q", got.Header.Get("User-Agent"))
 	}
 
 	var body struct {
@@ -120,7 +103,7 @@ func TestComplete_gemini(t *testing.T) {
 			Temperature     float64
 		}
 	}
-	if err := json.Unmarshal(got.body, &body); err != nil {
+	if err := json.Unmarshal(got.Body, &body); err != nil {
 		t.Fatal(err)
 	}
 	if body.SystemInstruction.Parts[0].Text != "You are the extractor." {
@@ -151,15 +134,15 @@ func TestComplete_claude(t *testing.T) {
 	if resp.Text != secretAns || resp.InputTokens != 20 || resp.OutputTokens != 9 || !resp.Truncated {
 		t.Errorf("response = %+v", resp)
 	}
-	if want := "/v1/projects/my-project/locations/us-east5/publishers/anthropic/models/claude-example@20260101:rawPredict?"; got.path != want {
-		t.Errorf("path = %q, want %q", got.path, want)
+	if want := "/v1/projects/my-project/locations/us-east5/publishers/anthropic/models/claude-example@20260101:rawPredict?"; pathAndQuery(got) != want {
+		t.Errorf("path = %q, want %q", pathAndQuery(got), want)
 	}
-	if got.auth != "Bearer "+testToken {
-		t.Errorf("Authorization = %q", got.auth)
+	if got.Header.Get("Authorization") != "Bearer "+testToken {
+		t.Errorf("Authorization = %q", got.Header.Get("Authorization"))
 	}
 
 	var body map[string]any
-	if err := json.Unmarshal(got.body, &body); err != nil {
+	if err := json.Unmarshal(got.Body, &body); err != nil {
 		t.Fatal(err)
 	}
 	if body["anthropic_version"] != "vertex-2023-10-16" {
@@ -214,21 +197,14 @@ func TestComplete_statusErrors(t *testing.T) {
 				t.Parallel()
 				c, _ := serve(t, tt.status, `{"error":{"message":"`+secretText+`"}}`, http.Header{"Retry-After": {"7"}})
 				_, err := c.Complete(context.Background(), request(model))
-				var pe *provider.Error
-				if !errors.As(err, &pe) {
-					t.Fatalf("error = %v, want *provider.Error", err)
-				}
+				pe := providertest.AsError(t, err)
 				if pe.Kind != tt.want || pe.Status != tt.status {
 					t.Errorf("Kind = %v, Status = %d; want %v, %d", pe.Kind, pe.Status, tt.want, tt.status)
 				}
 				if tt.want == provider.Retryable && pe.RetryAfter != 7*time.Second {
 					t.Errorf("RetryAfter = %v, want 7s", pe.RetryAfter)
 				}
-				for _, s := range []string{secretText, secretBlob, testToken} {
-					if strings.Contains(err.Error(), s) {
-						t.Errorf("error contains %q: %v", s, err)
-					}
-				}
+				providertest.AssertNoContent(t, err, secretText, secretBlob, testToken)
 			})
 		}
 	}
@@ -275,28 +251,22 @@ func TestComplete_badRequests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			called := false
-			srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
-			defer srv.Close()
-			_, err := testClient(srv.URL, okTokens).Complete(context.Background(), tt.req)
+			c, got := serve(t, 200, "", nil)
+			_, err := c.Complete(context.Background(), tt.req)
 			if err == nil || provider.Classify(err) != provider.Permanent {
 				t.Fatalf("error = %v, want permanent", err)
 			}
-			if called {
+			if got.Method != "" {
 				t.Error("the server was called for an invalid request")
 			}
-			if strings.Contains(err.Error(), secretBlob) {
-				t.Errorf("error contains content: %v", err)
-			}
+			providertest.AssertNoContent(t, err, secretBlob)
 		})
 	}
 }
 
 func TestComplete_tokenFailure(t *testing.T) {
 	t.Parallel()
-	called := false
-	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
-	defer srv.Close()
+	srv, got := providertest.Serve(t, providertest.Reply(200, nil, ""))
 	c := testClient(srv.URL, fakeTokens{err: context.DeadlineExceeded})
 	_, err := c.Complete(context.Background(), request("gemini-x"))
 	if err == nil || provider.Classify(err) != provider.Retryable {
@@ -307,7 +277,7 @@ func TestComplete_tokenFailure(t *testing.T) {
 	if err == nil || provider.Classify(err) != provider.Permanent {
 		t.Errorf("error = %v, want permanent for a rejected credential", err)
 	}
-	if called {
+	if got.Method != "" {
 		t.Error("the server was called without a token")
 	}
 }
@@ -321,9 +291,7 @@ func TestComplete_networkFailureIsRetryable(t *testing.T) {
 	if err == nil || provider.Classify(err) != provider.Retryable {
 		t.Errorf("error = %v, want retryable", err)
 	}
-	if strings.Contains(err.Error(), testToken) || strings.Contains(err.Error(), secretText) {
-		t.Errorf("error leaks: %v", err)
-	}
+	providertest.AssertNoContent(t, err, testToken, secretText)
 }
 
 func TestNew_withoutCredentials(t *testing.T) {

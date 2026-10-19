@@ -26,7 +26,7 @@ func TestEveryProviderIsDocumented(t *testing.T) {
 	}
 	packages := 0
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || e.Name() == "providertest" { // test support, not an adapter
 			continue
 		}
 		packages++
