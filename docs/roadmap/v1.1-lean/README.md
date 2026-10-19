@@ -36,7 +36,7 @@ numbers with the tools before editing.
 | --- | --- |
 | Go production lines (no `_test.go`) | 23,235 |
 | Go test lines | 32,085 |
-| Tracked files | 1,144 (testdata 609, internal 257, docs 189) |
+| Tracked files | 1,144 (testdata 609, internal 257, docs 189); 1,189 after this roadmap and epic 00 (docs 237) |
 | Roadmap | 139 files, 6,818 lines |
 | Direct dependencies (`go.mod`) | 17 |
 | Binary, linux/amd64, stripped | 36.1 MB |
@@ -44,8 +44,10 @@ numbers with the tools before editing.
 | `golangci-lint` `unparam` | 9 findings (2 in production code) |
 | Longest functions | `serveAs` 254, `createJob` 163, `extractFile` 147, `loop.run` 138 (cognitive complexity 54), `runEval` 138 |
 
-Job 00-04 re-measures these and stores the eval reference report the later jobs compare
-against.
+Job 00-04 re-measured these on 2026-10-19 after the local CI merge (`07f6552`): Go lines,
+dependencies, binary size (go1.26.9) and `deadcode` unchanged; `go test -race` 135 s per
+toolchain, `make ci` about 8.5 min. Reference reports: `eval-reports/lean-baseline/`
+(local, gitignored).
 
 ## Exit criterion
 

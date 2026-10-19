@@ -1,6 +1,6 @@
 # Job: Baseline measurements and reference reports
 
-Version: v1.1 · Epic: 00 Preparation · Status: planned · Depends on: 00-03 (local CI merged into `main`)
+Version: v1.1 · Epic: 00 Preparation · Status: done · Depends on: 00-03 (local CI merged into `main`)
 
 ## Goal
 
