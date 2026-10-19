@@ -3,6 +3,8 @@ package extract
 import (
 	"testing"
 	"unicode/utf8"
+
+	"github.com/kaanemec/vde/internal/ground"
 )
 
 // FuzzParseVerdict feeds arbitrary judge answers to the verdict parser: it never panics,
@@ -37,7 +39,7 @@ func FuzzParseVerdict(f *testing.F) {
 			t.Fatal("a reject without feedback was accepted")
 		}
 		for _, fb := range v.feedback {
-			if !validPointer(fb.Pointer) || fb.Source != SourceJudge {
+			if !ground.ValidPointer(fb.Pointer) || fb.Source != SourceJudge {
 				t.Fatalf("feedback entry with pointer %q source %q", fb.Pointer, fb.Source)
 			}
 			if n := utf8.RuneCountInString(fb.Message); n > maxChars {

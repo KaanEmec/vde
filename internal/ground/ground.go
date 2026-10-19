@@ -87,7 +87,7 @@ func Check(doc *Text, candidate json.RawMessage, rules Rules, maxMisses int) Res
 			res.CriticalMissed++
 		}
 		if maxMisses <= 0 || len(res.Ungrounded) < maxMisses {
-			res.Ungrounded = append(res.Ungrounded, Miss{Pointer: pointer(l.loc), Critical: critical})
+			res.Ungrounded = append(res.Ungrounded, Miss{Pointer: Pointer(l.loc), Critical: critical})
 		}
 	}
 	return res
@@ -185,14 +185,49 @@ func leaves(candidate []byte) ([]leaf, error) {
 	return out, nil
 }
 
-// pointer is the RFC 6901 pointer of a location.
-func pointer(loc []string) string {
+// Pointer renders location tokens as an RFC 6901 JSON pointer, "" for none. It, with
+// SplitPointer, UnescapeToken and ValidPointer, is the service's one JSON pointer
+// implementation.
+func Pointer(tokens []string) string {
 	var b strings.Builder
-	for _, s := range loc {
+	for _, s := range tokens {
 		b.WriteByte('/')
 		b.WriteString(escapePointer(s))
 	}
 	return b.String()
+}
+
+// SplitPointer returns the unescaped tokens of the pointer p, nil for "".
+func SplitPointer(p string) []string {
+	if p == "" {
+		return nil
+	}
+	tokens := strings.Split(p[1:], "/")
+	for i, t := range tokens {
+		tokens[i] = UnescapeToken(t)
+	}
+	return tokens
+}
+
+// UnescapeToken unescapes one pointer token: ~1 is /, ~0 is ~.
+func UnescapeToken(tok string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(tok, "~1", "/"), "~0", "~")
+}
+
+// ValidPointer reports whether p is an RFC 6901 JSON pointer.
+func ValidPointer(p string) bool {
+	if p == "" {
+		return true
+	}
+	if p[0] != '/' {
+		return false
+	}
+	for i := 0; i < len(p); i++ {
+		if p[i] == '~' && (i+1 == len(p) || (p[i+1] != '0' && p[i+1] != '1')) {
+			return false
+		}
+	}
+	return true
 }
 
 func escapePointer(s string) string {

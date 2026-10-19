@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/kaanemec/vde/internal/ground"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 	"golang.org/x/text/language"
@@ -156,7 +157,7 @@ func schemaDescription(location string) string {
 		if tok == "" {
 			continue
 		}
-		tok = strings.NewReplacer("~1", "/", "~0", "~").Replace(tok)
+		tok = ground.UnescapeToken(tok)
 		m, ok := node.(map[string]any)
 		if !ok {
 			return ""

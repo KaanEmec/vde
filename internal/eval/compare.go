@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kaanemec/vde/internal/ground"
 	"gopkg.in/yaml.v3"
 )
 
@@ -77,7 +78,7 @@ func (r *Rule) check() error {
 	if r.Pointer != "" && !strings.HasPrefix(r.Pointer, "/") {
 		return errors.New(`pointer must be "" or start with "/"`)
 	}
-	r.segments = splitPointer(r.Pointer)
+	r.segments = ground.SplitPointer(r.Pointer)
 	r.literals = 0
 	for _, s := range r.segments {
 		if s != "*" {
@@ -104,26 +105,6 @@ func (r *Rule) check() error {
 		return errors.New("elements is only for mode set")
 	}
 	return nil
-}
-
-func splitPointer(p string) []string {
-	if p == "" {
-		return nil
-	}
-	parts := strings.Split(p[1:], "/")
-	for i, s := range parts {
-		parts[i] = strings.ReplaceAll(strings.ReplaceAll(s, "~1", "/"), "~0", "~")
-	}
-	return parts
-}
-
-func joinPointer(segments []string) string {
-	var b strings.Builder
-	for _, s := range segments {
-		b.WriteByte('/')
-		b.WriteString(strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1"))
-	}
-	return b.String()
 }
 
 // match returns the most specific rule matching the pointer segments: the one with the
@@ -235,7 +216,7 @@ func (f *Fields) add(segments []string, matched bool) {
 	if matched {
 		f.Matched++
 	} else if len(f.Mismatches) < maxMismatches {
-		f.Mismatches = append(f.Mismatches, joinPointer(segments))
+		f.Mismatches = append(f.Mismatches, ground.Pointer(segments))
 	}
 }
 

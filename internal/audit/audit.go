@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/kaanemec/vde/internal/config"
@@ -37,11 +38,11 @@ const (
 
 // Kinds returns every kind, in documentation order.
 func Kinds() []Kind {
-	return []Kind{
-		TokenCreatedKind, TokenRevokedKind, AppEnabledKind, AppDisabledKind, JobCreatedKind,
-		JobFinishedKind, JobDeletedKind, JobExpiredKind, AuthFailedKind, ConfigLoadedKind,
-		WebhookDeliveredKind, WebhookFailedKind,
+	out := make([]Kind, len(kinds))
+	for i, k := range kinds {
+		out[i] = k.kind
 	}
+	return out
 }
 
 // Actors that write events, for the actor column.
@@ -201,36 +202,32 @@ func (WebhookFailed) AuditKind() Kind { return WebhookFailedKind }
 // ErrUnknownKind: Decode met a kind outside the fixed set.
 var ErrUnknownKind = errors.New("audit: unknown kind")
 
+// kinds is every kind in documentation order with the decoder of its details.
+var kinds = []kindEntry{
+	entry[TokenCreated](), entry[TokenRevoked](), entry[AppEnabled](), entry[AppDisabled](),
+	entry[JobCreated](), entry[JobFinished](), entry[JobDeleted](), entry[JobExpired](),
+	entry[AuthFailed](), entry[ConfigLoaded](), entry[WebhookDelivered](), entry[WebhookFailed](),
+}
+
+type kindEntry struct {
+	kind   Kind
+	decode func(*json.Decoder) (Details, error)
+}
+
+func entry[T Details]() kindEntry {
+	var zero T
+	return kindEntry{zero.AuditKind(), func(dec *json.Decoder) (Details, error) {
+		var v T
+		err := dec.Decode(&v)
+		return v, err
+	}}
+}
+
 // Decode returns the typed details of a stored event. It is strict: a field the struct
 // does not define is an error, which is how a test notices free-form data.
 func Decode(e job.AuditEvent) (Details, error) {
-	var d Details
-	switch Kind(e.Kind) {
-	case TokenCreatedKind:
-		d = &TokenCreated{}
-	case TokenRevokedKind:
-		d = &TokenRevoked{}
-	case AppEnabledKind:
-		d = &AppEnabled{}
-	case AppDisabledKind:
-		d = &AppDisabled{}
-	case JobCreatedKind:
-		d = &JobCreated{}
-	case JobFinishedKind:
-		d = &JobFinished{}
-	case JobDeletedKind:
-		d = &JobDeleted{}
-	case JobExpiredKind:
-		d = &JobExpired{}
-	case AuthFailedKind:
-		d = &AuthFailed{}
-	case ConfigLoadedKind:
-		d = &ConfigLoaded{}
-	case WebhookDeliveredKind:
-		d = &WebhookDelivered{}
-	case WebhookFailedKind:
-		d = &WebhookFailed{}
-	default:
+	i := slices.IndexFunc(kinds, func(k kindEntry) bool { return k.kind == Kind(e.Kind) })
+	if i < 0 {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownKind, e.Kind)
 	}
 	raw := e.Details
@@ -239,40 +236,11 @@ func Decode(e job.AuditEvent) (Details, error) {
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(d); err != nil {
+	d, err := kinds[i].decode(dec)
+	if err != nil {
 		return nil, fmt.Errorf("audit: decode %s details: %w", e.Kind, err)
 	}
-	return deref(d), nil
-}
-
-// deref turns the decoded pointer back into the value type.
-func deref(d Details) Details {
-	switch v := d.(type) {
-	case *TokenCreated:
-		return *v
-	case *TokenRevoked:
-		return *v
-	case *AppEnabled:
-		return *v
-	case *AppDisabled:
-		return *v
-	case *JobCreated:
-		return *v
-	case *JobFinished:
-		return *v
-	case *JobDeleted:
-		return *v
-	case *JobExpired:
-		return *v
-	case *AuthFailed:
-		return *v
-	case *WebhookDelivered:
-		return *v
-	case *WebhookFailed:
-		return *v
-	default:
-		return *d.(*ConfigLoaded)
-	}
+	return d, nil
 }
 
 // Appender is the part of job.Store a Recorder needs.

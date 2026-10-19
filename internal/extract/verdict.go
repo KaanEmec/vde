@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/kaanemec/vde/internal/ground"
 )
 
 // verdict is a parsed judge answer (contract §7 plus the optional confidence of
@@ -102,7 +104,7 @@ func decodeFeedback(dec *json.Decoder, maxChars int) ([]Feedback, error) {
 			return nil, fmt.Errorf("verdict: %w", err)
 		}
 		ptr, _ := tok.(string) // object keys are always strings
-		if !validPointer(ptr) {
+		if !ground.ValidPointer(ptr) {
 			return nil, errors.New("verdict: feedback key is not a JSON pointer")
 		}
 		var value json.RawMessage
@@ -116,22 +118,6 @@ func decodeFeedback(dec *json.Decoder, maxChars int) ([]Feedback, error) {
 		return nil, fmt.Errorf("verdict: %w", err)
 	}
 	return out, nil
-}
-
-// validPointer reports whether p is an RFC 6901 JSON pointer.
-func validPointer(p string) bool {
-	if p == "" {
-		return true
-	}
-	if p[0] != '/' {
-		return false
-	}
-	for i := 0; i < len(p); i++ {
-		if p[i] == '~' && (i+1 == len(p) || (p[i+1] != '0' && p[i+1] != '1')) {
-			return false
-		}
-	}
-	return true
 }
 
 // capMessage truncates msg to maxChars characters, the last being an ellipsis.

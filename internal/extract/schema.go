@@ -217,7 +217,7 @@ func (f *flattener) flatten(e *jsonschema.ValidationError, within []string) {
 			if len(allowed) > 0 {
 				msg += "; expected only " + strings.Join(allowed, ", ")
 			}
-			f.add(schemaFeedback(pointer(append(slices.Clip(loc), name)), msg))
+			f.add(schemaFeedback(ground.Pointer(append(slices.Clip(loc), name)), msg))
 		}
 	case *kind.PropertyNames:
 		msg := fmt.Sprintf("%s: property name is not allowed (keyword propertyNames)", label(k.Property))
@@ -228,7 +228,7 @@ func (f *flattener) flatten(e *jsonschema.ValidationError, within []string) {
 		// validation overwrites; only its length is reliable. Point at every object at
 		// that depth, inside the enclosing error's location, holding the property.
 		for _, obj := range objectsWith(f.inst, nil, within, len(loc), k.Property) {
-			f.add(schemaFeedback(pointer(append(obj, k.Property)), msg))
+			f.add(schemaFeedback(ground.Pointer(append(obj, k.Property)), msg))
 		}
 	default:
 		keyword := "schema"
@@ -313,7 +313,7 @@ func (s *Schema) leaf(e *jsonschema.ValidationError, what, keyword string) Feedb
 	if d, ok := s.subschema(e.SchemaURL)["description"].(string); ok && d != "" {
 		msg += "; expected: " + d
 	}
-	return schemaFeedback(pointer(e.InstanceLocation), msg)
+	return schemaFeedback(ground.Pointer(e.InstanceLocation), msg)
 }
 
 // subschema returns the decoded schema object at an absolute schema location inside the
@@ -330,7 +330,7 @@ func (s *Schema) subschema(location string) map[string]any {
 	v := s.doc
 	if frag != "" {
 		for _, tok := range strings.Split(frag[1:], "/") {
-			tok = strings.ReplaceAll(strings.ReplaceAll(tok, "~1", "/"), "~0", "~")
+			tok = ground.UnescapeToken(tok)
 			switch node := v.(type) {
 			case map[string]any:
 				v = node[tok]
@@ -374,16 +374,6 @@ func (s *Schema) enumValues(location string) []string {
 
 func schemaFeedback(ptr, msg string) Feedback {
 	return Feedback{Pointer: ptr, Message: msg, Source: SourceSchema}
-}
-
-// pointer renders instance location tokens as an RFC 6901 JSON pointer.
-func pointer(tokens []string) string {
-	var b strings.Builder
-	for _, t := range tokens {
-		b.WriteByte('/')
-		b.WriteString(strings.ReplaceAll(strings.ReplaceAll(t, "~", "~0"), "/", "~1"))
-	}
-	return b.String()
 }
 
 func label(name string) string { return "`" + name + "`" }

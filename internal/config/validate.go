@@ -65,6 +65,20 @@ func (v *validator) errorf(key, format string, args ...any) {
 	v.issues = append(v.issues, Issue{Key: key, Message: fmt.Sprintf(format, args...)})
 }
 
+// oneOf refuses val at key unless it is in list.
+func (v *validator) oneOf(key, val string, list []string) {
+	if !slices.Contains(list, val) {
+		v.errorf(key, "%q is not one of %s", val, strings.Join(list, ", "))
+	}
+}
+
+// between refuses n at key outside lo to hi, both included.
+func (v *validator) between(key string, n, lo, hi int) {
+	if n < lo || n > hi {
+		v.errorf(key, "%d must be between %d and %d", n, lo, hi)
+	}
+}
+
 func (v *validator) warnf(key, format string, args ...any) {
 	v.issues = append(v.issues, Issue{Key: key, Message: fmt.Sprintf(format, args...), Warning: true})
 }
@@ -133,9 +147,7 @@ func (v *validator) endpoints(c *Config) {
 			v.errorf(key, "is empty")
 			continue
 		}
-		if !slices.Contains(providers, e.Provider) {
-			v.errorf(key+".provider", "%q is not one of %s", e.Provider, strings.Join(providers, ", "))
-		}
+		v.oneOf(key+".provider", e.Provider, providers)
 		if e.Preset != "" {
 			if _, ok := presetBaseURLs[e.Preset]; !ok {
 				v.errorf(key+".preset", "unknown preset %q", e.Preset)
@@ -487,15 +499,9 @@ const (
 var imageTargets = []string{"image/jpeg", "image/png"}
 
 func (v *validator) images(i Images) {
-	if i.MaxDimension < minImageDimension || i.MaxDimension > maxImageDimension {
-		v.errorf("documents.images.max_dimension", "%d must be between %d and %d", i.MaxDimension, minImageDimension, maxImageDimension)
-	}
-	if !slices.Contains(imageTargets, i.ConvertTo) {
-		v.errorf("documents.images.convert_to", "%q is not one of %s", i.ConvertTo, strings.Join(imageTargets, ", "))
-	}
-	if i.Quality < 1 || i.Quality > 100 {
-		v.errorf("documents.images.quality", "%d must be between 1 and 100", i.Quality)
-	}
+	v.between("documents.images.max_dimension", i.MaxDimension, minImageDimension, maxImageDimension)
+	v.oneOf("documents.images.convert_to", i.ConvertTo, imageTargets)
+	v.between("documents.images.quality", i.Quality, 1, 100)
 }
 
 // PDF modes (documents.pdf.mode, ADR 0010).
@@ -509,35 +515,21 @@ const (
 var pdfModes = []string{PDFModeAuto, PDFModeNative, PDFModeText, PDFModePages}
 
 func (v *validator) pdf(p PDF) {
-	if !slices.Contains(pdfModes, p.Mode) {
-		v.errorf("documents.pdf.mode", "%q is not one of %s", p.Mode, strings.Join(pdfModes, ", "))
-	}
-	if p.DPI < 72 || p.DPI > 300 {
-		v.errorf("documents.pdf.dpi", "%d must be between 72 and 300", p.DPI)
-	}
-	if p.MaxPages < 1 || p.MaxPages > 200 {
-		v.errorf("documents.pdf.max_pages", "%d must be between 1 and 200", p.MaxPages)
-	}
+	v.oneOf("documents.pdf.mode", p.Mode, pdfModes)
+	v.between("documents.pdf.dpi", p.DPI, 72, 300)
+	v.between("documents.pdf.max_pages", p.MaxPages, 1, 200)
 	if p.MinTextCharsPerPage < 0 {
 		v.errorf("documents.pdf.min_text_chars_per_page", "%d must not be negative", p.MinTextCharsPerPage)
 	}
-	if p.Workers < 1 || p.Workers > 16 {
-		v.errorf("documents.pdf.workers", "%d must be between 1 and 16", p.Workers)
-	}
+	v.between("documents.pdf.workers", p.Workers, 1, 16)
 }
 
 func (v *validator) other(c *Config) {
-	if !slices.Contains(htmlPolicies, c.Documents.HTML) {
-		v.errorf("documents.html", "%q is not one of %s", c.Documents.HTML, strings.Join(htmlPolicies, ", "))
-	}
+	v.oneOf("documents.html", c.Documents.HTML, htmlPolicies)
 	v.images(c.Documents.Images)
 	v.pdf(c.Documents.PDF)
-	if !slices.Contains([]string{"debug", "info", "warn", "error"}, c.Logging.Level) {
-		v.errorf("logging.level", "%q is not one of debug, info, warn, error", c.Logging.Level)
-	}
-	if c.Logging.Format != "json" && c.Logging.Format != "text" {
-		v.errorf("logging.format", "%q is not one of json, text", c.Logging.Format)
-	}
+	v.oneOf("logging.level", c.Logging.Level, []string{"debug", "info", "warn", "error"})
+	v.oneOf("logging.format", c.Logging.Format, []string{"json", "text"})
 }
 
 // CheckApplication applies the applications[] defaults to a (a zero value means the
@@ -592,11 +584,11 @@ func (v *validator) applications(c *Config) {
 				v.errorf(key+".retention.default", "%q is neither none nor a positive duration", a.Retention.Default)
 			}
 		}
-		if a.Documents.HTML != "" && !slices.Contains(htmlPolicies, a.Documents.HTML) {
-			v.errorf(key+".documents.html", "%q is not one of %s", a.Documents.HTML, strings.Join(htmlPolicies, ", "))
+		if a.Documents.HTML != "" {
+			v.oneOf(key+".documents.html", a.Documents.HTML, htmlPolicies)
 		}
-		if m := a.Documents.PDF.Mode; m != "" && !slices.Contains(pdfModes, m) {
-			v.errorf(key+".documents.pdf.mode", "%q is not one of %s", m, strings.Join(pdfModes, ", "))
+		if a.Documents.PDF.Mode != "" {
+			v.oneOf(key+".documents.pdf.mode", a.Documents.PDF.Mode, pdfModes)
 		}
 		v.appJudge(key, a.Judge)
 	}

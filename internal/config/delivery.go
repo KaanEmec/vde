@@ -106,9 +106,7 @@ func (v *validator) delivery(c *Config) {
 			v.warnf(key+".secret_env", "the secret in %s is shorter than %d bytes", w.SecretEnv, minWebhookSecret)
 		}
 		for _, e := range w.Events {
-			if e != WebhookJobFinished {
-				v.errorf(key+".events", "%q is not one of %s", e, WebhookJobFinished)
-			}
+			v.oneOf(key+".events", e, []string{WebhookJobFinished})
 		}
 	}
 }

@@ -179,7 +179,7 @@ func (r *resolver) ref(ref string) (any, bool) {
 	}
 	v := r.root
 	for _, seg := range strings.Split(ref[2:], "/") {
-		seg = strings.NewReplacer("~1", "/", "~0", "~").Replace(seg)
+		seg = UnescapeToken(seg)
 		var ok bool
 		if v, ok = jsonChild(v, seg); !ok {
 			return nil, false
