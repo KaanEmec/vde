@@ -51,8 +51,8 @@ roles
 ```
 
 It exits 0 when the file is valid (warnings are printed to stderr), and 1 with every
-problem listed when it is not. `--strict` turns warnings into errors; `--probe` is accepted but not
-implemented yet (it only warns "probe not available"; probing is planned for v0.3).
+problem listed when it is not. `--strict` turns warnings into errors. It makes no network
+call; to test an endpoint, run `vde extract` with a small document.
 
 ### Extract a document
 

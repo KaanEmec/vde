@@ -14,8 +14,7 @@ job until it reaches a terminal status, **read** `result` and `feedback`.
 
 The bearer token is a service credential. Hold it only in server-side code: a backend, a
 worker, a script. A browser page or a shipped mobile app must never contain it; such
-clients talk to your own backend, which calls vde. The Swift example is meant for
-server-side Swift or for code behind your own backend, not for an app that embeds the token.
+clients talk to your own backend, which calls vde.
 
 ## Authentication
 

@@ -130,12 +130,12 @@ How a group reads a media type (shown by `vde config check`, per role):
 | Via | Meaning |
 | --- | --- |
 | `native` | A pair of the group lists the type; the model receives the file. |
-| `pages` | PDF only: no pair lists `application/pdf`, but one lists `image/png` or `image/jpeg`. The PDF works only if the caller sends page images (`page` parts), because the service never renders pages. |
+| `pages` | PDF only: no pair lists `application/pdf`, but one lists `image/png` or `image/jpeg`. The service sends the PDF's text layer or renders its pages, per `documents.pdf.mode` ([PDF preprocessing](pdf.md)); under `native` it renders nothing and the caller must send page images (`page` parts). |
 | `text` | Text types: a pair lists `text/plain` or the type itself. |
 | `-` | The group cannot read the type. |
 
 `config check` warns when a role's group cannot read one of PNG, JPEG, PDF, HTML or plain
-text (the types the service must accept), and when PDFs depend on caller-supplied pages.
+text (the types the service must accept), and when PDFs depend on caller-supplied pages (`documents.pdf.mode: native`).
 Treat these warnings as real: `vde config check --strict` makes them errors, which suits CI.
 
 Check the result before you serve:

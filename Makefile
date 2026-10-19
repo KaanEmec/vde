@@ -47,7 +47,7 @@ eval:
 	$(EVAL) --judge never --provider-script testdata/eval/fake-script.yaml
 	$(EVAL) --judge auto --provider-script testdata/eval/fake-script-grounded.yaml
 
-# The opt-in smoke test against every real provider whose key is set (see CONTRIBUTING.md).
+# The opt-in smoke test against every real provider whose key is set (AGENTS.md, "Build, test, validate").
 live:
 	VDE_LIVE=1 go test ./cmd/vde -run TestLiveProviders -count=1 -v -timeout 60m
 

@@ -18,13 +18,16 @@ giving it an epic folder in a version and removing it here.
 | Cost accounting per application (tokens, money) | Usage is exposed: `vde_provider_tokens_total` by role, group, endpoint and model, and `input_tokens`/`output_tokens` per job (admin API, `job.finished` audit events). Money and per-application billing are an operator concern. | An operator hosting the service for several tenants |
 | ~~Server-side PDF page rendering~~ | Resolved in v0.4 by [ADR 0010](../architecture/decisions/0010-pdf-preprocessing-in-service.md) (2026-10-17): the service reads the text layer and renders pages itself with pdfium on WebAssembly (`documents.pdf`). ADR 0006 had decided against it on 2026-10-16. | Done |
 | Grounding of partially printed dates | In the offline fake-provider validation of the owner suite under `auto` (2026-10-18), the only critical values that sent emails and PDFs to the judge were derived dates: a next-day arrival, and dates printed without a year whose year comes from the document's own date. Today such a date is ungrounded and the judge decides, which is the safe default. | Measured judge cost on date-derived cases high enough to justify a rule "day and month printed, year equals the document date's year" in `internal/ground` |
+| `auto` thresholds per application (`max_document_chars`, `max_items`, `min_grounded_share`) that send large or weakly grounded results to the judge | An idea from the v0.4 closeout; nothing measures the need yet. | The owner's policy comparison shows `auto` accepting large or weakly grounded results the judge would reject (an ADR 0009 amendment) |
 | Hybrid PDF input (text layer and page images together) and per-page representation decisions | Kept out of v1.2 (2026-10-19). The text gives exact characters, the images give layout and table structure; costs 2 to 3 times the tokens and amends ADR 0010 (one representation per document today, decided over all pages). | v1.2's reports still show PDF failures on tables or columns, or one thin page sending a text-rich PDF to images |
 | Helm chart | First deployment is docker compose on one VM. | A Kubernetes user |
 
 ## Deferred from v1.0 (owner's decision, 2026-10-18)
 
 Drafts for all three are on the unpushed branch `wip/release-engineering` (one commit on
-top of `691e651`); none has run in CI.
+top of `691e651`); none has run. They target GitHub Actions and GoReleaser, which v1.1
+replaced with `make ci` and `make release` (decision 18), so promoting one starts by
+moving it to the Makefile.
 
 - **Load test and capacity document** (v1.0 03-01): a `test/load` Go tool (multipart
   submit and poll, latency percentiles, RSS sampling) and a fake-provider harness; the

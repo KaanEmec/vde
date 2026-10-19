@@ -81,7 +81,7 @@ Release `v1.1.0` with `make release` when:
 | 05 | [Long functions](05-long-functions/README.md) | 02, 03 | done |
 | 06 | [Tests and testdata](06-tests-and-testdata/README.md) | 00 | done |
 | 07 | [Dependencies](07-dependencies-and-build/README.md) | 00 | done (02 dropped) |
-| 08 | [Documentation and example clients](08-docs-and-clients/README.md) | 00; 08-01 last of all docs edits | in progress |
+| 08 | [Documentation and example clients](08-docs-and-clients/README.md) | 00; 08-01 last of all docs edits | done |
 | 09 | [Deprecations (owner decisions)](09-deprecations/README.md) | 02, 04 | done (03 dropped) |
 | 10 | [Closeout](10-closeout/README.md) | all | planned |
 

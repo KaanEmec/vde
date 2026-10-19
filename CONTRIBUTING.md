@@ -2,54 +2,25 @@
 
 ## Working agreement
 
-Work is planned in `docs/roadmap/` as versions, epics and jobs. One job is one unit of
-change:
-
-- Each job becomes one branch and one pull request, named after the job file
-  (`v0.1/01-project-foundation/02-configuration-model`). Until a remote repository exists,
-  each job lands as one commit on `main` with that name as the message.
-- A job is `done` when its acceptance criteria are met by automated tests where tests are
-  possible. Update the job file's `Status` and the epic README's table in the same change.
-- A job that changes an architectural decision adds or amends an ADR in
-  `docs/architecture/decisions/` in the same change.
-- `make check` must pass before a commit.
-- Before tagging a release, run `make live` with at least one provider key set
-  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` or `GEMINI_API_KEY`; the
-  model per provider can be changed with `VDE_LIVE_<PROVIDER>_MODEL`). It runs the sample
-  documents, and your own in `testdata/user-docs/` when present, through `vde extract`
-  against the real provider and prints the token usage of each run to stderr.
-
-## Code
-
-- Standard library first. The allowed third-party dependencies are listed in the
-  architecture overview, "Implementation decisions"; anything else needs an ADR.
-- An interface exists only where a second implementation is planned.
-- Tests use the standard `testing` package only, table-driven with named subtests. The
-  fake provider is the backbone of tests; real provider calls run only in an opt-in suite.
-- Document content, instructions, schemas, candidates, feedback and secrets never appear
-  in logs, errors or test output.
+Work is planned in `docs/roadmap/` as versions, epics and jobs; one job lands as one commit
+on `main`. The conventions (commit messages, statuses, ADRs, tests) are in
+[AGENTS.md, "Conventions"](AGENTS.md#conventions); the design principles in the
+[architecture overview](docs/architecture/overview.md#design-principles).
 
 ## Checks
 
 Every check runs on your machine; GitHub only stores the repository and the release
-artifacts, and runs nothing.
+artifacts, and runs nothing. The commands are listed in
+[AGENTS.md, "Build, test, validate"](AGENTS.md#build-test-validate).
 
-- `make check` (golangci-lint, which includes govet and staticcheck; `go test -race`;
-  build) passes before every commit. `make hooks`, once per clone, points git at
+- `make check` passes before every commit. `make hooks`, once per clone, points git at
   `.githooks/`, whose `pre-push` runs `make check`.
-- `make ci` runs everything, in order, stops at the first failure and prints one line per
-  step with its duration: `go mod tidy -diff`; golangci-lint; the race suite
-  (`-shuffle=on`) with the `toolchain` of `go.mod` and again with the local Go;
-  `govulncheck` with the `go.mod` toolchain, which builds images and release binaries (on
-  `PATH`: `go install golang.org/x/vuln/cmd/govulncheck@latest`);
-  `make fuzz` (every fuzz target for `FUZZTIME`, 20 s); the static linux/amd64 and
-  linux/arm64 cross-build; `make conformance`; `make eval`; and `make storage`, which
-  starts PostgreSQL 17 and RustFS in throwaway containers and runs the job, blob and worker
-  suites and the Postgres and S3 tests of `cmd/vde` and `internal/api`. Docker must be
-  running: without it the storage step fails, it never passes silently. Run `make ci`
-  before merging into `main`; `make release` runs it too.
-- `make deps` lists available module updates; run it by hand before a release
-  (`govulncheck` in `make ci` covers known vulnerabilities).
+- `make ci` before merging into `main` (`make release` runs it too). It stops at the first
+  failure and prints one line per step with its duration. It needs `govulncheck` and
+  golangci-lint on `PATH` (`go install golang.org/x/vuln/cmd/govulncheck@latest`) and a
+  running Docker: its storage step starts PostgreSQL 17 and RustFS in throwaway containers
+  and fails, never passes silently, without Docker.
+- `make deps` lists available module updates; run it by hand before a release.
 
 ## Releasing
 
@@ -80,9 +51,9 @@ Makefile, `dist/` or the output.
 
 Procedure:
 
-1. `make deps` for available updates; `make live` with at least one provider key set (see
-   above): the sample documents must extract through the real provider, and token usage
-   must look sane. Do not release if it fails.
+1. `make deps` for available updates; `make live` with at least one provider key set
+   ([AGENTS.md](AGENTS.md#build-test-validate)): the sample documents must extract through
+   the real provider, and token usage must look sane. Do not release if it fails.
 2. In `CHANGELOG.md`, rename `Unreleased` to the version and date, start a fresh
    `Unreleased` section above it, and commit on `main`.
 3. Dry run: `make release VERSION=vX.Y.Z DRY_RUN=1` does everything except pushing the

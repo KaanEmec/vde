@@ -229,7 +229,7 @@ Warnings do not block start (unless `--strict`); each deserves a decision.
 | --- | --- | --- |
 | `server.insecure_http` | plain HTTP is accepted from any peer ... | Intended only for development and trusted private networks. |
 | `roles.<r>.group` | `group "x" cannot read ... directly or via page images` | The group cannot read a type the service must accept (PDF, PNG, JPEG, HTML, plain text); submissions of it will be refused as `unsupported_document`. |
-| `roles.<r>.group` | `no endpoint-model pair in group "x" reads application/pdf natively; PDFs work only when callers send page images ...` | The service never renders pages. |
+| `roles.<r>.group` | `no endpoint-model pair in group "x" reads application/pdf natively; PDFs work only when callers send page images (documents.pdf.mode: native)` | Under `native` the service renders nothing; `auto` or `pages` lets it prepare the PDF ([PDF preprocessing](pdf.md)). |
 | `limits.document_bytes`, `page_bytes`, `pages`, `request_bytes` | `N is below the contract minimum of M` | Callers may legitimately send more than you allow. |
 | `applications[i].max_attempts` | `N is above limits.max_attempts M; each attempt costs model calls` | |
 | `metrics.listen` | `... is not a loopback address and metrics.token_env is not set` | Anyone who reaches the port can read the metrics. |

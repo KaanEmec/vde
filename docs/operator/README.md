@@ -21,7 +21,7 @@ about ten minutes from clone to a first job.
 | [operations.md](operations.md) | Health checks, metrics, audit log, logs, backups, upgrades. |
 | [troubleshooting.md](troubleshooting.md) | Look up an error code, a `config check` message or a provider failure. |
 | [retention.md](retention.md) | What is deleted, when, and what remains. |
-| [privacy.md](privacy.md) | What is logged, what never is, the `debug.log_content` switch and data residency. |
+| [privacy.md](privacy.md) | What is logged, what never is, and data residency. |
 | [storage.md](storage.md) | Choose SQLite or PostgreSQL and local files or S3; pool sizing, backups, bucket lifecycle rule, migrations. |
 | [judge-policy.md](judge-policy.md) | Choose when the judge is asked (`always`, `never`, `auto`), annotate a schema for grounding, read the decision metrics and the `extracted` status. |
 | [pdf.md](pdf.md) | Choose how PDFs reach models that do not read PDFs: text layer, rendered pages or caller pages; memory and limits. |
@@ -39,9 +39,10 @@ service), [examples](../../examples/README.md) and the [changelog](../../CHANGEL
 | Command | Purpose |
 | --- | --- |
 | `vde serve [--config path] [--role all\|api\|worker]` | Run the service: API, worker pool, expiry sweeper, `/healthz`, `/metrics`; `--role` splits API and workers into separate processes on PostgreSQL and S3 ([operations](operations.md#process-roles)). |
-| `vde config check [--config path] [--strict]` | Validate a configuration without network calls and print a summary. |
+| `vde config check [--config path] [--strict]` | Validate a configuration without network calls and print a summary; `vde config schema` prints its JSON Schema for editors ([configuration](configuration.md#schema)). |
 | `vde token create\|list\|revoke` | Manage access tokens. See [applications and tokens](applications-and-tokens.md). |
 | `vde app list` | List the applications in the database. |
+| `vde audit list` | List the audit log ([operations](operations.md#audit-log)). |
 | `vde migrate [--config path]` | Apply pending database migrations of `storage.driver` and print the schema version (`serve` also migrates at start). See [storage](storage.md#migrations). |
 | `vde healthcheck [--config path]` | Request `/healthz` on the configured listener; exit 0 on `200`. Used by the container `HEALTHCHECK`. |
 | `vde extract` | Run one document through the extractor and judge from the command line; for trying a configuration. See [examples](../../examples/README.md#extract-a-document). |
@@ -56,11 +57,3 @@ not exist, so `docker compose exec vde vde token ...` needs no flags. `vde serve
 Exit codes: 0 success, 1 usage error, configuration error or any other failure. `vde extract`
 also uses 2 (rejected), 3 (failed) and 4 (extracted: judge policy `never`, no judge asked; not
 0, because scripts read 0 as accepted).
-
-## What is planned
-
-Nothing the guide describes is missing. `vde config check --probe` and the
-`debug.log_content` sink were removed in v1.1 (the key is still accepted and has no effect).
-
-The admin HTTP API (`admin.listen`, see [applications-and-tokens.md](applications-and-tokens.md)
-and [../api/admin.md](../api/admin.md)) and `vde audit list` are implemented.

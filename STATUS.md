@@ -1,26 +1,34 @@
 # STATUS
 
-Where the project stands, as of **2026-10-18** (last commit `c0b03a4`). How to work here is in
-[AGENTS.md](AGENTS.md). Job files under [docs/roadmap/](docs/roadmap/README.md) stay the
+Where the project stands, as of **2026-10-19** (v1.1 job 08-01, on top of `b4f4026`).
+How to work here is in [AGENTS.md](AGENTS.md). Job files under [docs/roadmap/](docs/roadmap/README.md) stay the
 source of truth; this page summarizes them and must be updated at the end of every session.
 
 ## Summary
 
-v0.1 to v1.0 are implemented and committed on `main` (remote `origin`, public; checks
-run locally with `make ci`): the extractor-judge engine and CLI, the authenticated HTTP service of the
-TravelInbox contract, Postgres/S3 storage, more providers, escalation, delivery options, an
-evaluation harness, multi-replica operation, (v0.4) judge policies `always`/`never`/`auto`
-with a deterministic grounding check and PDF preparation in the service, and (v1.0) the
-`/v1` and configuration freeze under a [compatibility policy](docs/compatibility.md), a
-closed security review ([docs/security.md](docs/security.md)) and `503` backpressure.
-The owner took the performance baseline and release engineering (signed images, SBOMs,
-docs site) out of v1.0 on 2026-10-18; drafts are on the unpushed branch
-`wip/release-engineering`. Everything is proven with the fake provider and the
-conformance suite; real-model evidence is one smoke run, the TravelInbox live test and a
-few evaluation runs through one OpenAI-compatible endpoint. The owner's comparison of the
-judge policies on real documents has not been run. `v1.0.0` was tagged and released on
-2026-10-18 after `make live` passed (21 of 21 sample runs accepted through the owner's
-endpoint); the release workflow built the image and four archives.
+v0.1 to v1.0 are implemented (scope per version in the table below). `v1.0.0` was tagged
+and released on 2026-10-18, after `make live` passed (21 of 21 sample runs accepted through
+the owner's endpoint), by the GitHub release workflow v1.1 has since removed. The owner took
+the performance baseline and release engineering (signed images, SBOMs, docs site) out of
+v1.0; drafts are on the unpushed branch `wip/release-engineering`. Everything is proven
+with the fake provider and the conformance suite; real-model evidence is one smoke run, the
+TravelInbox live test and a few evaluation runs through one OpenAI-compatible endpoint. The
+owner's comparison of the judge policies on real documents has not been run.
+
+v1.1 Lean (2026-10-19) is done except its closeout (10-01, the `v1.1.0` release): the
+code, tests, testdata and docs are smaller with the `/v1` API and the 1.x configuration
+unchanged. Checks and releases now run on the owner's machine (`make ci`,
+`make release`; `.github/` is gone). Removed: the never-written `debug.log_content` sink and
+`vde config check --probe` (L1), `vde eval import-travelinbox` (L3), the experimental JSON
+`document.url` (L7; `documents.fetch.*` still load, with a warning), the Node and Swift
+example clients (L5), and the per-job files of v0.1 to v1.0, collapsed into one
+`vX.Y-history.md` per version (L6). Deprecated for removal in 2.0, still working with a
+warning: escalation, `roles.second_judge`, the classifier judge and `feedback_fallback`
+(L8, [ADR 0011](docs/architecture/decisions/0011-remove-tiers-and-classifier-judge.md),
+proposed). Measured against the 00-04 baseline: Go production lines 23,235 → 22,085
+(−1,150; the exit criterion asks −1,800), test lines 32,085 → 32,196, direct dependencies
+17 → 16 (`oklog/ulid` replaced), linux/amd64 binary 36.1 → 35.9 MB. Every v1.1 commit
+(since `78b6486`, the last one on `origin`) is on the local `main` only.
 
 ## Versions
 
@@ -31,7 +39,7 @@ endpoint); the release workflow built the image and four archives.
 | [v0.3 Hardening and extensions](docs/roadmap/v0.3-history.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-history.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
 | [v1.0 Stable](docs/roadmap/v1.0-history.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
-| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | in progress: epic 00 jobs 02 and 03 (local CI and release) merged into `main` 2026-10-19, not pushed | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
+| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | epics 00 to 09 done 2026-10-19 (00-01 is the owner's; 07-02 and 09-03 dropped); closeout 10-01 planned; not pushed | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
 | [v1.2 Extraction quality](docs/roadmap/v1.2-extraction-quality/README.md) | planned 2026-10-19 (roadmap only) | none | One epic, nine jobs: prompt order and wording, context line and page markers, email section labels, HTML data tables, analysis blocks for extractor and judge, native structured outputs, caller schema guide, multi-pass extraction after ADR 0011; each measured against the previous report |
 
 ## What is verified, and how
@@ -51,9 +59,15 @@ endpoint); the release workflow built the image and four archives.
   struct tree and the schema agree both ways), seven fuzzers clean for 20 to 30 s each and
   run by `make fuzz` (part of `make ci`), regression tests for every fixed finding in
   [docs/security.md](docs/security.md), `govulncheck` clean with `toolchain go1.26.9`.
-- **Local CI**: `make ci` replaced GitHub Actions in v1.1/00-02; the flaky timing tests
-  found on the first GitHub runs (grounding performance bound, worker heartbeat, pdfium cold start) were fixed
-  on 2026-10-18.
+- **Local CI** (v1.1 00-02): `make ci` replaced GitHub Actions; the flaky timing tests
+  found on the first GitHub runs (grounding performance bound, worker heartbeat, pdfium
+  cold start) were fixed on 2026-10-18. `make release VERSION=v1.1.0-rc.0 DRY_RUN=1` passed
+  without the image step (00-03).
+- **v1.1 refactoring**: each code job recorded `make check` and `make ci` green and, where
+  the loop, documents or providers changed, `make scenarios` and `make eval` equal to the
+  00-04 baseline under `always`, `never` and `auto` (job files, "Result"); conformance and
+  `TestOpenAPISupersetOfSnapshot` unchanged. The closeout re-runs all of it before
+  `v1.1.0`.
 - **Storage and scaling**: Postgres and S3 suites (opt-in env vars); two worker pools run
   100 jobs exactly once and resume a killed pool's job; `examples/compose/scaled` ran
   locally with PostgreSQL 17 and RustFS ([v0.3 check](docs/roadmap/v0.3-history.md#exit-criterion-check-2026-10-17)).
@@ -74,7 +88,6 @@ endpoint); the release workflow built the image and four archives.
   field accuracy 96.8 %, about 0.6 cents per document; every judge tried (Gemini Flash,
   Sonnet, Haiku, GLM, DeepSeek) accepted an event invoice with invented values. PDF selection
   without caller pages on the owner suite (`VDE_USER_DOCS=1`, 2026-10-17): all 5 PDFs.
-- **Binary size** (v0.4): linux/amd64 35.9 MB, linux/arm64 34.2 MB, static, `CGO_ENABLED=0`.
 
 ## What is NOT verified
 
@@ -83,10 +96,10 @@ endpoint); the release workflow built the image and four archives.
 - Anthropic, OpenAI and Gemini direct keys: live runs went through the OpenAI-compatible
   adapter only; the others are covered by httptest (Anthropic and Gemini also have opt-in
   `live_test.go` files, with no recorded run).
-- The multi-arch image is built by `make release` (buildx, not yet installed on the owner's
-  machine, so the v1.1 dry run skipped it); the v0.3.0 and v0.4.0 GitHub release runs failed on the flaky tests above (a separate session is rebuilding v0.4.0).
-  Releases are unsigned: signing, SBOMs and provenance are drafted on
-  `wip/release-engineering`, never run.
+- `make release` for real: only its dry run has run, and without the multi-arch image
+  (buildx is not installed on the owner's machine); `v1.1.0` is its first use. Releases are
+  unsigned: signing, SBOMs and provenance are drafted on `wip/release-engineering` for the
+  GitHub workflow v1.1 removed, never run.
 - A load test: never run on the target VM; no capacity document (deferred).
 - An external security audit: the two v1.0 reviews were internal (a checklist pass and an
   independent read-only pass by a separate agent); a paid audit is the owner's option.
@@ -107,29 +120,24 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
   item 10). The review meeting has not happened.
 - TravelInbox to confirm it tolerates `verification`, `extracted`, `source: "grounding"` and
   which `documents.pdf.mode` it wants.
-- `vde config check --probe` is accepted but no provider implements a probe.
 - HEIC is not converted (no pure-Go decoder); accepted only where an endpoint declares it.
 - Postgres `LISTEN/NOTIFY` skipped (workers poll); pending webhook deliveries live in memory.
-- Grounding of partially printed dates (no year, next-day arrival) is ungrounded today and
-  goes to the judge ([backlog](docs/roadmap/backlog.md)).
+- Grounding of partially printed dates and `auto` thresholds per application: see the
+  [backlog](docs/roadmap/backlog.md).
 - Unannotated schemas (TravelInbox's, the owner suite's) mark derived values as critical
   misses, so under `auto` most such jobs still go to the judge.
 - pdfium: no system fonts, about 500 MB per `documents.pdf.workers`, interpreted outside
   amd64/arm64. No OCR: images and scanned PDFs are ungroundable.
-- `debug.log_content` sink opened but not written by provider adapters
-  ([v0.2 06-03](docs/roadmap/v0.2-history.md#06-03-log-redaction-and-the-debug-content-switch), in progress).
-- Idea, not documented or implemented elsewhere: `auto` thresholds per application
-  (`max_document_chars`, `max_items`, `min_grounded_share`) that send large or weakly
-  grounded results to the judge.
 - Accepted info findings of the independent review (F9 to F13 in
   [docs/security.md](docs/security.md)): 403 vs 401 for a token on the wrong listener,
   `trusted_proxy` trusting any peer, `queue_age_seconds` on an unauthenticated
-  `/healthz`, `debug.log_content` with `trusted_proxy`, workers reading `max_in_progress`
-  from YAML applications only.
+  `/healthz`, workers reading `max_in_progress` from YAML applications only (F12 is moot
+  since the content sink was removed in v1.1).
 - Git history note: the v1.0 wave-1 code (API freeze, config schema, hardening,
   backpressure) landed inside commits `31dfa36` and `b315948`, whose messages name CI
-  fixes, because a parallel session committed with `git add -A`; the job files and
-  `docs/security.md` say what each job delivered.
+  fixes, because a parallel session committed with `git add -A`; the
+  [v1.0 history](docs/roadmap/v1.0-history.md) and `docs/security.md` say what each job
+  delivered.
 
 ## Recommended next steps (in order)
 
@@ -141,10 +149,14 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
    login (CONTRIBUTING, "First release only").
 4. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
    SBOMs first, then the docs site, then the load test), each as its own job.
-5. If the comparison justifies it, the `auto` thresholds above (needs an ADR 0009 amendment).
-6. v1.1 Lean ([roadmap](docs/roadmap/v1.1-lean/README.md)): epic 00 first. Local CI and release (00-02, 00-03)
-   are merged into `main`; owner: push `main`, turn GitHub Actions off, install buildx and
-   give `gh` `write:packages` (00-03). Then 00-01 skills and 00-04 baseline, then the waves.
+5. If the comparison justifies it, the `auto` thresholds of the
+   [backlog](docs/roadmap/backlog.md) (needs an ADR 0009 amendment).
+6. v1.1 Lean ([roadmap](docs/roadmap/v1.1-lean/README.md)): owner actions first: push
+   `main`, turn GitHub Actions off for the repository, install the buildx
+   plugin, give `gh` `write:packages` (`gh auth refresh -s write:packages`) and log Docker
+   in to `ghcr.io`, and run `make hooks` once in this clone (`core.hooksPath` is not set).
+   Then the closeout (10-01): `make ci`, the exit criterion check and `make release
+   VERSION=v1.1.0`.
 7. v1.2 Extraction quality ([roadmap](docs/roadmap/v1.2-extraction-quality/README.md), planned
    2026-10-19): starts after `v1.1.0`. Record the baseline report first (epic 01 README,
    "Measuring"); every job then runs one real-model comparison on 3 to 5 documents (a

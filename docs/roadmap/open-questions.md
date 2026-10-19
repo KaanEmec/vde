@@ -7,7 +7,7 @@ it changed. New questions go at the bottom under "Open".
 ## Decided
 
 1. **Repository, module path and licence.** Apache-2.0. Binary and image named `vde`.
-   Module path to be set when the repository is created. → v0.1 01-01.
+   Module path `github.com/kaanemec/vde` (set 2026-10-16). → v0.1 01-01.
 2. **Version split.** Kept: v0.1 ships the engine and CLI, v0.2 the contract-conformant
    service.
 3. **Providers in v0.1.** Anthropic, OpenAI-compatible and Google Gemini adapters.
@@ -75,8 +75,4 @@ it changed. New questions go at the bottom under "Open".
 
 ## Open
 
-- ~~**Module path.**~~ Decided 2026-10-16: `github.com/kaanemec/vde`. See architecture
-  overview, "Implementation decisions".
-- ~~**Location of TravelInbox assets.**~~ Resolved 2026-10-16: the checkout at
-  `~/Developer/TravelInbox` was available; assets are imported into `testdata/travelinbox/`
-  by v0.1 01-01.
+None.

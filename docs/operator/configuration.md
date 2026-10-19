@@ -39,8 +39,9 @@ warnings until 2.0 refuses them: a number, boolean or date where a string is exp
 arrives with a default that reproduces the previous behaviour. If a key ever has to be
 renamed, the old name keeps working for one minor version, with a warning from
 `vde config check` and `vde serve` that names the replacement, and is removed in the next;
-the CHANGELOG lists it under "Deprecated". No key is deprecated in 1.0, and a 0.x file
-needs no rewrite: no key changed on the way to 1.0, so there is no migration command.
+the CHANGELOG lists it under "Deprecated". The keys deprecated in 1.1 (marked in the
+tables) keep working, with that warning, until 2.0. A 0.x file needs no rewrite: no key
+changed on the way to 1.0, so there is no migration command.
 
 ## `server` (used from v0.2)
 

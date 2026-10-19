@@ -30,7 +30,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 
 | Path | Owns |
 | --- | --- |
-| `cmd/vde/` | `main`: subcommands `serve`, `extract`, `eval`, `config check`, `app`, `token`, `audit`, `migrate`, `healthcheck`, `version`; e2e, scenario and live tests |
+| `cmd/vde/` | `main`: subcommands `serve` (`--role`), `extract`, `eval`, `config check\|schema`, `app`, `token`, `audit`, `migrate`, `healthcheck`, `version`; e2e, scenario and live tests |
 | `api/` | `openapi.yaml` (public `/v1`) and `admin-openapi.yaml`, embedded (`embed.go`) |
 | `internal/api/` | HTTP handlers, middleware (auth, request id, limits, quota headers), errors, admin routes, sync endpoint (`doc.go`) |
 | `internal/audit/` | Typed audit events, never content (`doc.go`) |
@@ -64,12 +64,13 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
   (cited as `contract §N`) and `FromTravelApp/extraction-service-api.yaml`; the service's
   superset is [api/openapi.yaml](api/openapi.yaml), see [docs/api/README.md](docs/api/README.md).
   MUST traceability: [docs/conformance/travelinbox-v1.md](docs/conformance/travelinbox-v1.md).
-- Decisions: [docs/architecture/decisions/](docs/architecture/decisions/) 0001 to 0010; shape
-  and package layout: [overview](docs/architecture/overview.md).
+- Decisions: [docs/architecture/decisions/](docs/architecture/decisions/) 0001 to 0011; shape
+  of the service: [overview](docs/architecture/overview.md); package layout: the repository
+  map above.
 - Work: [docs/roadmap/](docs/roadmap/README.md), versions → epics → jobs. A job file
-  (`vX.Y-theme/NN-epic/NN-job.md`) is the unit of work: header line
-  `Version: · Epic: · Status: · Depends on:`, then Goal, Context, Tasks (checkboxes),
-  Acceptance criteria, Out of scope. Status values: `planned`, `in progress`, `done`, `dropped`.
+  (`vX.Y-theme/NN-epic/NN-job.md`, header line `Version: · Epic: · Status: · Depends on:`)
+  is the unit of work; its sections and status values are in the roadmap README,
+  "Conventions". A done version is collapsed into `docs/roadmap/vX.Y-history.md`.
   Decisions and open questions: [open-questions.md](docs/roadmap/open-questions.md); deferred
   ideas: [backlog.md](docs/roadmap/backlog.md).
 
@@ -100,9 +101,10 @@ VDE_CONFORMANCE_TOKEN=<jobs token> [VDE_CONFORMANCE_FOREIGN_TOKEN=...] go test .
 
 - One commit per job or epic, message `vX.Y/<NN-epic>/<NN-job>: title` (e.g.
   `v0.2/09-contract-conformance/02: ...`, or `v0.4/01-judge-policy: ...` for a whole epic).
-  Non-job commits use `docs(...)`, `fix(...)`, `chore: ...`. Each job becomes one branch and
-  PR once the remote is used ([CONTRIBUTING.md](CONTRIBUTING.md)).
-- Update the job file's `Status:` and the epic README's table in the same commit; a changed
+  Non-job commits use `docs(...)`, `fix(...)`, `chore: ...`. Each job lands as one commit
+  on `main`; no branches or pull requests unless the owner asks.
+- A job is `done` when its acceptance criteria are met, by automated tests where possible.
+  Update the job file's `Status:` and the epic README's table in the same commit; a changed
   architectural decision adds or amends an ADR in the same commit.
 - No new dependency without an ADR and a row in the overview's "Implementation decisions".
 - Tests: standard `testing`, table-driven, named subtests, fake provider; no testify.

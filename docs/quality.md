@@ -54,9 +54,9 @@ concurrency 3. Reports in `docs/quality/`.
 
 | Run | Extractor | Judge | Accepted | Rejected | Failed | False accepts (of accepted) | Field accuracy (accepted) | Correct cases | Median / p95 | Tokens in / out |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 (`+56cf97c8`) | gemini-3.8-flash | gemini-3.8-flash | 50 | 0 | 0 | 43 (86.0 %) | 92.4 % | 7 | 21.1 s / 43.5 s | 942k / 143k |
-| 2 (`+2b75349f`) | gemini-3.8-flash | claude-sonnet-5.5 | 45 | 4 | 1 | 40 (88.9 %) | 92.8 % | 5 | 19.5 s / 98.7 s | 1197k / 144k |
-| 3 (`+1a2f4dfb`) | claude-sonnet-5.5 | claude-sonnet-5.5 | 41 | 0 | 9 | 33 (80.5 %) | 87.2 % | 9 | 8.9 s / 51.1 s | 1063k / 46k |
+| 1 ([`+56cf97c8`](quality/vde-0.0.0-dev+56cf97c8-2026-10-16.json)) | gemini-3.8-flash | gemini-3.8-flash | 50 | 0 | 0 | 43 (86.0 %) | 92.4 % | 7 | 21.1 s / 43.5 s | 942k / 143k |
+| 2 ([`+2b75349f`](quality/vde-0.0.0-dev+2b75349f-2026-10-16.json)) | gemini-3.8-flash | claude-sonnet-5.5 | 45 | 4 | 1 | 40 (88.9 %) | 92.8 % | 5 | 19.5 s / 98.7 s | 1197k / 144k |
+| 3 ([`+1a2f4dfb`](quality/vde-0.0.0-dev+1a2f4dfb-2026-10-16.json)) | claude-sonnet-5.5 | claude-sonnet-5.5 | 41 | 0 | 9 | 33 (80.5 %) | 87.2 % | 9 | 8.9 s / 51.1 s | 1063k / 46k |
 
 Mismatched fields, counted once per case (runs 1 → 3): `/trip_hint/ends_on` 23 → 20,
 `/reservations/N/travellers` 16 → 6, `/reservations/N/provider` 12 → 16,

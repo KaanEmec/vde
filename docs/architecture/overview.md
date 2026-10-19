@@ -1,12 +1,7 @@
 # Architecture overview
 
-Status: v0.1 to v0.4 implemented (v0.4, judge policy, grounding and PDF preprocessing,
-ADRs 0009 and 0010, closed 2026-10-18 with the owner's policy comparison pending); v1.0
-done 2026-10-18 (`/v1` and the configuration schema frozen, `docs/compatibility.md`;
-security review closed, `docs/security.md`; backpressure limits; performance baseline and
-release engineering deferred by the owner). This document
-describes the shape of the service; the roadmap under `docs/roadmap/` says which jobs are
-done. Each job file carries its own `Status`.
+This document describes the shape of the service. Where the project stands is in
+[STATUS.md](../../STATUS.md).
 
 ## What the service is
 
@@ -83,39 +78,8 @@ webhook sender runs where the worker does.
 
 ### Packages
 
-```
-cmd/vde/                 main: serve (--role), extract, eval, config check, app, token, audit, migrate, healthcheck, version
-api/                     OpenAPI documents (public and admin), embedded
-internal/config/         YAML model, env expansion, validation, service_version hash
-internal/provider/       Provider interface, request/response types, capability model
-internal/provider/anthropic/
-internal/provider/openai/   OpenAI-compatible chat completions (OpenRouter preset)
-internal/provider/gemini/
-internal/provider/bedrock/  AWS Bedrock Converse
-internal/provider/vertex/   Vertex AI (Gemini, Anthropic)
-internal/provider/classifier/  classifier-style judge (generic classify contract)
-internal/provider/fake/     scripted provider for tests
-internal/router/         endpoint groups, ordered failover, per-endpoint health
-internal/document/       document model, media types, representation selection, image conversion, HTML to text, email parsing, PDF text layer and rendering policy, grounding text
-internal/pdf/            pdfium on WebAssembly (go-pdfium, wazero): page count, text layer, page rendering; cgo-free, bounded (ADR 0010)
-internal/ground/         deterministic grounding check: normalization, number and date matching, x-vde-grounding rules (ADR 0009)
-internal/extract/        prompt framings, JSON answer parsing, schema validation, judge verdict, loop, escalation, judge policy (grounding repair, auto gate, sampling)
-internal/api/            handlers, middleware (auth, request id, limits), quota windows and rate limiting, errors, admin routes, sync endpoint, JSON submission
-internal/auth/           applications, tokens (hashing, expiry, revocation, scopes)
-internal/job/            job model, state machine, JobStore, SQLite and Postgres implementations, migrations and migrations_postgres
-internal/blob/           BlobStore interface, filesystem and S3 implementations
-internal/worker/         pool, leasing, job deadline, retention actions; expiry sweeper, advisory-locked across processes
-internal/webhook/        signed completion webhooks
-internal/eval/           evaluation harness: corpus, case globs, comparison, report (verification, judge calls per case)
-internal/audit/          audit events (never content)
-internal/logging/        slog setup and redaction
-internal/metrics/        Prometheus metrics
-internal/version/        build info
-test/conformance/        black-box suite for the TravelInbox contract's acceptance items
-docs/                    architecture, roadmap, operator and API docs
-examples/                dev config, docker compose (single and scaled), samples
-testdata/                fixtures, fake provider scripts, evaluation corpus
-```
+The package map, with what each package owns, is in
+[AGENTS.md, "Repository map"](../../AGENTS.md#repository-map).
 
 `internal/extract` must be usable without the HTTP layer: the `vde extract` CLI command
 and the test suite call it directly with a config and a document. This is why v0.1 ships
@@ -310,13 +274,6 @@ v0.1 is built in three waves so independent packages proceed in parallel:
 v0.2 follows the same pattern: HTTP foundation, store and worker, packaging in parallel;
 then applications and tokens, submission, quota, retention, operations, admin API; then
 contract conformance and documentation as the gate.
-
-### Working agreement while building autonomously
-
-Until a remote repository exists, each job lands as one commit on `main` named after the
-job file, with the job file's `Status` and the epic table updated in the same commit.
-`make check` must pass before a commit. Content never appears in test fixtures that are
-logged; fixtures are redacted TravelInbox corpus documents.
 
 ## Non-goals for the first releases
 

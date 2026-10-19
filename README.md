@@ -137,8 +137,8 @@ two worker processes on PostgreSQL and S3. To run the binary as a service instea
    `vde eval --corpus <dir> --config vde.yaml --judge always` (then `auto`, `never`, with
    `--compare`) before you change models, instructions or policy.
 
-The [API guide](docs/api/guide.md) walks through every call, with runnable clients in
-[`docs/api/examples/`](docs/api/examples/) (shell, Node, Swift);
+The [API guide](docs/api/guide.md) walks through every call, with a runnable shell client in
+[`docs/api/examples/`](docs/api/examples/);
 [writing instructions](docs/api/writing-instructions.md) covers the instructions and schema.
 
 ## Judge policy and grounding
@@ -244,38 +244,21 @@ Every key is in the [configuration reference](docs/operator/configuration.md).
 
 ## Status and roadmap
 
-v0.1 to v0.4 are implemented: the engine and CLI (v0.1); the HTTP service with jobs,
-tokens, quota, retention, the admin API and packaging (v0.2); Postgres and S3, Bedrock and
-Vertex, the classifier judge, escalation, webhooks, the synchronous endpoint, the
-evaluation harness and multiple replicas (v0.3); judge policies, the grounding check and
-PDF preparation in the service (v0.4). v1.0 freezes `/v1` and the configuration schema
-([compatibility policy](docs/compatibility.md), `vde config schema` for editors), adds a
-queue ceiling and in-flight limits with `503` backpressure, and closes a security review
-(hardening pass, fuzzers in `make ci`, an independent review; [docs/security.md](docs/security.md)).
-A performance baseline and signed releases with SBOMs are deferred.
-
-Not verified yet, so do not treat `vde` as production-ready:
-
-- The Bedrock and Vertex adapters have not run against the live services.
-- The classifier judge adapter implements a generic contract; no vendor's classifier has
-  been run through it.
-- The owner's comparison of `always`, `auto` and `never` on real documents is pending
-  ([quality](docs/quality.md#judge-policy)). The first TravelInbox evaluation showed a
-  high false-accept rate, mostly convention mismatches that need instruction work.
+`v1.0.0` is released: `/v1` and the configuration schema are frozen under the
+[compatibility policy](docs/compatibility.md). Some adapters and the owner's comparison of
+the judge policies on real documents are not verified yet, so do not treat `vde` as
+production-ready: what is verified and what is not is in [STATUS.md](STATUS.md), the plan
+in the [roadmap](docs/roadmap/README.md).
 
 ## Development
 
 ```sh
-make check          # go vet, golangci-lint, race tests, build
-make conformance    # black-box suite for the TravelInbox contract
-make eval           # evaluation harness mechanics under each judge policy, fake provider
-make live           # opt-in smoke test against every provider whose key is set
-make scenarios      # end-to-end scenarios with the fake provider
+make check          # lint, race tests, build: before every commit
+make ci             # every check, locally: before merging into main
 ```
 
-The fake provider is the backbone of the tests; real provider calls run only in `make live`
-and manual evaluation runs. Repository layout and conventions are in
-[AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+All commands, the repository layout and the conventions are in [AGENTS.md](AGENTS.md);
+checks and releases in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

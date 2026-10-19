@@ -55,9 +55,8 @@ a custom provider, keep to that rule.
 
 There is no mode that logs content. `debug.log_content` is deprecated and has no effect; it
 is still accepted so 1.0 configurations keep loading, and it will be removed in 2.0. When it
-is `true`, `vde config check` and `vde serve` print a warning, and both still refuse it
-unless `server.listen` is a loopback address. No `content.log` file is written. Remove the
-key from your configuration.
+is `true`, `vde config check` and `vde serve` print a warning (`--strict` fails on it), on
+any listener. No content file is written. Remove the key from your configuration.
 
 ## Data residency
 

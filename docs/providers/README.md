@@ -17,35 +17,12 @@ notes of an adapter before approving an endpoint.
 | `classifier` (deprecated) | No (text only) | No | yes | Either: a classifier service or a proxy implementing the classify contract; judge role only; deprecated in 1.1, removal in 2.0 | [classifier.md](classifier.md#what-is-sent-and-where) |
 | `fake` | Whatever the script is asked | Whatever the script is asked | yes | Neither: no network, tests only | [fake.md](fake.md) |
 
-"Document input" is a model's ability to read a PDF file itself. A model without it reads a
-PDF only through page images that the caller supplies, because the service never renders
-pages. The adapter sends whatever the configuration allows; whether a model can actually
-read a media type is a property of the model, not of the adapter.
-
-## You declare what each model reads
-
-The `accepts` list on each model entry is the single source of truth for what is sent to it:
-
-```yaml
-endpoints:
-  anthropic:
-    provider: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-    models:
-      claude-sonnet-4-5:
-        accepts: [application/pdf, image/png, image/jpeg, text/plain, text/html]
-```
-
-`vde` does not probe a model to find out what it reads (a probe would have to send a
-document), and model capabilities change often. You are responsible for the list: take it
-from the provider's current documentation, and keep it conservative. Listing a type the
-model cannot read makes jobs fail; leaving a type out only means `vde` uses another
-representation or another model for it.
-
-`vde config check` prints, for each role, every media type, how it is read (`native`,
-`pages` or `text`) and through which endpoint-model pairs, and warns when a required type
-cannot be read. The [`examples/`](../../examples/README.md) configurations carry commented
-`accepts` entries for common models.
+"Document input" is a model's ability to read a PDF file itself. A model without it gets a
+PDF as its text layer or as page images, rendered by the service or sent by the caller
+([PDF preprocessing](../operator/pdf.md)). The adapter sends whatever the configuration
+allows; whether a model can actually read a media type is a property of the model, not of
+the adapter, and you declare it in each model's `accepts` list
+([declaring `accepts`](../operator/providers.md#declaring-accepts)).
 
 ## Adding an adapter
 
