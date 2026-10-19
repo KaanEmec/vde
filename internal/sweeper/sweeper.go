@@ -113,7 +113,7 @@ func New(store job.Store, blobs blob.Store, cfg *config.Config, opts Options) *S
 	}
 }
 
-// Run sweeps at once and then every Interval until ctx is done. A failed sweep is
+// Run sweeps at once and then every retention.sweep_interval until ctx is done. A failed sweep is
 // logged and retried at the next tick.
 func (s *Sweeper) Run(ctx context.Context) {
 	ticker := time.NewTicker(s.cfg.Retention.SweepInterval)

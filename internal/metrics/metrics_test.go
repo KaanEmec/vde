@@ -113,6 +113,12 @@ func TestNilRecordsNothing(t *testing.T) {
 	m.SetJobsInProgress("billing", 1)
 	m.AddSwept(1)
 	m.AuthFailedAuditDropped()
+	m.WatchEndpoints("vde-1", func() []metrics.Endpoint { return nil })
+	rec := httptest.NewRecorder()
+	m.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("nil Handler: status %d, want 404", rec.Code)
+	}
 }
 
 func TestRegistriesAreIndependent(t *testing.T) {

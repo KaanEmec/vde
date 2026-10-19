@@ -841,6 +841,9 @@ func (s *server) serviceVersionFor(app job.Application, policy config.JudgePolic
 // refreshInProgress sets the application's vde_jobs_in_progress gauge from the store
 // (queued plus running), after a submission or a deletion.
 func (s *server) refreshInProgress(ctx context.Context, appID string) {
+	if s.deps.Metrics == nil {
+		return
+	}
 	if n, err := s.deps.Store.CountInProgress(ctx, appID); err == nil {
 		s.deps.Metrics.SetJobsInProgress(appID, n)
 	}

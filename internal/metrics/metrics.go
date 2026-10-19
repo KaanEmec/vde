@@ -97,9 +97,12 @@ func New(goRuntime bool) *Metrics {
 	return m
 }
 
-// Handler serves the Prometheus text format. It does no authentication; see
-// RequireToken and LoopbackOnly.
+// Handler serves the Prometheus text format, or 404 on a nil *Metrics. It does no
+// authentication; see RequireToken and LoopbackOnly.
 func (m *Metrics) Handler() http.Handler {
+	if m == nil {
+		return http.NotFoundHandler()
+	}
 	return promhttp.HandlerFor(m.reg, promhttp.HandlerOpts{})
 }
 
@@ -173,6 +176,9 @@ type Endpoint struct {
 // pairs down and heals on its own), so instance names the process: several replicas
 // behind one scrape address stay distinguishable. Call it once.
 func (m *Metrics) WatchEndpoints(instance string, states func() []Endpoint) {
+	if m == nil {
+		return
+	}
 	m.reg.MustRegister(endpointCollector{instance: instance, states: states})
 }
 

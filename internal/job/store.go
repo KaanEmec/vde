@@ -812,7 +812,7 @@ func (s *DB) DeleteJob(ctx context.Context, id string) error {
 // at debug and never fails the caller; the next checkpoint catches up.
 func (s *DB) checkpoint(ctx context.Context) {
 	if s.pg {
-		return // no WAL file to scrub; see DB
+		return // no WAL file to scrub; autovacuum reclaims deleted rows (DB doc)
 	}
 	var busy, frames, done int
 	err := s.queryRow(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &frames, &done)
