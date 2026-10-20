@@ -18,7 +18,7 @@ if it is not worse.
 | 06 | [Judge evidence quotes](06-judge-evidence-quotes.md) | prompt | in progress |
 | 07 | [Native structured outputs](07-native-structured-outputs.md) | prompt | in progress |
 | 08 | [Schema guide for callers](08-caller-schema-guide.md) | docs | planned |
-| 09 | [Multi-pass extraction (ADR 0012)](09-multi-pass-extraction.md) | architecture | planned |
+| 09 | [Multi-pass extraction (ADR 0013)](09-multi-pass-extraction.md) | architecture | planned |
 
 Jobs 01 to 07 are sequential: each one's comparison report is the next one's baseline, so
 one effect is measured at a time. 02, 03 and 04 touch disjoint files and could be built in
