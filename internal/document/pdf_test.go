@@ -192,8 +192,8 @@ func TestSelect_pdfPolicy(t *testing.T) {
 			if rep.Groundable != tt.wantGround {
 				t.Errorf("Groundable = %v, want %v", rep.Groundable, tt.wantGround)
 			}
-			if rep.Source == SourceRendered && len(rep.Parts) != len(tt.texts) {
-				t.Errorf("%d rendered parts for %d pages", len(rep.Parts), len(tt.texts))
+			if rep.Source == SourceRendered && len(mediaParts(rep)) != len(tt.texts) {
+				t.Errorf("%d rendered parts for %d pages", len(mediaParts(rep)), len(tt.texts))
 			}
 			again, err := Select(t.Context(), doc, ext, jdg, "", tt.images, stubPolicy(tt.mode, engine))
 			if err != nil || !reflect.DeepEqual(rep, again) {
@@ -215,7 +215,7 @@ func TestSelect_pdfTextParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "--- page 1 ---\nfirst page\n\f\n--- page 2 ---\nsecond page"; rep.Parts[0].Text != want {
+	if want := "type: pdf · pages: 2\n\n--- page 1 ---\nfirst page\n\f\n--- page 2 ---\nsecond page"; rep.Parts[0].Text != want {
 		t.Errorf("text part = %q, want %q", rep.Parts[0].Text, want)
 	}
 	if rep.Label() != "text+text_layer" {
@@ -400,7 +400,7 @@ func TestSelect_bookingPDF(t *testing.T) {
 				t.Errorf("GroundingText = %v, %d bytes; want groundable with the booking reference", ok, len(text))
 			}
 			if rep.Source == SourceRendered {
-				cfg, err := png.DecodeConfig(bytes.NewReader(rep.Parts[0].Image.Data))
+				cfg, err := png.DecodeConfig(bytes.NewReader(mediaParts(rep)[0].Image.Data))
 				if err != nil || cfg.Width != 1240 {
 					t.Errorf("rendered page: %v, width %d", err, cfg.Width)
 				}
@@ -428,7 +428,7 @@ func TestSelect_imageOnlyPDF(t *testing.T) {
 	if rep.Label() != "pages+rendered" || rep.Groundable {
 		t.Errorf("got %s, groundable %v; want pages+rendered, not groundable", rep.Label(), rep.Groundable)
 	}
-	img, err := png.Decode(bytes.NewReader(rep.Parts[0].Image.Data))
+	img, err := png.Decode(bytes.NewReader(mediaParts(rep)[0].Image.Data))
 	if err != nil {
 		t.Fatal(err)
 	}

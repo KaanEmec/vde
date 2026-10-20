@@ -41,6 +41,7 @@ type Attachment struct {
 type email struct {
 	header      string // one "Name: value" line per present header of emailHeaders
 	body        []byte // UTF-8
+	sent        string // the Date header as RFC 3339 with its offset, "" when absent or unparseable
 	html        bool
 	attachments []Attachment
 }
@@ -69,6 +70,7 @@ func parseEmail(data []byte) (*email, error) {
 		return nil, err
 	}
 	e := &email{header: headerBlock(msg.Header), attachments: w.attachments}
+	e.sent = sentTime(msg.Header.Date())
 	switch {
 	case w.html != nil:
 		e.body, e.html = w.html, true

@@ -52,6 +52,7 @@ func TestSelect(t *testing.T) {
 		wantKind   Kind
 		wantTypes  []string
 		wantText   string
+		wantLine   string // the context line before wantText
 		wantPolicy HTMLPolicy
 		wantErr    bool
 	}{
@@ -85,23 +86,23 @@ func TestSelect(t *testing.T) {
 			wantKind: Pages, wantTypes: []string{"image/png", "image/jpeg"}},
 		{name: "plain text", in: Input{MediaType: "text/plain", Data: []byte("hello")},
 			extractor: [][]string{textOnly}, judge: [][]string{textOnly},
-			wantKind: Text, wantTypes: []string{"text/plain"}, wantText: "hello"},
+			wantKind: Text, wantTypes: []string{"text/plain"}, wantText: "hello", wantLine: "type: text"},
 		{name: "markdown", in: Input{MediaType: "text/markdown", Data: []byte("# hi")},
 			extractor: [][]string{textOnly}, judge: [][]string{textOnly},
-			wantKind: Text, wantTypes: []string{"text/plain"}, wantText: "# hi"},
+			wantKind: Text, wantTypes: []string{"text/plain"}, wantText: "# hi", wantLine: "type: markdown"},
 		{name: "html raw default", in: Input{MediaType: "text/html", Data: html},
 			extractor: [][]string{textOnly}, judge: [][]string{textOnly},
-			wantKind: Text, wantTypes: []string{"text/plain"}, wantPolicy: RawHTML,
+			wantKind: Text, wantTypes: []string{"text/plain"}, wantPolicy: RawHTML, wantLine: "type: html",
 			wantText: `<html><head><style></style></head><body><p>Hi <a href="https://x.example">there</a></p></body></html>`},
 		{name: "html visible text", in: Input{MediaType: "text/html", Data: html}, policy: VisibleText,
 			extractor: [][]string{textOnly}, judge: [][]string{textOnly},
 			wantKind: Text, wantTypes: []string{"text/plain"}, wantPolicy: VisibleText,
-			wantText: "Hi there (https://x.example)"},
+			wantText: "Hi there (https://x.example)", wantLine: "type: html"},
 		{name: "html without text reader", in: Input{MediaType: "text/html", Data: html},
 			extractor: [][]string{htmlNoText}, judge: [][]string{textOnly}, wantErr: true},
 		{name: "email", in: Input{MediaType: "message/rfc822", Data: []byte("From: a@example.com\nSubject: Hi\n\nBody\n")},
 			extractor: [][]string{textOnly}, judge: [][]string{textOnly},
-			wantKind: Text, wantTypes: []string{"text/plain"}, wantText: "From: a@example.com\nSubject: Hi\n\nBody\n"},
+			wantKind: Text, wantTypes: []string{"text/plain"}, wantText: "From: a@example.com\nSubject: Hi\n\nBody\n", wantLine: "type: email"},
 		{name: "empty groups", in: Input{MediaType: "text/plain", Data: []byte("x")}, wantErr: true},
 	}
 	for _, tt := range tests {
@@ -126,29 +127,43 @@ func TestSelect(t *testing.T) {
 			}
 			switch r.Kind {
 			case Native:
-				blob := r.Parts[0].Document
+				media := mediaParts(r)
+				blob := media[0].Document
 				if doc.Category == CategoryImage {
-					blob = r.Parts[0].Image
+					blob = media[0].Image
 				}
-				if len(r.Parts) != 1 || blob == nil || !bytes.Equal(blob.Data, doc.Data) || blob.MediaType != tt.wantTypes[0] {
+				if len(media) != 1 || len(r.Parts) != 2 || blob == nil || !bytes.Equal(blob.Data, doc.Data) || blob.MediaType != tt.wantTypes[0] {
 					t.Errorf("native parts = %+v", r.Parts)
 				}
 			case Pages:
-				if len(r.Parts) != len(doc.Pages) {
-					t.Fatalf("got %d parts, want %d", len(r.Parts), len(doc.Pages))
+				media := mediaParts(r)
+				if len(media) != len(doc.Pages) || len(r.Parts) != 1+2*len(doc.Pages) {
+					t.Fatalf("got %d image parts of %d, want %d pages", len(media), len(r.Parts), len(doc.Pages))
 				}
-				for i, p := range r.Parts {
+				for i, p := range media {
 					if p.Image == nil || !bytes.Equal(p.Image.Data, doc.Pages[i].Data) {
 						t.Errorf("part %d is not page %d", i, i+1)
 					}
 				}
 			case Text:
-				if len(r.Parts) != 1 || r.Parts[0].Text != tt.wantText {
-					t.Errorf("text = %q, want %q", r.Parts[0].Text, tt.wantText)
+				if len(r.Parts) != 1 || r.Parts[0].Text != withContext(tt.wantLine, tt.wantText) {
+					t.Errorf("text = %q, want %q", r.Parts[0].Text, withContext(tt.wantLine, tt.wantText))
 				}
 			}
 		})
 	}
+}
+
+// mediaParts are r's image and document parts, without the context line and the page
+// markers the service adds.
+func mediaParts(r Representation) []provider.Part {
+	var out []provider.Part
+	for _, p := range r.Parts {
+		if p.Image != nil || p.Document != nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // recorder is a provider that records the parts of every request.

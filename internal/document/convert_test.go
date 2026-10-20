@@ -348,9 +348,9 @@ func TestSelectConvertsWebP(t *testing.T) {
 			if rep.Kind != Native || len(rep.MediaTypes) != 1 || rep.MediaTypes[0] != tt.wantType {
 				t.Fatalf("kind %v types %v, want native %s", rep.Kind, rep.MediaTypes, tt.wantType)
 			}
-			blob := rep.Parts[0].Image
+			blob := mediaParts(rep)[0].Image
 			if blob == nil || blob.MediaType != tt.wantType {
-				t.Fatalf("part = %+v", rep.Parts[0])
+				t.Fatalf("part = %+v", mediaParts(rep)[0])
 			}
 			if bytes.Equal(blob.Data, webp) != tt.wantNative {
 				t.Errorf("part is the original bytes = %v, want %v", !tt.wantNative, tt.wantNative)
@@ -379,22 +379,22 @@ func TestSelectImageDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.MediaTypes[0] != "image/jpeg" || rep.Parts[0].Image.MediaType != "image/jpeg" {
+	if rep.MediaTypes[0] != "image/jpeg" || mediaParts(rep)[0].Image.MediaType != "image/jpeg" {
 		t.Errorf("oversize PNG selected as %v", rep.MediaTypes)
 	}
-	if b := decode(t, Page{MediaType: "image/jpeg", Data: rep.Parts[0].Image.Data}).Bounds(); b.Dx() != 40 || b.Dy() != 20 {
+	if b := decode(t, Page{MediaType: "image/jpeg", Data: mediaParts(rep)[0].Image.Data}).Bounds(); b.Dx() != 40 || b.Dy() != 20 {
 		t.Errorf("size = %v, want 40x20", b.Size())
 	}
 
 	// The same bytes serve both roles: Parts is one slice, built once.
 	again, err := Select(t.Context(), doc, capsFor(t, vision), capsFor(t, vision), "", enabled(40), PDFPolicy{})
-	if err != nil || !bytes.Equal(again.Parts[0].Image.Data, rep.Parts[0].Image.Data) {
+	if err != nil || !bytes.Equal(mediaParts(again)[0].Image.Data, mediaParts(rep)[0].Image.Data) {
 		t.Error("conversion is not deterministic")
 	}
 
 	// A group that reads only PNG still gets the original oversize PNG, as before.
 	rep, err = Select(t.Context(), doc, capsFor(t, []string{"image/png"}), capsFor(t, []string{"image/png"}), "", enabled(40), PDFPolicy{})
-	if err != nil || rep.MediaTypes[0] != "image/png" || !bytes.Equal(rep.Parts[0].Image.Data, big) {
+	if err != nil || rep.MediaTypes[0] != "image/png" || !bytes.Equal(mediaParts(rep)[0].Image.Data, big) {
 		t.Errorf("PNG-only fallback = %v, %v", rep.MediaTypes, err)
 	}
 
@@ -405,7 +405,7 @@ func TestSelectImageDocuments(t *testing.T) {
 		t.Fatal(err)
 	}
 	rep, err = Select(t.Context(), doc, capsFor(t, vision), capsFor(t, vision), "", enabled(100), PDFPolicy{})
-	if err != nil || rep.MediaTypes[0] != "image/png" || !bytes.Equal(rep.Parts[0].Image.Data, small) {
+	if err != nil || rep.MediaTypes[0] != "image/png" || !bytes.Equal(mediaParts(rep)[0].Image.Data, small) {
 		t.Errorf("small PNG = %v, %v", rep.MediaTypes, err)
 	}
 	// Select (no image policy) is the old behaviour.
@@ -435,13 +435,13 @@ func TestSelectConvertsPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Kind != Pages || len(rep.Parts) != 2 {
+	if rep.Kind != Pages || len(mediaParts(rep)) != 2 {
 		t.Fatalf("kind %v, %d parts", rep.Kind, len(rep.Parts))
 	}
-	if rep.Parts[0].Image.MediaType != "image/jpeg" || bytes.Equal(rep.Parts[0].Image.Data, big) {
+	if mediaParts(rep)[0].Image.MediaType != "image/jpeg" || bytes.Equal(mediaParts(rep)[0].Image.Data, big) {
 		t.Error("page 1 was not converted")
 	}
-	if !bytes.Equal(rep.Parts[1].Image.Data, small) {
+	if !bytes.Equal(mediaParts(rep)[1].Image.Data, small) {
 		t.Error("page 2 was re-encoded")
 	}
 	if len(rep.MediaTypes) != 1 || rep.MediaTypes[0] != "image/jpeg" {
@@ -453,7 +453,7 @@ func TestSelectConvertsPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	rep, err = Select(t.Context(), pngPages, capsFor(t, pngOnly), capsFor(t, pngOnly), "", enabled(40), PDFPolicy{})
-	if err != nil || rep.Kind != Pages || rep.MediaTypes[0] != "image/png" || !bytes.Equal(rep.Parts[0].Image.Data, big) {
+	if err != nil || rep.Kind != Pages || rep.MediaTypes[0] != "image/png" || !bytes.Equal(mediaParts(rep)[0].Image.Data, big) {
 		t.Fatalf("PNG-only pages: %v %v, %v", rep.Kind, rep.MediaTypes, err)
 	}
 }

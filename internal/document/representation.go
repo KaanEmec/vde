@@ -262,19 +262,21 @@ func build(doc *Document, c candidate, policy HTMLPolicy) (Representation, error
 	r := Representation{Kind: c.kind, MediaTypes: c.mediaTypes, Source: SourceGiven}
 	switch c.kind {
 	case Native:
+		// No page count: a native document is not opened here.
+		r.Parts = []provider.Part{{Text: doc.contextLine(0)}}
 		if doc.Category == CategoryPDF {
-			r.Parts = []provider.Part{{Document: &provider.Blob{MediaType: doc.BaseType(), Data: doc.Data}}}
+			r.Parts = append(r.Parts, provider.Part{Document: &provider.Blob{MediaType: doc.BaseType(), Data: doc.Data}})
 		} else {
-			r.Parts = imageParts(c.images)
+			r.Parts = append(r.Parts, imageParts(c.images)...)
 		}
 	case Pages:
-		r.Parts = imageParts(c.images)
+		r.Parts = pageParts(doc.contextLine(len(c.images)), c.images)
 	case Text:
 		text, err := doc.Text(policy)
 		if err != nil {
 			return Representation{}, err
 		}
-		r.Parts = []provider.Part{{Text: text}}
+		r.Parts = []provider.Part{{Text: withContext(doc.contextLine(0), text)}}
 		if doc.hasHTML() {
 			r.HTMLPolicy = policy
 		}

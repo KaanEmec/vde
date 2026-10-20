@@ -79,8 +79,8 @@ func TestExtractPDFWithoutPages(t *testing.T) {
 			if tt.wantPart != "" && !strings.Contains(rep.Parts[0].Text, tt.wantPart) {
 				t.Errorf("text part lacks %q", tt.wantPart)
 			}
-			if tt.wantLabel == "pages+rendered" && (len(rep.Parts) != 1 || rep.Parts[0].Image == nil) {
-				t.Errorf("parts = %d, want one rendered page image", len(rep.Parts))
+			if tt.wantLabel == "pages+rendered" && (len(rep.Parts) != 3 || rep.Parts[2].Image == nil) {
+				t.Errorf("parts = %d, want the context line, a page marker and one rendered page image", len(rep.Parts))
 			}
 		})
 	}

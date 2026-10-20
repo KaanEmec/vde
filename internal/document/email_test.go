@@ -231,8 +231,10 @@ func TestEmailMatchesHTMLBody(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		header, body, ok := strings.Cut(fromEmail.Parts[0].Text, "\n\n")
-		if !ok || !strings.HasPrefix(header, "From: ") || body != fromHTML.Parts[0].Text {
+		_, mail, _ := strings.Cut(fromEmail.Parts[0].Text, "\n\n") // after the context line
+		header, body, ok := strings.Cut(mail, "\n\n")
+		_, htmlText, _ := strings.Cut(fromHTML.Parts[0].Text, "\n\n")
+		if !ok || !strings.HasPrefix(header, "From: ") || body != htmlText {
 			t.Errorf("%s: email body differs from the HTML document", policy)
 		}
 		if fromEmail.HTMLPolicy != policy || fromHTML.HTMLPolicy != policy {

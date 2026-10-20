@@ -1,6 +1,8 @@
 # Job: Context header and page markers
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 01
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 01
+
+Implementation done; comparison pending (orchestrator).
 
 ## Goal
 
@@ -24,16 +26,16 @@ date and is never used.
 
 ## Tasks
 
-- [ ] `internal/document`: build the context line per representation: type (email, HTML,
+- [x] `internal/document`: build the context line per representation: type (email, HTML,
       text, Markdown, PDF, image), `sent` for emails with a parseable Date header, `pages`
       for PDFs and page images.
-- [ ] Put the line first in the text representation. For `Pages` and `Native`, put a text
+- [x] Put the line first in the text representation. For `Pages` and `Native`, put a text
       part with the line before the first page.
-- [ ] For `Pages`, a text part `--- page N ---` before each page image.
-- [ ] Grounding: the context line and the page markers are not grounding text (check
+- [x] For `Pages`, a text part `--- page N ---` before each page image.
+- [x] Grounding: the context line and the page markers are not grounding text (check
       `GroundingText` and the email text path). A value that appears only in the context
       line must not be grounded.
-- [ ] The representation's policy string (hashed into `service_version`) names the
+- [x] The representation's policy string (hashed into `service_version`) names the
       change.
 - [ ] `docs/api/writing-instructions.md`: tell callers the line exists and what it holds.
 - [ ] Run the comparison, record it, keep or revert.

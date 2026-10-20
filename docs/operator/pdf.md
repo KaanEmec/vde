@@ -23,8 +23,14 @@ judge, in this order:
 | `pages` | Always rendered pages. |
 | `native` | Nothing is prepared (the v0.3 behaviour): without caller pages the job is refused with `415 unsupported_document`. |
 
-Text is sent as one part, each page under a `--- page N ---` marker, pages separated by a
-form feed. Rendered pages are PNG, drawn on white without interactive form fields, and
+Every document the models read opens with one context line built from what the service
+knows, for example `type: pdf · pages: 3` (an email adds `sent:`, its Date header as
+RFC 3339 with its own offset, when parseable; `pages` is left out when the service has not
+counted them, as for a PDF sent natively). It is never grounding text.
+
+Text is sent as one part after that line, each page under a `--- page N ---` marker, pages
+separated by a form feed. Rendered pages and the caller's pages are sent as image parts,
+each behind a text part `--- page N ---`. Rendered pages are PNG, drawn on white without interactive form fields, and
 then pass through `documents.images` like any page image (downscaled and converted to
 JPEG when larger than `max_dimension`). A PDF with more than `max_pages` pages (20), an
 encrypted PDF and an unreadable one are refused with `415 unsupported_document`, unless

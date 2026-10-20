@@ -142,7 +142,7 @@ func (l textLayer) modelText() string {
 		if i > 0 {
 			b.WriteString("\n\f\n")
 		}
-		fmt.Fprintf(&b, "--- page %d ---\n", i+1)
+		b.WriteString(pageMarker(i+1) + "\n")
 		b.WriteString(strings.TrimSpace(t))
 	}
 	return b.String()
@@ -196,7 +196,7 @@ func selectPDF(ctx context.Context, doc *Document, extractor, judge []config.Cap
 			if reads(extractor, c) && reads(judge, c) {
 				return Representation{
 					Kind: Text, Source: SourceTextLayer, MediaTypes: c.mediaTypes,
-					Parts:      []provider.Part{{Text: layer.modelText()}},
+					Parts:      []provider.Part{{Text: withContext(doc.contextLine(len(layer)), layer.modelText())}},
 					GroundText: ground, Groundable: groundable,
 				}, nil
 			}
@@ -222,7 +222,7 @@ func selectPDF(ctx context.Context, doc *Document, extractor, judge []config.Cap
 			if reads(extractor, c) && reads(judge, c) {
 				return Representation{
 					Kind: Pages, Source: SourceRendered, MediaTypes: c.mediaTypes,
-					Parts:      imageParts(c.images),
+					Parts:      pageParts(doc.contextLine(len(c.images)), c.images),
 					GroundText: ground, Groundable: groundable,
 				}, nil
 			}

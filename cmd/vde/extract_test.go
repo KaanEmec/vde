@@ -325,6 +325,13 @@ func compareVariant(t *testing.T, name string, want, got observedRun) {
 	}
 }
 
+// isPreparationLine reports whether p is a one-line text part the service added: the
+// context line before the document or a "--- page N ---" marker before a page image.
+func isPreparationLine(p provider.Part) bool {
+	return p.Document == nil && p.Image == nil && !strings.Contains(p.Text, "\n") &&
+		(strings.HasPrefix(p.Text, "type: ") || strings.HasPrefix(p.Text, "--- page "))
+}
+
 // checkDocumentParts checks the parts after the "Document:" separator of the first call.
 func checkDocumentParts(t *testing.T, sc scenario, c fake.Call, policy document.HTMLPolicy) {
 	t.Helper()
@@ -336,6 +343,8 @@ func checkDocumentParts(t *testing.T, sc scenario, c fake.Call, policy document.
 	var text string
 	for _, p := range c.Request.Parts[start+1:] {
 		switch {
+		case isPreparationLine(p):
+			continue // the context line or a page marker, not a document part
 		case p.Document != nil:
 			types = append(types, p.Document.MediaType)
 		case p.Image != nil:

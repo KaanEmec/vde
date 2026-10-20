@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kaanemec/vde/internal/config"
+	"github.com/kaanemec/vde/internal/document"
 	"github.com/kaanemec/vde/internal/ground"
 )
 
@@ -325,7 +326,11 @@ func TestServiceVersion_v04Fields(t *testing.T) {
 			if v.Grounding != ground.RulesVersion || (v.PDF != "") != tt.wantPDF {
 				t.Errorf("grounding %q, pdf %q; want %q, pdf hashed %v", v.Grounding, v.PDF, ground.RulesVersion, tt.wantPDF)
 			}
-			v.Grounding, v.PDF = "", ""
+			// Since v1.2 the document preparation version is hashed too (document.PreparationVersion).
+			if v.Preparation != document.PreparationVersion {
+				t.Errorf("preparation %q, want %q", v.Preparation, document.PreparationVersion)
+			}
+			v.Grounding, v.PDF, v.Preparation = "", "", ""
 			stripped, err := json.Marshal(v)
 			if err != nil {
 				t.Fatal(err)
