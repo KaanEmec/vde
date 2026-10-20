@@ -15,7 +15,9 @@ with the fake provider and the conformance suite; real-model evidence is one smo
 TravelInbox live test and a few evaluation runs through one OpenAI-compatible endpoint. The
 owner's comparison of the judge policies on real documents has not been run.
 
-v1.1 Lean is done (2026-10-20) except the `v1.1.0` release, which waits for the owner:
+v1.1 Lean is done and released as `v1.1.0` (2026-10-20, built and published locally with
+`make release`: GitHub release with four archives and `checksums.txt`, image
+`ghcr.io/kaanemec/vde:1.1.0`, also `1.1` and `latest`, linux/amd64 and arm64):
 the code, tests, testdata and docs are smaller with the `/v1` API and the 1.x
 configuration unchanged (every 1.0 configuration file loads, `TestOpenAPISupersetOfSnapshot`
 passes, conformance and the `make eval` numbers equal the 00-04 reference). Checks and
@@ -32,8 +34,8 @@ proposed), plus the former schema violations. Against the 00-04 baseline
 Go production lines 23,235 → 22,070 (−1,165; the criterion asked −1,800, not met), test
 lines 32,085 → 32,196 (+111; asked −1,000, not met), tracked files 1,189 → 679 (−510),
 direct dependencies 17 → 16, binary 36.1 → 36.0 MB, `deadcode` 24 → 7 (each with a
-recorded reason), longest function 254 → 89 lines, `make ci` 8.5 → 8.2 min. Every
-v1.1 commit (since `78b6486`, the last one on `origin`) is on the local `main` only.
+recorded reason), longest function 254 → 89 lines, `make ci` 8.5 → 8.2 min. `main`
+and the tag `v1.1.0` are pushed; `make live` passed before the release.
 
 ## Versions
 
@@ -44,7 +46,7 @@ v1.1 commit (since `78b6486`, the last one on `origin`) is on the local `main` o
 | [v0.3 Hardening and extensions](docs/roadmap/v0.3-history.md) | done 2026-10-17 | `v0.3.0` | Postgres and S3, Bedrock and Vertex, classifier judge, escalation, image conversion, webhooks and sync endpoint, `vde eval`, `serve --role` |
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-history.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
 | [v1.0 Stable](docs/roadmap/v1.0-history.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
-| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | done 2026-10-20 except the `v1.1.0` release (owner); 00-01 is the owner's, 07-02 and 09-03 dropped; not pushed | none | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
+| [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | done 2026-10-20; 00-01 is the owner's, 07-02 and 09-03 dropped | `v1.1.0` | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
 | [v1.2 Extraction quality](docs/roadmap/v1.2-extraction-quality/README.md) | planned 2026-10-19 (roadmap only) | none | One epic, nine jobs: prompt order and wording, context line and page markers, email section labels, HTML data tables, analysis blocks for extractor and judge, native structured outputs, caller schema guide, multi-pass extraction after ADR 0011; each measured against the previous report |
 
 ## What is verified, and how
@@ -102,9 +104,7 @@ v1.1 commit (since `78b6486`, the last one on `origin`) is on the local `main` o
 - Anthropic, OpenAI and Gemini direct keys: live runs went through the OpenAI-compatible
   adapter only; the others are covered by httptest (Anthropic and Gemini also have opt-in
   `live_test.go` files, with no recorded run).
-- `make release` for real: only its dry run has run, and without the multi-arch image
-  (buildx is not installed on the owner's machine); `v1.1.0` is its first use. Releases are
-  unsigned: signing, SBOMs and provenance are drafted on `wip/release-engineering` for the
+- Releases are unsigned: signing, SBOMs and provenance are drafted on `wip/release-engineering` for the
   GitHub workflow v1.1 removed, never run.
 - A load test: never run on the target VM; no capacity document (deferred).
 - An external security audit: the two v1.0 reviews were internal (a checklist pass and an
@@ -147,11 +147,8 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
 
 ## Recommended next steps (in order)
 
-1. v1.1 owner actions: push `main`, turn GitHub Actions off for the repository, run
-   `make hooks` once in this clone (`core.hooksPath` is not set), install the buildx
-   plugin, give `gh` `write:packages` (`gh auth refresh -s write:packages`) and log Docker
-   in to `ghcr.io`. Then ask for the `v1.1.0` release when wanted (`make live`, then
-   `make release VERSION=v1.1.0 DRY_RUN=1`, then without `DRY_RUN`; job 10-01).
+1. v1.1 owner actions left: turn GitHub Actions off for the repository (no workflow file
+   remains, so nothing runs meanwhile) and run `make hooks` once in this clone.
 2. Owner runs the policy comparison ([quality.md](docs/quality.md#judge-policy) commands) and
    records the rows; then decide v0.4 criteria 1 to 3 on real models.
 3. Annotate schemas with `x-vde-grounding` (owner suite first; TravelInbox's is their choice)

@@ -1,6 +1,6 @@
 # Job: Measure, review and release
 
-Version: v1.1 · Epic: 10 Closeout · Status: done except the release, which waits for the owner · Depends on: every other v1.1 job done or dropped
+Version: v1.1 · Epic: 10 Closeout · Status: done (v1.1.0 released 2026-10-20 at the owner's request) · Depends on: every other v1.1 job done or dropped
 
 ## Goal
 
@@ -29,7 +29,7 @@ Prove the exit criterion, review the whole diff once more, and prepare `v1.1.0`.
   - Prompt: "Write the CHANGELOG 1.1.0 entry (Removed, Deprecated, Fixed, Changed;
     numbers from the measurements), update STATUS.md, the roadmap README and this
     version's tables. Targeted edits."
-- [ ] Owner releases `v1.1.0` locally after `make live` (owner's endpoint): `make
+- [x] Owner releases `v1.1.0` locally after `make live` (owner's endpoint): `make
       release VERSION=v1.1.0 DRY_RUN=1`, then without `DRY_RUN` (00-03).
   - Skill: none.
   - Prompt: none.

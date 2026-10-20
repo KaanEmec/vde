@@ -1,6 +1,6 @@
 # v1.1 Lean
 
-Status: done 2026-10-20 except the `v1.1.0` release, which waits for the owner (00-01 is the owner's; 07-02 and 09-03 dropped) · Depends on: v1.0
+Status: done 2026-10-20, released as `v1.1.0` (00-01 is the owner's; 07-02 and 09-03 dropped) · Depends on: v1.0
 
 ## Goal
 
