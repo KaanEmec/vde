@@ -1,0 +1,209 @@
+{
+  "service_version": "vde-0.0.0-dev+f4214f03",
+  "extractor": [
+    "nous/anthropic/claude-haiku-5.5",
+    "nous/z-ai/glm-5.3-flash"
+  ],
+  "judge": [
+    "nous/z-ai/glm-5.3-flash"
+  ],
+  "target": "local",
+  "corpus": "testdata/user-docs/eval",
+  "cases": "owner-04-car-rental,owner-05-lodging,owner-06-car-rental,owner-07-car-rental,owner-08-lodging,owner-09-activity",
+  "judge_policy": "always",
+  "concurrency": 1,
+  "started_at": "2026-10-20T03:35:06.276725Z",
+  "finished_at": "2026-10-20T03:37:51.637337Z",
+  "summary": {
+    "cases": 6,
+    "accepted": 6,
+    "rejected": 0,
+    "failed": 0,
+    "extracted": 0,
+    "errors": 0,
+    "correct": 2,
+    "acceptance_rate": 1,
+    "false_accepts": 4,
+    "false_accepts_judge": 4,
+    "false_accepts_grounded": 0,
+    "false_accept_rate": 0.6666666666666666,
+    "false_rejects": 0,
+    "false_reject_rate": 0,
+    "field_accuracy": 0.9509803921568627,
+    "accepted_field_accuracy": 0.9509803921568627,
+    "extracted_field_accuracy": 0,
+    "verified_judge": 6,
+    "verified_grounded": 0,
+    "grounded_share": 0,
+    "judge_call_cases": 6,
+    "judge_calls": 6,
+    "sampled": 0,
+    "disagreements": 0,
+    "mean_attempts": 1.3333333333333333,
+    "duration_median_ms": 28531,
+    "duration_p95_ms": 31626,
+    "usage_cases": 6,
+    "calls": 14,
+    "input_tokens": 165356,
+    "output_tokens": 22172
+  },
+  "results": [
+    {
+      "id": "owner-04-car-rental",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 30156,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 13517,
+        "output_tokens": 3430
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 17,
+        "matched": 16,
+        "mismatches": [
+          "/reservations/0/provider"
+        ]
+      },
+      "field_accuracy": 0.9411764705882353,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    },
+    {
+      "id": "owner-05-lodging",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 26497,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 16780,
+        "output_tokens": 3057
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 17,
+        "matched": 16,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9411764705882353,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    },
+    {
+      "id": "owner-06-car-rental",
+      "status": "accepted",
+      "attempts": 2,
+      "duration_ms": 26906,
+      "usage": {
+        "calls": 3,
+        "input_tokens": 26057,
+        "output_tokens": 3616
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 17,
+        "matched": 17
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    },
+    {
+      "id": "owner-07-car-rental",
+      "status": "accepted",
+      "attempts": 2,
+      "duration_ms": 31626,
+      "usage": {
+        "calls": 3,
+        "input_tokens": 25449,
+        "output_tokens": 5561
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 17,
+        "matched": 15,
+        "mismatches": [
+          "/reservations/0/provider",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.8823529411764706,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    },
+    {
+      "id": "owner-08-lodging",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 18835,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 13723,
+        "output_tokens": 3160
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 16,
+        "matched": 16
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    },
+    {
+      "id": "owner-09-activity",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 31304,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 69830,
+        "output_tokens": 3348
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 18,
+        "matched": 17,
+        "mismatches": [
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9444444444444444,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    }
+  ]
+}

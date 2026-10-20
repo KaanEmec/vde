@@ -123,6 +123,36 @@ more attempts and tokens, so job 07 was reverted
 and 3% fewer output tokens. No large-schema or multi-item case is left failing, so job 09
 (multi-pass extraction) was dropped.
 
+### Wider check: ten more documents (2026-10-20)
+
+On the owner's request, ten documents outside the core set, each run once on `v1.1.0` and
+once on v1.2 (`main`, same models and settings as above): the other six owner cases and
+four TravelInbox cases chosen for coverage (a hotel PDF, a rail email with tables, a
+three-booking email, a ticket photo).
+
+| Documents | Build | Correct cases | False accepts | Failed | Field accuracy | Attempts (mean) | Tokens in / out | Report |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 6 owner (04 to 09) | `v1.1.0` | 2 of 6 | 3 | 1 | 95.1% | 1.33 | 129551 / 17118 | [JSON](quality/vde-0.0.0-dev+d9f9cfb4-2026-10-20-wider-owner.json) |
+| 6 owner (04 to 09) | v1.2 (`main`) | 2 of 6 | 4 | 0 | 95.1% | 1.33 | 165356 / 22172 | [JSON](quality/vde-0.0.0-dev+f4214f03-2026-10-20-wider-owner.json) |
+| 4 TravelInbox (030, 041, 048, 049) | `v1.1.0` | 0 of 4 | 4 | 0 | 69.5% | 1.00 | 69146 / 20302 | [JSON](quality/vde-0.0.0-dev+d9f9cfb4-2026-10-20-wider-ti.json) |
+| 4 TravelInbox (030, 041, 048, 049) | v1.2 (`main`) | 0 of 4 | 4 | 0 | 86.6% | 1.00 | 72114 / 24048 | [JSON](quality/vde-0.0.0-dev+f4214f03-2026-10-20-wider-ti.json) |
+
+Reading:
+
+- The gain is the multi-item case: on the three-booking email v1.1.0 got the first booking
+  only (40 of 82 fields), v1.2 all three (71 of 82). The other TravelInbox cases moved by
+  one field each, either way.
+- The owner job that failed on `v1.1.0` (`owner-09-activity`) completes on v1.2, with one
+  field wrong; that is the extra false accept.
+- No case got more correct or less correct otherwise. What is left wrong is almost all
+  the same few pointers: `/reservations/*/provider`, `/reservations/*/travellers`,
+  `start_place/name` and `end_place/name`, and `/trip_hint/ends_on`. These are the top
+  misses of the TravelInbox run of 2026-10-16 too: canonical names and derived values,
+  which the judge (`z-ai/glm-5.3-flash`) accepts. They are a judge and convention problem
+  that v1.2's changes did not target.
+- Cost: about 20% more tokens on these ten (analysis blocks and the run that no longer
+  fails).
+
 ## Judge policy
 
 Not run yet: the owner runs this comparison.

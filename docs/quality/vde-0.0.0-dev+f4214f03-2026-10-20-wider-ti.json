@@ -1,0 +1,178 @@
+{
+  "service_version": "vde-0.0.0-dev+f4214f03",
+  "extractor": [
+    "nous/anthropic/claude-haiku-5.5",
+    "nous/z-ai/glm-5.3-flash"
+  ],
+  "judge": [
+    "nous/z-ai/glm-5.3-flash"
+  ],
+  "target": "local",
+  "corpus": "testdata/eval",
+  "cases": "travelinbox-041-rail,travelinbox-048-multi-booking,travelinbox-030-hotel,travelinbox-049-ticket-photo",
+  "judge_policy": "always",
+  "concurrency": 1,
+  "started_at": "2026-10-20T03:37:51.68179Z",
+  "finished_at": "2026-10-20T03:41:08.040486Z",
+  "summary": {
+    "cases": 4,
+    "accepted": 4,
+    "rejected": 0,
+    "failed": 0,
+    "extracted": 0,
+    "errors": 0,
+    "correct": 0,
+    "acceptance_rate": 1,
+    "false_accepts": 4,
+    "false_accepts_judge": 4,
+    "false_accepts_grounded": 0,
+    "false_accept_rate": 1,
+    "false_rejects": 0,
+    "false_reject_rate": 0,
+    "field_accuracy": 0.8658536585365854,
+    "accepted_field_accuracy": 0.8658536585365854,
+    "extracted_field_accuracy": 0,
+    "verified_judge": 4,
+    "verified_grounded": 0,
+    "grounded_share": 0,
+    "judge_call_cases": 4,
+    "judge_calls": 4,
+    "sampled": 0,
+    "disagreements": 0,
+    "mean_attempts": 1,
+    "duration_median_ms": 46038,
+    "duration_p95_ms": 71797,
+    "usage_cases": 4,
+    "calls": 8,
+    "input_tokens": 72114,
+    "output_tokens": 24048
+  },
+  "results": [
+    {
+      "id": "travelinbox-030-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 33408,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 17161,
+        "output_tokens": 4942
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 27,
+        "matched": 24,
+        "mismatches": [
+          "/reservations/0/details/address",
+          "/reservations/0/provider",
+          "/reservations/0/start_place/address"
+        ]
+      },
+      "field_accuracy": 0.8888888888888888,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    },
+    {
+      "id": "travelinbox-041-rail",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 32476,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 17464,
+        "output_tokens": 4244
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 29,
+        "matched": 25,
+        "mismatches": [
+          "/reservations/0/details/coach",
+          "/reservations/0/details/seat",
+          "/reservations/0/provider",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.8620689655172413,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    },
+    {
+      "id": "travelinbox-048-multi-booking",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 71797,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 18427,
+        "output_tokens": 10215
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 82,
+        "matched": 71,
+        "mismatches": [
+          "/reservations/0/details/number",
+          "/reservations/0/details/terminal",
+          "/reservations/0/end_place/name",
+          "/reservations/0/provider",
+          "/reservations/0/start_place/name",
+          "/reservations/1/details/number",
+          "/reservations/1/details/terminal",
+          "/reservations/1/end_place/name",
+          "/reservations/1/provider",
+          "/reservations/1/start_place/name",
+          "/reservations/2/provider"
+        ]
+      },
+      "field_accuracy": 0.8658536585365854,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    },
+    {
+      "id": "travelinbox-049-ticket-photo",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 58669,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 19062,
+        "output_tokens": 4647
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 26,
+        "matched": 22,
+        "mismatches": [
+          "/reservations/0/end_place/name",
+          "/reservations/0/provider",
+          "/reservations/0/start_place/name",
+          "/trip_hint/ends_on"
+        ]
+      },
+      "field_accuracy": 0.8461538461538461,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+f4214f03"
+    }
+  ]
+}
