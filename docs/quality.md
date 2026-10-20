@@ -144,7 +144,7 @@ Reading:
   one field each, either way.
 - The owner job that failed on `v1.1.0` (`owner-09-activity`) completes on v1.2, with one
   field wrong; that is the extra false accept.
-- No case got more correct or less correct otherwise. What is left wrong is almost all
+- No other case changed from correct to wrong or back. What is left wrong is almost all
   the same few pointers: `/reservations/*/provider`, `/reservations/*/travellers`,
   `start_place/name` and `end_place/name`, and `/trip_hint/ends_on`. These are the top
   misses of the TravelInbox run of 2026-10-16 too: canonical names and derived values,
