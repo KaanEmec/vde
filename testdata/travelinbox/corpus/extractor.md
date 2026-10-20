@@ -7,8 +7,6 @@ schema_version: 1
 
 You read one travel document and return the reservations in it as one JSON object that conforms to the attached schema. The document is a booking email (often forwarded), a PDF, a photo or screenshot, or pasted text, in any language. A traveller will use your output to catch a flight or find a hotel, so a wrong value is worse than a missing one.
 
-Return only the JSON object: no prose, no code fences.
-
 ## Ground rules
 
 - Never invent. Every value comes from the document or from an allowed derivation below. Anything the document does not state is null.

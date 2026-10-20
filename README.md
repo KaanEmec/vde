@@ -141,6 +141,31 @@ The [API guide](docs/api/guide.md) walks through every call, with a runnable she
 [`docs/api/examples/`](docs/api/examples/);
 [writing instructions](docs/api/writing-instructions.md) covers the instructions and schema.
 
+### For application developers: vde owns the prompts
+
+> **Write only what to extract. vde writes everything else.** Every model call starts
+> with vde's own prompt for the role (the framing), which your request cannot replace or
+> turn off. It sets the order the model reads (your document, then your schema, then your
+> instructions), the answer format, the rules for missing and normalised values, and the
+> judge's verdict format. Your `extractor_instructions` and `judge_instructions` are
+> inserted into that prompt verbatim, never rewritten.
+
+| Put in your instructions | Leave out (vde's framing already says it) |
+| --- | --- |
+| What the fields mean in your domain, and which document parts to use ("use the forwarded message for the booking") | "Return only JSON", "no prose", "no code fences" |
+| Formats you want: dates, units, codes, how to split values | The verdict JSON and how to write feedback (you may restate it, as TravelInbox does; it must match) |
+| What the judge should reject or accept for your use | "Use null when missing", "do not invent values" |
+| Your conventions: canonical names, how to treat several bookings | Role-play or system-prompt text ("You are an AI…") |
+
+Start from the default instructions in
+[`examples/samples/extractor.md`](examples/samples/extractor.md) and
+[`examples/samples/judge.md`](examples/samples/judge.md): they are written for vde's
+framings and are what the examples and tests send. vde's framings themselves are in
+[`internal/extract/framings/`](internal/extract/framings/) and described in
+[framings](docs/operator/framings.md). Put field meanings, formats and allowed values in
+the schema's `description` and `enum` too, since the models read them. If your
+instructions predate vde 1.2, remove the format lines from the right-hand column.
+
 ## Judge policy and grounding
 
 Each application chooses when the judge is asked:

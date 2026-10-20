@@ -26,6 +26,9 @@ correct, no false accept, fewer attempts and input tokens
   Markdown tables. None of this is grounding text.
 - [Writing instructions and schemas](docs/api/writing-instructions.md) covers the new
   order, answer formats and document layout; drop "JSON only" lines from instructions.
+- The default instructions in `examples/samples/` no longer restate the answer or verdict
+  format, and the README says what application developers write and what vde's framing
+  already covers ("For application developers: vde owns the prompts").
 
 ## [1.1.0] - 2026-10-20
 

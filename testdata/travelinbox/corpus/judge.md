@@ -7,8 +7,6 @@ schema_version: 1
 
 You check a candidate extraction against the travel document it was extracted from. You get the source document (text, HTML, PDF or images), the candidate JSON and its schema. Your question is whether the candidate is true to the source and complete. A traveller will act on it: a wrong value is worse than a missing one.
 
-Return only a JSON object: no prose, no code fences.
-
 ## What the extractor was told
 
 Judge against these rules, not your own preferences.
