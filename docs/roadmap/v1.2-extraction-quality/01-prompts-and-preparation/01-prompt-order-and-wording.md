@@ -38,6 +38,14 @@ in the document, so the model has to choose between two rules, and runs differ.
       expected; inventing a value the document does not give is not.
 - [ ] `judge.md`: the same distinction, so a correctly normalised value is not rejected as
       "not what the document says".
+- [ ] Contract deviation (owner decision 2026-10-20: the new order and jobs 05 and 06's
+      answer blocks become the default; TravelInbox is asked to amend the contract):
+      ADR 0011 records the deviation from contract §6 steps 2 and 5 (order, "no prose")
+      and §7 (the verdict as the judge's whole answer), amending ADR 0005 for these
+      points; `docs/conformance/travelinbox-v1.md` marks rows 6.3, 6.6 and 7.x as
+      "deviation, amendment proposed"; `docs/conformance/contract-amendment-v1.2.md` is the
+      proposal the owner sends to TravelInbox (the agent does not send it); conformance
+      tests that pin the old order are updated to the new one.
 - [ ] Update `docs/api/writing-instructions.md`, "How the prompts are assembled".
 - [ ] Run the comparison, record it in `docs/quality/`, keep or revert.
 

@@ -1,6 +1,6 @@
-# Job: Multi-pass extraction (ADR 0011)
+# Job: Multi-pass extraction (ADR 0012)
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 07, and the owner's go-ahead on ADR 0011
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 07, and the owner's go-ahead on ADR 0012
 
 ## Goal
 
@@ -14,7 +14,7 @@ a whole.
 ExtractBench finds frontier models unreliable on schemas with hundreds of fields: long,
 precisely structured outputs break first. Multi-pass changes the loop's shape (more
 extractor calls per attempt, a merge step, the attempt and cost bounds of ADR 0009), so it
-is an architectural decision and needs ADR 0011 before code.
+is an architectural decision and needs ADR 0012 before code.
 
 Start only if jobs 01 to 07 leave a measurable gap on large-schema or multi-item cases;
 otherwise mark this job `dropped` with the numbers.
@@ -23,7 +23,7 @@ otherwise mark this job `dropped` with the numbers.
 
 - [ ] From the reports of jobs 01 to 07, list the cases that still fail and whether they
       are large-schema or multi-item cases. Stop here (job `dropped`) if they are not.
-- [ ] ADR 0011: when to split (schema size, top-level arrays), how (by top-level property
+- [ ] ADR 0012: when to split (schema size, top-level arrays), how (by top-level property
       groups, by array item after a first pass that lists the items), the merge rules,
       how the judge sees the result, how attempts, deadlines and cost stay bounded, and
       what `service_version` hashes.
@@ -35,7 +35,7 @@ otherwise mark this job `dropped` with the numbers.
 
 ## Acceptance criteria
 
-- Either the job is `dropped` with the numbers that show no gap, or ADR 0011 is accepted
+- Either the job is `dropped` with the numbers that show no gap, or ADR 0012 is accepted
   and the implementation passes its scenarios with the comparison recorded.
 - Under the default setting, requests and results are unchanged.
 
