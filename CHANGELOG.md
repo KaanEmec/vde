@@ -6,6 +6,8 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-20
+
 A smaller service with the same `/v1` API and the same 1.x configuration (v1.1 Lean):
 Go production lines 23,235 → 22,070, tracked files 1,189 → 679, direct dependencies
 17 → 16, linux/amd64 binary 36.1 → 36.0 MB. Every 1.0 configuration file still loads.
