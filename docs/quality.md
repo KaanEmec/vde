@@ -153,6 +153,86 @@ Reading:
 - Cost: about 20% more tokens on these ten (analysis blocks and the run that no longer
   fails).
 
+### Why the same fields keep failing (2026-10-20)
+
+Diagnosis of `/reservations/*/provider`, `/reservations/*/travellers`, `start_place/name`,
+`end_place/name` and `/trip_hint/ends_on`. Method: the mismatch pointers of the five
+TravelInbox reports (the three 50-case runs of 2026-10-16, the two wider runs above) and of
+the owner reports, read against each case's ground truth, the corpus labelling conventions
+(`testdata/travelinbox/corpus/README.md`, the owner suite's README), both corpora's
+`extractor.md`, `judge.md` and `compare.yaml`; values were looked at locally only. One
+real-model check of four named cases (`travelinbox-030-hotel`, `-041-rail`,
+`-049-ticket-photo`, `owner-07-car-rental`; `vde extract`, v1.2, same models,
+`--judge always`) showed the candidates; all four were accepted on the judge's word.
+
+The five pointers account for 249 field mismatches in the five TravelInbox reports:
+
+| Category | Pointer | Mismatches (TravelInbox) | Owner suite | Kind | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| A. `ends_on` null for one-way documents | `/trip_hint/ends_on` | 68 of 70 | - | Convention the instructions contradict | The corpus README: a document holding only one-way journeys has `ends_on: null`. `extractor.md`: "the latest start or end date of any reservation"; `judge.md`: the dates "span the earliest to the latest". All 23 one-way cases miss it in at least one run. Check: 2 of 2 |
+| B. Place `name` null when only a city and a code are printed | `*_place/name` | 54 of 83 | - | Convention the instructions contradict | README: null in that case. Both instruction files allow "the airport's name from a printed IATA code" as a derivation. 11 of the 12 place-name misses of the two wider runs. Check: 2 of 2 |
+| C. Place `name` printed in another form | `*_place/name` | 29 of 83 | - | Convention not stated | README: "as printed without codes"; the instructions say "as printed". 15 of the 22 printed names in these cases stand next to a code in the document. No candidate in the check |
+| D. Provider: platform vs operator | `/reservations/*/provider` | 26 of 54 (7 cases) | - | Convention the instructions contradict | README: the agency or platform when booked through one, with the operator's reference as `booking_ref`. Both instruction files: the operator's reference goes with the operator as provider. The truth breaks the instructions' own pairing ("`booking_ref` is the reference the traveller quotes to `provider`") |
+| E. Provider: which printed name | `/reservations/*/provider` | 28 of 54 | 3 (`owner-04` twice, `owner-07`) | Convention not stated; one compare rule | The truth holds the short brand; documents print several (brand, legal entity in the imprint, loyalty programme, property, local script). TravelInbox `extractor.md` says only "copy as printed". Check: one legal-entity name, one longer printed form, one case-only difference, which TravelInbox `compare.yaml` fails because `provider` has no rule (exact); the owner suite compares it normalized. One truth value is a translation the instructions forbid |
+| F. Traveller typed from a party count | `/reservations/*/travellers` | 33 of 42 | 2 (`owner-05`, `owner-09`), opposite convention | Convention not stated | TravelInbox README: "a party count such as '2 adults' does not type a named person"; `extractor.md` lists "adult" among the stated types, so a count reads as a statement. In the check the judge's accept feedback on both TravelInbox cases pointed at the party count as a possible type. The owner README says the reverse (a label for the whole party types the person; also the buyer is the traveller when no one else is named); the owner `extractor.md` says neither |
+| G. Real extraction error | `/reservations/0/travellers` | - | `owner-07` (both builds and the check) | Extractor error, judge accepts | The only name in the document is the mailbox owner in a print header plus a given name in a greeting; the instructions exclude both. The judge finds the name in the document and accepts |
+| Not classified | `ends_on`, `travellers` | 2 + 9 | `owner-10` (comes and goes, see above) | Unknown | 2026-10-16 runs (other extractor); no candidates kept |
+
+**Reading.** 238 of the 249 TravelInbox mismatches (A to F) are labelling conventions
+that the instructions either contradict (A, B, D: 148) or never state (C, E, F). In A, B
+and D the candidate follows a rule that `judge.md` restates, so accepting it is the judge
+doing its job: no judge model or framing change can fix them, and they count as false
+accepts only because the ground truth follows the README rather than the instructions.
+Only one compare rule is too strict (E, letter case of `provider`); loosening anything else
+would hide real differences. Real errors are rare: G, plus at most the 11 unclassified.
+The judge gap behind G is generic: the judge framing asks whether a value is in the
+document, not whether it comes from the place the instructions select.
+
+**Proposed fixes** (none applied; framings, code and TravelInbox-owned files need the
+owner's go-ahead, and TravelInbox's instructions, schema and corpus change upstream first,
+then are re-imported):
+
+1. A and B, TravelInbox `extractor.md` and `judge.md`: in trip_hint, "A document holding
+   only one-way journeys has `ends_on: null`"; in places, "`name` as printed without codes;
+   null when only a city and a code are printed", and drop "the airport's name from a
+   printed IATA code" from the allowed derivations in both files. Expected: the 8 `ends_on`
+   and place-name misses of the three wider cases `041`, `048`, `049` go away;
+   `travelinbox-049` likely becomes correct with fix 2.
+2. E, `testdata/travelinbox/corpus/compare.yaml` (written for this repository):
+   `{pointer: /reservations/*/provider, mode: normalized}`, as in the owner suite and as
+   for the other copied names. Expected: case-only provider misses go away (1 of 4 cases in
+   the check); nothing real is hidden.
+3. D, a TravelInbox decision: either relabel the 7 platform cases (operator as provider,
+   platform and its reference in `notes`), which keeps the instructions' pairing, or state
+   the platform rule in both instruction files. Recommended: relabel. Expected: up to 26
+   provider misses on the full corpus, 3 of the 6 in the v1.2 wider run.
+4. C, E and F, TravelInbox wording, plus schema descriptions (the schema has none for these
+   fields): `provider`, "the brand the traveller knows the company by, in its shortest
+   printed form, without legal form, loyalty programme or property name"; `travellers[].type`,
+   "only when printed for that person; a party count does not type a named person";
+   `*_place.name`, "as printed, without codes; null when only a city and a code are
+   printed"; `trip_hint.ends_on`, "null when the document holds only one-way journeys".
+   Descriptions reach every caller's model with the schema. Expected: most of the 62
+   C and F misses and part of the 28 E misses, extractor-dependent.
+5. F, owner suite (`_shared/extractor.md` and `judge.md`, local): state what its README
+   already says (a whole-party label types the named person; the buyer or contact is the
+   traveller when no one else is named; the platform by the name in its sender or header).
+   Expected: `owner-05` and `owner-09` travellers, `owner-04` provider.
+6. G, vde judge framing (`internal/extract/framings/judge.md`): under accuracy, "when the
+   instructions say which of several printed values a field takes (a role, a precedence,
+   a form), the value must be the one the rule selects; the same text printed elsewhere
+   in another role (a header, a greeting, a seller, an imprint) is wrong". Expected:
+   `owner-07` rejected and repaired; risk of more attempts, to be measured on
+   `owner-07`, `owner-04`, `travelinbox-030` and `-041`.
+
+**Try first: fixes 1 and 2.** They cover 122 of the 249 TravelInbox mismatches (8 of the
+14 on these pointers in the v1.2 wider run), each is one or two sentences or one rule with
+a predictable effect because the extractor already follows the instruction it is given,
+and they need one run of three cases (`travelinbox-041-rail`, `-048-multi-booking`,
+`-049-ticket-photo`) to confirm. Fix 3 waits on TravelInbox's choice; fix 6 is the only
+change to vde itself and should be measured after the conventions are aligned, so that
+its effect is not hidden by them.
+
 ## Judge policy
 
 Not run yet: the owner runs this comparison.
