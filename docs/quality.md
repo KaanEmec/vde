@@ -188,9 +188,11 @@ would hide real differences. Real errors are rare: G, plus at most the 11 unclas
 The judge gap behind G is generic: the judge framing asks whether a value is in the
 document, not whether it comes from the place the instructions select.
 
-**Proposed fixes** (none applied; framings, code and TravelInbox-owned files need the
-owner's go-ahead, and TravelInbox's instructions, schema and corpus change upstream first,
-then are re-imported):
+**Fixes.** 1, 2 and the wording of 4 are applied (owner's go-ahead, 2026-10-20) to this
+repository's copies of the TravelInbox instructions and to its `compare.yaml`; TravelInbox's
+own files and schema still need them
+([suggestions](conformance/travelinbox-schema-suggestions.md#instructions-against-the-corpus-labels-2026-10-20)).
+3, 5 and 6 are open:
 
 1. A and B, TravelInbox `extractor.md` and `judge.md`: in trip_hint, "A document holding
    only one-way journeys has `ends_on: null`"; in places, "`name` as printed without codes;
@@ -225,13 +227,28 @@ then are re-imported):
    `owner-07` rejected and repaired; risk of more attempts, to be measured on
    `owner-07`, `owner-04`, `travelinbox-030` and `-041`.
 
-**Try first: fixes 1 and 2.** They cover 122 of the 249 TravelInbox mismatches (8 of the
-14 on these pointers in the v1.2 wider run), each is one or two sentences or one rule with
-a predictable effect because the extractor already follows the instruction it is given,
-and they need one run of three cases (`travelinbox-041-rail`, `-048-multi-booking`,
-`-049-ticket-photo`) to confirm. Fix 3 waits on TravelInbox's choice; fix 6 is the only
-change to vde itself and should be measured after the conventions are aligned, so that
-its effect is not hidden by them.
+**Measured** (one run, `travelinbox-041-rail`, `-048-multi-booking`, `-049-ticket-photo`,
+same models, `--judge always`, compared with the v1.2 wider run on the same cases;
+[JSON](quality/vde-0.0.0-dev+f4214f03-2026-10-20-conventions.json); the `service_version`
+is unchanged because instructions are the caller's):
+
+| Pointer | Before | After |
+| --- | --- | --- |
+| `/trip_hint/ends_on` | 2 | 0 |
+| `start_place/name`, `end_place/name` | 6 | 2 |
+| `/reservations/*/provider` | 6 | 5 |
+| `/reservations/*/travellers` | 0 | 2 |
+| all compared fields | 19 misses, field accuracy 86.1% | 14 misses, 89.8% |
+
+Every case was still accepted with at least one miss (3 false accepts). The two place-name
+misses left are on the ferry ticket, where only a port city is printed, without a code:
+the label is null there too, so the rule reads better as "null when only a city is
+printed, with or without a code" (not yet changed). Provider: the case-only miss is gone;
+the rest are the platform cases (fix 3) and a legal-entity name. The two traveller misses
+are new, one on the ticket photo (whose label types each passenger) and one on the hotel of
+the three-booking email; one run cannot tell the
+party-count sentence from noise, so the next run of these three cases should look at it
+first. Next: fix 3 (TravelInbox's choice), then fix 6, measured once the conventions agree.
 
 ## Judge policy
 

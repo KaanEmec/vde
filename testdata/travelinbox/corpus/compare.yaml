@@ -1,12 +1,14 @@
 # compare.yaml of every case of the TravelInbox corpus, after its labelling conventions:
 # title and notes are free text, confidence is the extractor's own estimate, texts copied
-# "as printed" are compared normalized, the price amount is a decimal string, travellers
-# are a set. Every value of truth.json not listed here is compared exactly.
+# "as printed" (the provider among them) are compared normalized, the price amount is a
+# decimal string, travellers are a set. Every value of truth.json not listed here is
+# compared exactly.
 default: exact
 rules:
   - {pointer: /notes, mode: ignore}                       # free text
   - {pointer: /reservations/*/title, mode: ignore}        # free text
   - {pointer: /reservations/*/confidence, mode: ignore}   # the extractor's estimate
+  - {pointer: /reservations/*/provider, mode: normalized}
   - {pointer: /reservations/*/cancellation, mode: normalized}
   - {pointer: /reservations/*/travellers, mode: set, elements: normalized}
   - {pointer: /reservations/*/price/amount, mode: numeric, tolerance: 0.005}

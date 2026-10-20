@@ -14,7 +14,7 @@ Return only the JSON object: no prose, no code fences.
 - Never invent. Every value comes from the document or from an allowed derivation below. Anything the document does not state is null.
 - Never pick between conflicting values. Set the field to null and describe the conflict in `notes`.
 - Copy as printed: `booking_ref`, flight and train numbers, seats, names of properties, stations, venues and companies, addresses, phone numbers, room, vehicle, pickup and drop-off instructions, cancellation terms. Keep spelling, case, spaces and separators. Do not translate them.
-- Allowed derivations: the IATA code of an airport the document names, and the airport's name from a printed IATA code; the city and country of a named airport, station or address; the English name of a city (`Lisboa` becomes `Lisbon`); an ISO 4217 code from a currency symbol when the document leaves no doubt which currency it is; a missing year (see Dates and times).
+- Allowed derivations: the IATA code of an airport the document names (never the airport's name from a printed code); the city and country of a named airport, station or address; the English name of a city (`Lisboa` becomes `Lisbon`); an ISO 4217 code from a currency symbol when the document leaves no doubt which currency it is; a missing year (see Dates and times).
 - Never output passport or ID numbers, card numbers, PINs, passwords or security codes, in any field, `notes` included.
 - In a forwarded email, the forwarding wrapper (forward headers, the forwarder's name and address, the forward date) is not booking data.
 
@@ -40,8 +40,8 @@ A reservation is one thing booked for the traveller that happens at a set time a
 ## Fields
 
 - `title`: a short English label you compose; the only field you write rather than copy. Transport: `<from city> to <to city>`, plus ` via <city>` for connections. Lodging: the property name. Car rental: `Car rental in <pickup city>`. Dining: `Dinner at <restaurant>` (or Breakfast, Lunch) when the document or the booked time makes the meal plain, else `Table at <restaurant>`. Events, activities, insurance: their name as printed.
-- `provider` and `booking_ref` belong together: `booking_ref` is the reference the traveller quotes to `provider`. When both an operator reference (airline record locator, hotel or rental confirmation number) and an agency or platform reference are printed, use the operator's and name the operator as provider; mention the other reference in `notes`. With only a platform reference, the platform is the provider.
-- `travellers`: each person the booking is for, named in the document, in document order. Write names as given name then family name: reorder `FAMILY/GIVEN`, drop titles (MR, MRS, MS, DR), and turn all-caps words into capitalised words; otherwise keep the spelling. `type` only when the document states it (ADT, CHD, INF, adult, child, an age); otherwise null. Do not add unnamed people: a headcount goes in `details.guests` or `details.party_size`.
+- `provider` and `booking_ref` belong together: `booking_ref` is the reference the traveller quotes to `provider`. When both an operator reference (airline record locator, hotel or rental confirmation number) and an agency or platform reference are printed, use the operator's and name the operator as provider; mention the other reference in `notes`. With only a platform reference, the platform is the provider. Name the provider by its short brand name as printed: the airline, rail or ferry operator, the hotel chain when booked direct (not the single property), an independent property by its own name, the rental company; without legal form (GmbH, AG, Ltd, SA), loyalty programme or web address.
+- `travellers`: each person the booking is for, named in the document, in document order. Write names as given name then family name: reorder `FAMILY/GIVEN`, drop titles (MR, MRS, MS, DR), and turn all-caps words into capitalised words; otherwise keep the spelling. `type` only when the document states it for that person (ADT, CHD, INF, adult, child, an age); otherwise null. A party count such as `2 adults` does not type a named person. Do not add unnamed people: a headcount goes in `details.guests` or `details.party_size`.
 - `price`: the total paid for this reservation as printed, for all travellers. `amount` uses digits and a dot as the decimal separator, no thousands separators (`1.234,50 €` becomes `1234.50`); keep the decimals printed, without adding or rounding. Null when only a per-night or per-person price is printed, when paid in points, or when one total covers several reservations; say which in `notes`.
 - `cancellation`: the cancellation and change terms as written, trimmed to the policy sentences.
 
@@ -50,7 +50,7 @@ A reservation is one thing booked for the traveller that happens at a set time a
 - `start_place`: where the reservation starts: departure airport, station or port; the property; the restaurant; the venue or meeting point; the pickup location.
 - `end_place`: arrival airport, station or port; drop-off location. Null when the reservation ends where it starts (a stay, a meal, an event, a rental returned where it was picked up).
 - Direction comes from the document: start is the origin, end the destination. Check this for every leg.
-- `name` and `address` as printed; `iata` only for airports; `city` in English; `country` as ISO 3166-1 alpha-2.
+- `name` as printed without codes (an airport, station, port, property, restaurant, venue or rental branch); null when the document gives only a city and a code. `address` as printed; `iata` only for airports; `city` in English; `country` as ISO 3166-1 alpha-2.
 
 ## Dates and times
 
@@ -88,7 +88,7 @@ Where and when the trip this document belongs to takes place, judged from this d
 
 - `destination`: the English name of the trip's main city: where the outbound transport arrives (the far end of a round trip); for a document without transport, the city of the stay, meal, event or activity; for a car rental, the pickup city.
 - `country`: the destination's ISO 3166-1 alpha-2 code.
-- `starts_on`: the earliest date of any reservation in the document. `ends_on`: the latest start or end date of any reservation in the document. Do not extend past what the document shows.
+- `starts_on`: the earliest date of any reservation in the document. `ends_on`: the latest start or end date of any reservation in the document. Do not extend past what the document shows: a document holding only one-way journeys (flights, trains, transfers in one direction) has `ends_on: null`, because it does not say when the trip ends.
 - `trip_hint` is null when the document has no reservation; `destination` and `country` are null when its reservations belong to unrelated trips.
 
 ## notes

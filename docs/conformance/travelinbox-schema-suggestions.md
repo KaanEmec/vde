@@ -1,7 +1,8 @@
 # Suggestions for the TravelInbox schema and instructions
 
 Status: v1.2 (job 08), for the owner to send to TravelInbox; this repository sends nothing
-and changes neither file. Reviewed against the checklist in
+and changes neither file, except the corpus copies of the instructions, amended on
+2026-10-20 as the last table says. Reviewed against the checklist in
 [writing-instructions.md](../api/writing-instructions.md#checklist): descriptions, format and
 unit, closed enums, the meaning of null, nullable against optional, flatness, and agreement
 between schema and instructions.
@@ -33,9 +34,9 @@ eleven `allOf` rules about `confidence` give the model many ways to fail validat
 | `/$defs/local_time` | "Wall-clock time, HH:MM" does not say 24-hour. | "Wall-clock time at the place, 24-hour `HH:MM`. Null when not given." |
 | `/$defs/date` | Fine, no null rule. | add "Null when the document gives no date." |
 | `/$defs/count` | No description: guests, party size and the lower bound are unexplained. | "Whole number of people or items, at least 1, as printed. Null when not given." |
-| `/$defs/place` | Object with five optional, nullable fields; no description of which text goes where or that `iata` is airports only. | description: "A location. `name` and `address` as printed; `iata` only for airports; `city` the English name; `country` ISO alpha-2. Fields the document does not give are null." Add the same one-liners to `/$defs/place/properties/name`, `address` and `city`. |
+| `/$defs/place` | Object with five optional, nullable fields; no description of which text goes where or that `iata` is airports only. | description: "A location. `name` as printed without codes, null when only a city and a code are printed; `address` as printed; `iata` only for airports; `city` the English name; `country` ISO alpha-2. Fields the document does not give are null." Add the same one-liners to `/$defs/place/properties/name`, `address` and `city`. |
 | `/$defs/traveller/properties/name` | The name order and normalisation (given then family, titles dropped) are only in the instructions. | description: "Full name, given name first, then family name, without titles. Capitalise all-capital words." |
-| `/$defs/traveller/properties/type` | Closed enum with null, good; no rule for null. | description: "Only when the document states it (adult, child, infant, an age band, a fare code); otherwise null." |
+| `/$defs/traveller/properties/type` | Closed enum with null, good; no rule for null, and nothing says whether a party count types a person. | description: "Only when the document states it for that person (adult, child, infant, an age band, a fare code); a party count such as 2 adults does not type a named person; otherwise null." |
 | `/$defs/price/description` | "Total price as printed" does not say for what (this reservation, all travellers) or when the whole object is null. | "Total paid for this reservation, for all travellers, as printed. Null when only a per-night or per-person price is printed, or when one total covers several reservations." |
 | `/$defs/price/properties/amount` | Pattern allows three decimals; no statement that thousands separators are not allowed. | description: "Decimal string with a dot and no thousands separator, with the decimals as printed (`1234.50`)." |
 | `/$defs/price/properties/currency` | "ISO 4217." only. | "ISO 4217 code, three capital letters; derived from an unambiguous symbol is allowed." The object is `required: [amount, currency]`, so a price with an unknown currency can only be `null`; say so in the object's description. |
@@ -44,7 +45,7 @@ eleven `allOf` rules about `confidence` give the model many ways to fail validat
 | `/$defs/reservation/properties/confidence` | A parallel object that repeats the reservation's field names as keys. | Flatter option: **breaking**, a nullable `confidence` number next to each scalar field, or drop per-field confidence for fields the consumer does not use. If the parallel object stays, keep `required: [kind, title]` and the `propertyNames` enum only. |
 | `/$defs/reservation/properties/kind` | Closed enum, good, but the twelve values are explained only in the instructions, and `other` is also the shape of `bus` and `ferry`. | description with one clause per value, for example "flight; lodging (hotel, apartment, hostel, holiday rental); transfer (pre-booked taxi, shuttle or driver); car_rental; rail; bus; ferry; activity (tour, excursion, anything with a meeting point); dining; event (concert, match, show, entry at a venue); insurance; other (visa, parking, lounge, anything else; use only when no other value fits)". |
 | `/$defs/reservation/properties/title` | The only field the model writes rather than copies, with a composition rule only in the instructions. | description: "A short English label composed from the document, not copied: transport as `<from city> to <to city>`, lodging the property name, events and activities their printed name." Mark `x-vde-grounding: skip` (the service ignores the keyword in validation) so the grounding check does not look for it. |
-| `/$defs/reservation/properties/provider` | No description; the pairing with `booking_ref` is only in the instructions. | "The company the traveller deals with: the operator when an operator reference is printed, else the platform or agency. Null when not given." |
+| `/$defs/reservation/properties/provider` | No description; the pairing with `booking_ref` and the name form are only in the instructions, and the corpus labels the platform where the instructions name the operator (see the last table). | "The company the traveller deals with: the operator when an operator reference is printed, else the platform or agency, by its short brand name as printed (the hotel chain when booked direct), without legal form or loyalty programme. Null when not given." |
 | `/$defs/reservation/properties/booking_ref` | "Verbatim as printed." with a `$ref`; no pairing, no null rule. | "The reference the traveller quotes to `provider`, character for character as printed. Null when the document prints none." |
 | `/$defs/reservation/properties/status` | Closed enum with null, but null is unexplained. | "confirmed: the document confirms the booking or is a ticket or boarding pass; pending: awaiting confirmation, payment or approval; cancelled: it says the booking is cancelled; null otherwise." |
 | `/$defs/reservation/properties/starts_at_local`, `ends_at_local` | The rules for which time is the start or end per kind (flights, stays, rentals) are only in the instructions. | Describe each per kind in one sentence, for example "flights: first departure; lodging: check-in date and the start of the check-in window". |
@@ -60,7 +61,7 @@ eleven `allOf` rules about `confidence` give the model many ways to fail validat
 | `/$defs/flight/properties/carrier`, `/$defs/flight_leg/properties/carrier` | The codeshare rule is only in the instructions. | description: "Airline name as printed with the flight number; for a codeshare the airline whose number is shown." |
 | `/$defs/lodging/properties/checkin_time`, `checkout_time` | Not stated that these repeat the times in `starts_at_local` and `ends_at_local`, or that a window gives its start. | "Start of the check-in window" / "Check-out time, as printed." |
 | `/$defs/other/description` | "Also used for bus and ferry." The object is closed and empty, so the only valid values are `{}` and null. | "No details are defined for this kind: `{}` or null." |
-| `/properties/trip_hint/properties/starts_on`, `ends_on` | Only the object has a description; the span rule is in the instructions. | "Earliest date of any reservation in the document." / "Latest start or end date of any reservation in the document; do not extend past what the document shows." |
+| `/properties/trip_hint/properties/starts_on`, `ends_on` | Only the object has a description; the span rule is in the instructions. | "Earliest date of any reservation in the document." / "Latest start or end date of any reservation in the document; do not extend past what the document shows. Null when the document holds only one-way journeys." |
 | `/properties/trip_hint/properties/destination` | The rule for which city counts is only in the instructions. | "English name of the trip's main city: where the outbound transport arrives, else the city of the stay, event or activity. Null when the reservations belong to unrelated trips." |
 | `/properties/notes` | Description is a `$ref` sibling; the typical contents are not said. | "Short English sentences: conflicts between values, inferred years, changes, references not used, anything the schema cannot hold. Null when nothing needs saying. Never a passport, ID or card number." |
 
@@ -76,3 +77,19 @@ section heading in the file.
 | `extractor.md`, "Ground rules" (forwarded email) | "In a forwarded email, the forwarding wrapper ... is not booking data" depends on the model finding the wrapper. | Refer to the labels: "the booking is usually between `[forwarded message]` and `[end of forwarded message]`; the lines outside are the forwarder's". The service never removes text, so a section it does not label is still read as before. |
 | `extractor.md`, "Confidence" and `/$defs/confidence/description` | The scale is stated in both; they agree today. | Keep one source: the schema description (proposed above), and in the instructions only "fill `confidence` as the schema describes". |
 | `judge.md`, "What the extractor was told" | Restates the extractor's rules by hand; any later change to the extractor file must be repeated. | Keep, and treat the two files as one change when editing; the checklist asks for the same words in both. |
+
+## Instructions against the corpus labels (2026-10-20)
+
+The corpus labelling conventions (`testdata/travelinbox/corpus/README.md`, the rules
+`truth.json` follows) and the instructions disagreed on five fields, which caused most of
+the recurring mismatches ([quality.md](../quality.md#why-the-same-fields-keep-failing-2026-10-20)).
+The corpus copies of `extractor.md` and `judge.md` now state the first four; TravelInbox's
+own files need the same sentences.
+
+| Field | Corpus label | Instructions before | Now in the corpus copies |
+| --- | --- | --- | --- |
+| `trip_hint/ends_on` | null for a document holding only one-way journeys | the latest date of any reservation | the corpus label |
+| place `name` | as printed without codes; null when only a city and a code are printed | as printed; the airport's name may be derived from its code | the corpus label; the derivation is removed |
+| traveller `type` | a party count does not type a named person | "adult" among the stated types | the corpus label |
+| `provider` name form | the short brand (the chain when booked direct) | "copy as printed" | the corpus label, without legal form, loyalty programme or web address |
+| `provider` when booked through a platform | the platform, with the operator's reference as `booking_ref` | the operator, paired with its reference | unchanged: TravelInbox decides. Recommended: relabel the seven platform cases to the operator (platform and its reference in `notes`), which keeps the pairing |
