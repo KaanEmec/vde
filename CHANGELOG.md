@@ -6,6 +6,8 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-20
+
 Extraction quality (v1.2). Every change below changes `service_version`; `/v1` and the
 1.x configuration are unchanged. Measured on four owner documents: 3 → 4 of 4 fully
 correct, no false accept, fewer attempts and input tokens
