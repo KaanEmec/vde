@@ -56,7 +56,7 @@ func TestVisibleText(t *testing.T) {
 		{"inline", `<span>a</span><b>b</b> <i>c</i>`, "ab c"},
 		{"unordered list", `<ul><li>x</li><li>y</li></ul>`, "- x\n- y"},
 		{"ordered list", `<ol start="2"><li>x</li><li>y</li></ol>`, "2. x\n3. y"},
-		{"table cells", `<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>`, "A\tB\n1\t2"},
+		{"layout table cells", `<table><tr><td>A</td><td>B</td></tr><tr><td>1</td></tr></table>`, "A\tB\n1"},
 		{"link", `<a href="https://e.example/x">Go</a>`, "Go (https://e.example/x)"},
 		{"link label is target", `<a href="https://e.example/">https://e.example/</a>`, "https://e.example/"},
 		{"mailto label", `<a href="mailto:a@e.example">a@e.example</a>`, "a@e.example"},
@@ -99,7 +99,7 @@ func TestVisibleTextTruncates(t *testing.T) {
 func TestHTMLGolden(t *testing.T) {
 	t.Parallel()
 	sources := map[string][]byte{}
-	for _, name := range []string{"layout-table", "article"} {
+	for _, name := range []string{"layout-table", "article", "tables"} {
 		sources[name] = readFile(t, filepath.Join("testdata", "html", name+".html"))
 	}
 	for _, name := range []string{"019-hotel", "001-flight", "041-rail"} {
@@ -128,7 +128,7 @@ func TestLayoutTableReadingOrder(t *testing.T) {
 	got := visibleText(readFile(t, "testdata/html/layout-table.html"), maxVisibleText)
 	order := []string{
 		"Flight confirmation", "SkyAir", "QX7PLM", "Your trip to Lisbon", "Dear Ana",
-		"Flight\tFrom\tTo", "SA 123\tBerlin BER 08:15\tLisbon LIS 10:40", "Total paid: 312,40 €",
+		"| Flight | From | To |", "| SA 123 | Berlin BER 08:15 | Lisbon LIS 10:40 |", "Total paid: 312,40 €",
 		"Manage booking (https://skyair.example/manage?ref=QX7PLM)", "help@skyair.example", "Terms",
 	}
 	at := 0

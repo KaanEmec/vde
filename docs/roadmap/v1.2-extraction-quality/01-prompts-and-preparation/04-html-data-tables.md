@@ -1,6 +1,17 @@
 # Job: HTML data tables as Markdown
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 03
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 03
+
+Implementation done; comparison pending (orchestrator).
+
+As built (`internal/document/html_table.go`): a table with a nested table, a `rowspan`, more
+than 50 columns, or a `<th>` row that is not the first row is a layout table, also when it
+has `<th>` cells. A table inside a layout table is classified on its own. A two-column
+table of equal rows (a key-value price list) is a data table by the rule above, so its first
+row becomes the Markdown header; if the comparison shows that hurts, the rule can require
+three columns when there is no `<th>`. `service_version` hashes `document.PreparationFor`:
+the preparation version, plus `+tables/1` under `visible_text` only, so a `raw_html`
+deployment's hash does not move with this job.
 
 ## Goal
 
@@ -18,17 +29,17 @@ cells in every row (counting `colspan`). Everything else is a layout table.
 
 ## Tasks
 
-- [ ] `html.go`: classify each table as data or layout with the rule above.
-- [ ] Data tables: a Markdown table with a header row (the `<th>` row, else the first
+- [x] `html.go`: classify each table as data or layout with the rule above.
+- [x] Data tables: a Markdown table with a header row (the `<th>` row, else the first
       row), cells with `|` and newlines escaped, `colspan` repeated as empty cells.
-- [ ] Layout tables: unchanged output.
-- [ ] Respect `maxVisibleText`; a table cut by the limit ends at a row boundary.
-- [ ] Grounding: Markdown pipes and rule rows add no values; check the existing HTML and
+- [x] Layout tables: unchanged output.
+- [x] Respect `maxVisibleText`; a table cut by the limit ends at a row boundary.
+- [x] Grounding: Markdown pipes and rule rows add no values; check the existing HTML and
       email samples ground as before.
-- [ ] Synthetic fixtures: a fare breakdown with `<th>`, an itinerary table without `<th>`,
+- [x] Synthetic fixtures: a fare breakdown with `<th>`, an itinerary table without `<th>`,
       a layout template with nested tables, a data table inside a layout table, a table
       with `colspan`.
-- [ ] `docs/operator/configuration.md` (`documents.html`): describe the table output.
+- [x] `docs/operator/configuration.md` (`documents.html`): describe the table output.
 - [ ] Run the comparison, record it, keep or revert.
 
 ## Acceptance criteria

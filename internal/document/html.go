@@ -65,7 +65,7 @@ func visibleText(src []byte, limit int) string {
 	if err != nil { // only reader errors, impossible with bytes.Reader
 		return ""
 	}
-	return renderVisible(root, limit, nil)
+	return renderVisible(root, limit, nil, true)
 }
 
 // visibleTextLabelled is visibleText with a label line before and after each forwarded
@@ -76,12 +76,13 @@ func visibleTextLabelled(src []byte, limit int) string {
 	if err != nil {
 		return ""
 	}
-	return renderVisible(root, limit, htmlSections(root))
+	return renderVisible(root, limit, htmlSections(root), true)
 }
 
 // renderVisible walks the parsed document in order; marks (nil for none) are the
-// elements that open a labelled section.
-func renderVisible(root *html.Node, limit int, marks map[*html.Node]sectionMark) string {
+// elements that open a labelled section, and tables says whether data tables are written
+// as Markdown tables (html_table.go) rather than flattened like layout tables.
+func renderVisible(root *html.Node, limit int, marks map[*html.Node]sectionMark, tables bool) string {
 	w := &textWriter{max: limit}
 	type frame struct {
 		n       *html.Node
@@ -121,6 +122,13 @@ func renderVisible(root *html.Node, limit int, marks map[*html.Node]sectionMark)
 				continue
 			}
 			w.block(blockBreak(n.DataAtom))
+			if tables && n.DataAtom == atom.Table {
+				if t, ok := asDataTable(n); ok {
+					w.markdown(t)
+					w.block(blockBreak(atom.Table))
+					continue
+				}
+			}
 			opened := false
 			if m, ok := marks[n]; ok {
 				opened = w.openSection(n, m)
@@ -295,6 +303,10 @@ type textWriter struct {
 	// before the next text, so removing the label lines restores the unlabelled output.
 	sections []*openSection
 	pending  []pendingLabel
+
+	// whole makes the next write all or nothing: a string that does not fit is left out
+	// and the output ends with the truncation marker (a Markdown table row).
+	whole bool
 }
 
 // invisible are zero-width and formatting characters email templates use as padding.
@@ -390,7 +402,9 @@ func (w *textWriter) write(s string) {
 		for room > 0 && !utf8.RuneStart(s[room]) {
 			room--
 		}
-		w.b.WriteString(s[:room])
+		if !w.whole {
+			w.b.WriteString(s[:room])
+		}
 		w.b.WriteString(truncatedMarker)
 		w.full = true
 		return

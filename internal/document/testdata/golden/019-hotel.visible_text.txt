@@ -21,22 +21,24 @@ Check-out bis 12:00 Uhr
 
 Ihre Zimmerdetails
 
-Aufenthalt	3 Nächte, 1 Zimmer
-Zimmertyp	Doppelzimmer Superior, 1 Doppelbett
-Gast	Lena Weissmann
-Belegung	2 Erwachsene
-Verpflegung	Frühstück inklusive
-Ausstattung	Kostenloses WLAN · Klimaanlage · Minibar
+| Aufenthalt | 3 Nächte, 1 Zimmer |
+| --- | --- |
+| Zimmertyp | Doppelzimmer Superior, 1 Doppelbett |
+| Gast | Lena Weissmann |
+| Belegung | 2 Erwachsene |
+| Verpflegung | Frühstück inklusive |
+| Ausstattung | Kostenloses WLAN · Klimaanlage · Minibar |
 
 Preisdetails
 
-Mi., 03.03.2027	139,00 €
-Do., 04.03.2027	139,00 €
-Fr., 05.03.2027	159,00 €
-Zimmerpreis (3 Nächte)	437,00 €
-Steuern und Gebühren	13,98 €
-Gesamtpreis	450,98 €
-Am 19.01.2027 mit Mastercard •••• 4242 bezahlt. Der Zimmerpreis enthält die gesetzliche Mehrwertsteuer.
+| Mi., 03.03.2027 | 139,00 € |
+| --- | --- |
+| Do., 04.03.2027 | 139,00 € |
+| Fr., 05.03.2027 | 159,00 € |
+| Zimmerpreis (3 Nächte) | 437,00 € |
+| Steuern und Gebühren | 13,98 € |
+| Gesamtpreis | 450,98 € |
+| Am 19.01.2027 mit Mastercard •••• 4242 bezahlt. Der Zimmerpreis enthält die gesetzliche Mehrwertsteuer. |  |
 OneKey · Mit dieser Buchung sammeln Sie 9,02 € in OneKeyCash. Das Guthaben steht Ihnen nach Ihrem Aufenthalt zur Verfügung.
 
 Stornierungsbedingungen

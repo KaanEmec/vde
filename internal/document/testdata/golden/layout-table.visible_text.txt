@@ -7,8 +7,9 @@ Your trip to Lisbon
 Dear Ana,
 your booking is confirmed.
 
-Flight	From	To
-SA 123	Berlin BER 08:15	Lisbon LIS 10:40
+| Flight | From | To |
+| --- | --- | --- |
+| SA 123 | Berlin BER 08:15 | Lisbon LIS 10:40 |
 
 Total paid: 312,40 €
 

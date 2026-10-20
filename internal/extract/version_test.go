@@ -327,8 +327,8 @@ func TestServiceVersion_v04Fields(t *testing.T) {
 				t.Errorf("grounding %q, pdf %q; want %q, pdf hashed %v", v.Grounding, v.PDF, ground.RulesVersion, tt.wantPDF)
 			}
 			// Since v1.2 the document preparation version is hashed too (document.PreparationVersion).
-			if v.Preparation != document.PreparationVersion {
-				t.Errorf("preparation %q, want %q", v.Preparation, document.PreparationVersion)
+			if want := document.PreparationFor(document.HTMLPolicy(tt.cfg.Documents.HTML)); v.Preparation != want {
+				t.Errorf("preparation %q, want %q", v.Preparation, want)
 			}
 			v.Grounding, v.PDF, v.Preparation = "", "", ""
 			stripped, err := json.Marshal(v)
@@ -406,5 +406,29 @@ func TestServiceVersion_pdfPolicy(t *testing.T) {
 	app.Documents.PDF.Mode = config.PDFModePages
 	if ApplicationServiceVersion(cfg, app, cfg.JudgePolicyOf(app), "v0.4.0") == global {
 		t.Error("an application PDF mode did not change its service_version")
+	}
+}
+
+// TestServiceVersion_preparation: the document preparation version is hashed always; the
+// table output is part of it only under visible_text, so a raw_html deployment's hash
+// does not move with it.
+func TestServiceVersion_preparation(t *testing.T) {
+	prep := func(html string) string {
+		cfg := parseVersionConfig(t, nil)
+		cfg.Documents.HTML = html
+		var v versionedConfig
+		if err := json.Unmarshal(canonicalConfig(cfg, config.DefaultSampleRate), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v.Preparation
+	}
+	for _, tt := range []struct{ html, want string }{
+		{"", document.PreparationVersion},
+		{"raw_html", document.PreparationVersion},
+		{"visible_text", document.PreparationVersion + "+tables/1"},
+	} {
+		if got := prep(tt.html); got != tt.want {
+			t.Errorf("html %q: preparation %q, want %q", tt.html, got, tt.want)
+		}
 	}
 }

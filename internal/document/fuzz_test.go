@@ -1,10 +1,15 @@
 package document
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
 	"unicode/utf8"
+
+	"golang.org/x/net/html"
+
+	"github.com/kaanemec/vde/internal/ground"
 )
 
 // FuzzNew feeds arbitrary HTML and email bytes through validation and both HTML
@@ -109,6 +114,13 @@ func FuzzHTMLText(f *testing.F) {
 		}
 		if utf8.Valid(src) && !utf8.ValidString(text) {
 			t.Fatal("visible_text of valid UTF-8 is not valid UTF-8")
+		}
+		// Data tables change only whitespace and pipes: grounding reads the same words.
+		if utf8.Valid(src) && !bytes.Contains(src, []byte("|")) {
+			root, _ := html.Parse(bytes.NewReader(src))
+			if got, want := ground.Normalize(visibleText(src, maxVisibleText)), ground.Normalize(renderVisible(root, maxVisibleText, nil, false)); got != want {
+				t.Fatal("data tables changed the grounding text")
+			}
 		}
 	})
 }

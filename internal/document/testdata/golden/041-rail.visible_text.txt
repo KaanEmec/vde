@@ -14,9 +14,10 @@ Mit der Auftragsnummer und Ihrem Nachnamen finden Sie Ihre Buchung jederzeit unt
 
 Hinfahrt am Do, 18.03.2027
 
-Halt	Datum	Zeit	Gleis	Produkte	Reservierung
-Berlin Hbf	Do, 18.03.27	ab 10:29	1	ICE 1007	Wg. 7, Pl. 61, 63
-München Hbf	Do, 18.03.27	an 14:27	19
+| Halt | Datum | Zeit | Gleis | Produkte | Reservierung |
+| --- | --- | --- | --- | --- | --- |
+| Berlin Hbf | Do, 18.03.27 | ab 10:29 | 1 | ICE 1007 | Wg. 7, Pl. 61, 63 |
+| München Hbf | Do, 18.03.27 | an 14:27 | 19 |  |  |
 
 Dauer: 3:58 h · Umstiege: 0 · Gleisangaben ohne Gewähr. Bitte beachten Sie die aktuellen Anzeigen am Bahnhof.
 
@@ -24,21 +25,23 @@ Sitzplatzreservierung: ICE 1007, 2 Sitzplätze, Wg. 7, Pl. 61, 63, 1 Tisch, Gro�
 
 Ihr Ticket
 
-Angebot	Sparpreis (Fernverkehr)
-Reisende	2 Erwachsene
-Ticket gültig für	Elif Yilmaz
-Klasse	2. Klasse
-Strecke	Berlin Hbf → München Hbf
-Gültigkeit	Fahrtantritt am 18.03.2027
-Zugbindung	Das Ticket gilt nur im gebuchten Zug ICE 1007.
+| Angebot | Sparpreis (Fernverkehr) |
+| --- | --- |
+| Reisende | 2 Erwachsene |
+| Ticket gültig für | Elif Yilmaz |
+| Klasse | 2. Klasse |
+| Strecke | Berlin Hbf → München Hbf |
+| Gültigkeit | Fahrtantritt am 18.03.2027 |
+| Zugbindung | Das Ticket gilt nur im gebuchten Zug ICE 1007. |
 
 Preis
 
-Sparpreis, 2 Erwachsene	99,98 €
-Sitzplatzreservierung, 2 Plätze	11,00 €
-Gesamtpreis	110,98 €
-Enthaltene MwSt. 7 %	7,26 €
-Zahlungsmittel: Mastercard •••• 4242
+| Sparpreis, 2 Erwachsene | 99,98 € |
+| --- | --- |
+| Sitzplatzreservierung, 2 Plätze | 11,00 € |
+| Gesamtpreis | 110,98 € |
+| Enthaltene MwSt. 7 % | 7,26 € |
+| Zahlungsmittel: Mastercard •••• 4242 |  |
 
 Die Rechnung zu Ihrer Buchung können Sie unter „Meine Reisen“ herunterladen.
 

@@ -13,7 +13,7 @@ if it is not worse.
 | 01 | [Prompt order and wording](01-prompt-order-and-wording.md) | prompt | planned |
 | 02 | [Context header and page markers](02-context-header-and-page-markers.md) | preparation | in progress |
 | 03 | [Email section labels](03-email-section-labels.md) | preparation | in progress |
-| 04 | [HTML data tables as Markdown](04-html-data-tables.md) | preparation | planned |
+| 04 | [HTML data tables as Markdown](04-html-data-tables.md) | preparation | in progress |
 | 05 | [Extractor analysis block](05-extractor-analysis-block.md) | prompt | planned |
 | 06 | [Judge evidence quotes](06-judge-evidence-quotes.md) | prompt | planned |
 | 07 | [Native structured outputs](07-native-structured-outputs.md) | prompt | planned |

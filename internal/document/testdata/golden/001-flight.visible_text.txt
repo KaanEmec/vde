@@ -17,26 +17,29 @@ Frankfurt/Main (FRA)
 Terminal 1	→	13:20
 New York (JFK)
 Terminal 1
-Flug	LH 400
-Durchgeführt von	Lufthansa
-Flugzeug	Boeing 747-8
-Reiseklasse	Economy (Tarif: Classic)
-Flugdauer	8 Std. 45 Min.
-Freigepäck	1 x 23 kg pro Person
+| Flug | LH 400 |
+| --- | --- |
+| Durchgeführt von | Lufthansa |
+| Flugzeug | Boeing 747-8 |
+| Reiseklasse | Economy (Tarif: Classic) |
+| Flugdauer | 8 Std. 45 Min. |
+| Freigepäck | 1 x 23 kg pro Person |
 
 Reisende
 
-Name	Typ	Sitzplatz	Ticketnummer
-Frau Jana Brenner	Erwachsener	32A	509-2488235083
-Herr Lukas Albrecht	Erwachsener	32B	359-8435446679
+| Name | Typ | Sitzplatz | Ticketnummer |
+| --- | --- | --- | --- |
+| Frau Jana Brenner | Erwachsener | 32A | 509-2488235083 |
+| Herr Lukas Albrecht | Erwachsener | 32B | 359-8435446679 |
 
 Preisübersicht
 
-Flugpreis (2 Erwachsene)	776,00 EUR
-Steuern, Gebühren und Entgelte	412,52 EUR
-Internationaler Zuschlag	96,00 EUR
-Gesamtpreis für alle Reisenden	1.284,52 EUR
-Bezahlt mit Kreditkarte (Visa) xxxx xxxx xxxx 4242 am 20.04.2027
+| Flugpreis (2 Erwachsene) | 776,00 EUR |
+| --- | --- |
+| Steuern, Gebühren und Entgelte | 412,52 EUR |
+| Internationaler Zuschlag | 96,00 EUR |
+| Gesamtpreis für alle Reisenden | 1.284,52 EUR |
+| Bezahlt mit Kreditkarte (Visa) xxxx xxxx xxxx 4242 am 20.04.2027 |  |
 
 Tarifbedingungen
 

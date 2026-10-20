@@ -109,7 +109,7 @@ changed on the way to 1.0, so there is no migration command.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `documents.html` | string | `raw_html` | HTML representation: `raw_html` or `visible_text`. |
+| `documents.html` | string | `raw_html` | HTML representation: `raw_html` (the source minus comments, scripts and styles) or `visible_text` (the text a reader sees, links kept). `visible_text` also writes data tables (a header row, or at least two rows and two columns of equal width, and no nested table) as Markdown tables with a header row, so each value stays under its column; layout tables stay flattened with tabs. In emails it labels forwarded messages and quoted earlier replies with `[forwarded message]` and `[quoted earlier reply]` lines (plain-text bodies are labelled under either policy). |
 | `documents.images.enabled` | bool | `true` | Prepare images once at submit, for both roles: downscale, apply EXIF orientation, convert WebP. `false` sends images exactly as received. |
 | `documents.images.max_dimension` | int | `2048` | Longest side in pixels; larger images (and page images) are scaled down, keeping the aspect ratio, to save tokens. 64 to 16384. |
 | `documents.images.convert_to` | string | `image/jpeg` | Type a converted image is encoded as: `image/jpeg` or `image/png`. A PNG or JPEG that is within `max_dimension` and needs no rotation is never re-encoded. |

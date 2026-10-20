@@ -9,9 +9,19 @@ import (
 )
 
 // PreparationVersion names how the service lays a document out before a model reads it:
-// the context line and page markers, and later the email section labels and the HTML
-// table output. It is hashed into service_version and bumped with every such change.
+// the context line and page markers and the email section labels. It is bumped with every
+// such change and, through PreparationFor, hashed into service_version.
 const PreparationVersion = "prep/3"
+
+// PreparationFor is the preparation version under an HTML policy: PreparationVersion, and
+// for visible_text also the table output (data tables as Markdown), which raw_html does
+// not have. It is the value hashed into service_version.
+func PreparationFor(policy HTMLPolicy) string {
+	if policy == VisibleText {
+		return PreparationVersion + "+" + tableVersion
+	}
+	return PreparationVersion
+}
 
 // contextLine is the one line that opens what the models read, built only from what the
 // service knows: "type: email · sent: 2026-10-10T09:14:00+02:00 · pages: 3". sent is an

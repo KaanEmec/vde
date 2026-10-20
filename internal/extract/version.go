@@ -44,8 +44,8 @@ var semverRe = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // policy (ADR 0009) is hashed only when it is not always, and the sample rate only under
 // auto. The grounding rules (ground.RulesVersion) are always hashed, since every policy
 // grounds candidates (always for its one repair, ADR 0009). The document preparation
-// version (document.PreparationVersion: context line, page markers, email labels, HTML
-// tables) is always hashed. The PDF policy (mode, dpi,
+// version (document.PreparationFor: context line, page markers, email labels, and under
+// visible_text the HTML data tables) is always hashed. The PDF policy (mode, dpi,
 // minimum text characters) and the PDF engine's module version are hashed when they can
 // change what is read: when a role's
 // groups do not all read PDFs natively and the mode is not native, or when the judge
@@ -108,7 +108,7 @@ type versionedConfig struct {
 	JudgePolicy         string          `json:"judge_policy,omitempty"` // never or auto; always is the default
 	SampleRate          *float64        `json:"sample_rate,omitempty"`  // auto only
 	Grounding           string          `json:"grounding,omitempty"`    // ground.RulesVersion, always set
-	Preparation         string          `json:"preparation,omitempty"`  // document.PreparationVersion, always set
+	Preparation         string          `json:"preparation,omitempty"`  // document.PreparationFor(HTML policy), always set
 	PDF                 string          `json:"pdf,omitempty"`          // document.PDFPolicy.String(), when it matters
 }
 
@@ -165,7 +165,7 @@ func canonicalConfig(cfg *config.Config, sampleRate float64) []byte {
 		Parser:      parserLeniency,
 		Validator:   validatorModule + "@" + validatorVersion,
 		Grounding:   ground.RulesVersion,
-		Preparation: document.PreparationVersion,
+		Preparation: document.PreparationFor(document.HTMLPolicy(cfg.Documents.HTML)),
 	}
 	v.ExtractorEscalation = versionSteps(cfg, cfg.Roles.Extractor.Escalation)
 	v.JudgeEscalation = versionSteps(cfg, cfg.Roles.Judge.Escalation)
