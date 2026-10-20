@@ -17,7 +17,7 @@ if it is not worse.
 | 05 | [Extractor analysis block](05-extractor-analysis-block.md) | prompt | in progress |
 | 06 | [Judge evidence quotes](06-judge-evidence-quotes.md) | prompt | in progress |
 | 07 | [Native structured outputs](07-native-structured-outputs.md) | prompt | in progress |
-| 08 | [Schema guide for callers](08-caller-schema-guide.md) | docs | planned |
+| 08 | [Schema guide for callers](08-caller-schema-guide.md) | docs | in progress |
 | 09 | [Multi-pass extraction (ADR 0013)](09-multi-pass-extraction.md) | architecture | planned |
 
 Jobs 01 to 07 are sequential: each one's comparison report is the next one's baseline, so

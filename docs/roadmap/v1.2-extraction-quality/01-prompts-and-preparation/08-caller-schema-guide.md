@@ -1,6 +1,8 @@
 # Job: Schema guide for callers
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: none (uses what 01 and 05 decide)
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: none (uses what 01 and 05 decide)
+
+Guide and suggestions done; sending and any comparison are the owner's.
 
 ## Goal
 
@@ -23,11 +25,11 @@ The TravelInbox schema lives in `FromTravelApp/` (read-only input) and
 
 ## Tasks
 
-- [ ] Extend `docs/api/writing-instructions.md` ("Schema design" and the checklist) with
+- [x] Extend `docs/api/writing-instructions.md` ("Schema design" and the checklist) with
       the points above, each with a short before and after example on synthetic data.
-- [ ] Review the TravelInbox schema against the checklist and write the findings as
+- [x] Review the TravelInbox schema against the checklist and write the findings as
       suggestions (field, problem, proposed description or type) in
-      `docs/conformance/`, without document content.
+      `docs/conformance/travelinbox-schema-suggestions.md`, without document content.
 - [ ] The owner sends the suggestions to TravelInbox; the agent does not.
 - [ ] If TravelInbox adopts any, run one comparison with the new schema on 3 to 5 named
       TravelInbox cases (`--cases` listing each id; the cases the changed fields affect),
