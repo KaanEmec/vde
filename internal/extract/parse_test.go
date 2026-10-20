@@ -38,6 +38,21 @@ func TestParseJSON(t *testing.T) {
 		{name: "array allowed", text: `[{"a": 1}]`, allowArray: true, want: `[{"a": 1}]`},
 		{name: "array in prose allowed", text: `List: [1, 2] end`, allowArray: true, want: `[1, 2]`},
 		{name: "object when arrays allowed", text: `{"a": 1}`, allowArray: true, want: `{"a": 1}`},
+		// Answer blocks (ADR 0012).
+		{name: "blocks", text: "<analysis>\n/a: \"1\"\n</analysis>\n<json>\n{\"a\": 1}\n</json>", want: `{"a": 1}`},
+		{name: "json block without analysis", text: `<json>{"a": 1}</json>`, want: `{"a": 1}`},
+		{name: "braces in the analysis", text: "<analysis>/a: \"{\"b\": 2}\" and [x]</analysis>\n<json>{\"a\": 1}</json>", want: `{"a": 1}`},
+		{name: "fence inside the json block", text: "<analysis>x</analysis><json>\n```json\n{\"a\": 1}\n```\n</json>", want: `{"a": 1}`},
+		{name: "prose after the json block", text: "<analysis>x</analysis><json>{\"a\": 1}</json>\nDone.", want: `{"a": 1}`},
+		{name: "array in the json block", text: "<analysis>x</analysis><json>[1]</json>", allowArray: true, want: `[1]`},
+		{name: "json tag quoted in the analysis", text: "<analysis>I answer in <json> next</analysis><json>{\"a\": 1}</json>", want: `{"a": 1}`},
+		{name: "two json blocks", text: "<json>{\"a\": 1}</json>\n<json>{\"a\": 2}</json>", wantErr: "more than one <json> block"},
+		{name: "unclosed json block", text: "<analysis>x</analysis><json>{\"a\": 1}", wantErr: "<json> block is not closed"},
+		{name: "cut off in the analysis", text: "<analysis>/a: {\"a\": 1}", wantErr: "<analysis> block is not closed"},
+		{name: "analysis without json block", text: "<analysis>x</analysis> {\"a\": 1}", wantErr: "no <json> block follows"},
+		{name: "empty json block", text: "<analysis>x</analysis><json> </json>", wantErr: "<json> block is empty"},
+		{name: "invalid json in the block", text: "<analysis>x</analysis><json>{\"a\": 1,}</json>", wantErr: "invalid JSON at offset 37"},
+		{name: "array in the block refused", text: "<json>[1]</json>", wantErr: "is an array"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -56,7 +71,10 @@ func TestParseJSON(t *testing.T) {
 }
 
 func FuzzParseJSON(f *testing.F) {
-	for _, s := range []string{`{"a": 1}`, "```json\n{}\n```", `x {"a": [1, 2]} y`, `{"a": `, `[1]`} {
+	for _, s := range []string{
+		`{"a": 1}`, "```json\n{}\n```", `x {"a": [1, 2]} y`, `{"a": `, `[1]`,
+		"<analysis>/a: {\"x\": 1}</analysis><json>{\"a\": 1}</json>", "<analysis>{", "<json>{}</json><json>[]</json>",
+	} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, text string) {

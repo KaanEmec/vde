@@ -209,6 +209,7 @@ func TestServiceVersion_framingReleases(t *testing.T) {
 	}
 	previous := []string{
 		"vde-1.1.0+a1704233", // v1.1.0
+		"vde-1.1.0+a597a5da", // v1.2 job 01: document first, null and normalising rules
 	}
 	got := ServiceVersion(loadConfig(t, string(scenario)), "v1.1.0")
 	for _, p := range previous {

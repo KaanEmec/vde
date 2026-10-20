@@ -346,7 +346,7 @@ func (l *loop) notJSON(perr error, truncated bool) {
 	msg := fmt.Sprintf("The answer was not %s: %s.", what, perr)
 	if truncated {
 		msg = fmt.Sprintf("The answer was cut off at the output-token limit, so it was not %s. "+
-			"Answer again more compactly: no prose, no repetition, only the JSON.", what)
+			"Answer again more compactly: one short analysis line per value, no repetition, then the JSON block.", what)
 	}
 	l.next = []Feedback{schemaFeedback("", msg)}
 	if !l.usable {

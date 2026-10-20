@@ -1,0 +1,19 @@
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
+description: the extractor's analysis contains a JSON-like value that is not the answer; the <json> block wins
+steps:
+  - role: extractor
+    answer: "<analysis>\nA first guess was {\"guest\": \"J. Example\", \"nights\": 2}; the document says otherwise.\n/guest: \"Guest: Jane Example\"\n/nights: \"3 nights\"\n</analysis>\n<json>{\"guest\": \"Jane Example\", \"nights\": 3}</json>"
+  - role: judge
+    answer: '{"verdict": "accept", "feedback": {}}'
+---
+input:
+  document: examples/samples/booking.txt
+expect:
+  status: accepted
+  attempts: 1
+  judge_calls: 1
+  extractor_calls: {primary: 1}
+  judge_confidence: null
+  feedback: []
+  result: '{"guest": "Jane Example", "nights": 3}'

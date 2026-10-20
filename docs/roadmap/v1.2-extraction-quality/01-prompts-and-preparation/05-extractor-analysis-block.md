@@ -1,6 +1,8 @@
 # Job: Extractor analysis block
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 04
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 04
+
+Implementation done; comparison pending (orchestrator).
 
 ## Goal
 
@@ -23,18 +25,22 @@ truncation path (`notJSON` with `truncated`) must leave room for it.
 
 ## Tasks
 
-- [ ] `framings/extractor.md`: the two-block answer format, the analysis kept short
+- [x] `framings/extractor.md`: the two-block answer format, the analysis kept short
       (one line per field: pointer, quote or "not in the document"), quotes copied
       exactly.
-- [ ] `parse.go`: when a `<json>` block is present, parse only its content; without one,
+- [x] `parse.go`: when a `<json>` block is present, parse only its content; without one,
       fall back to today's parsing, so bare JSON (fake-provider scenarios, the classifier
       path, models that ignore the format) still works. A `<json>` block that is not
-      valid JSON is a parse failure, as today.
-- [ ] The analysis text is discarded after parsing: never stored, logged, returned or
+      valid JSON is a parse failure, as today. Decided: an `<analysis>` block must be
+      closed and followed by a `<json>` block (no fallback once the answer uses blocks);
+      two `<json>` blocks are refused, not "last wins" (`docs/operator/framings.md`).
+- [x] The analysis text is discarded after parsing: never stored, logged, returned or
       put into a report. On a retry the previous candidate is the parsed JSON only.
 - [ ] Decide the analysis budget: measure output tokens per case; raise the extractor's
       default `max_tokens` only if truncations appear, and say so in the CHANGELOG.
-- [ ] Scenarios: one fake-provider scenario answering in the two-block format, one where
+      (Default left at 16,384 pending the measurement; the cut-off feedback now asks for
+      one short analysis line per value.)
+- [x] Scenarios: one fake-provider scenario answering in the two-block format, one where
       the analysis contains a `{` that is not the answer, one cut off inside `<analysis>`.
 - [ ] `docs/api/writing-instructions.md`: the answer format, so caller instructions do
       not contradict it ("answer with JSON only").

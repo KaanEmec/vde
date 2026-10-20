@@ -23,17 +23,36 @@ service does not shorten, rewrite or translate them, and adds no domain content.
 | 4 | `Previous candidate:`, a blank line, the previous answer's JSON | on a retry after an answer that was JSON |
 | 5 | `Feedback:`, a blank line, one line per issue: `- "<JSON pointer>" (<schema, judge or grounding>): <message>` | on a retry |
 
-The framing tells the extractor to answer with exactly one JSON value and nothing else (no
-prose, no code fences, no comments); that every value comes from the document, where
-formatting, normalising or converting a value the document gives, as the instructions ask
-(a date format, a unit, a code, a value split into parts), is expected and inventing one
-is not; to use null for a value the document does not give where the schema (or, without
-one, the instructions) allows null, and to leave a field out only when it is neither
-required nor allowed to be null; and, on a retry, to correct every listed issue and keep
-what was right. With a
-schema the answer conforms to it, one JSON object unless the schema's top level requires
-another type. Without a schema (schema-less mode) the JSON is shaped as the instructions
-describe: one object, or one array when they ask for a list.
+The framing tells the extractor to answer in two blocks and nothing else (ADR 0012):
+
+```
+<analysis>
+/reference: "Booking reference: HV-48213"
+/date: "20 February 2026"
+/total/amount: not in the document
+</analysis>
+<json>
+{"reference": "HV-48213", "date": "2026-02-20", "total": {"amount": null}}
+</json>
+```
+
+The analysis is one line per value: its JSON pointer, then the document's words for it,
+copied exactly, or "not in the document". Only the `<json>` block is the answer: one JSON
+value, no code fences, no comments. Caller instructions that ask for JSON only, or for no
+prose, are read as describing the content of the `<json>` block. The framing also says
+that every value comes from the document, where formatting, normalising or converting a
+value the document gives, as the instructions ask (a date format, a unit, a code, a value
+split into parts), is expected and inventing one is not; to use null for a value the
+document does not give where the schema (or, without one, the instructions) allows null,
+and to leave a field out only when it is neither required nor allowed to be null; and, on
+a retry, to correct every listed issue and keep what was right. With a schema the answer
+conforms to it, one JSON object unless the schema's top level requires another type.
+Without a schema (schema-less mode) the JSON is shaped as the instructions describe: one
+object, or one array when they ask for a list.
+
+The analysis is discarded when the answer is parsed: it is never stored, logged, returned,
+put into feedback or sent back as the previous candidate, which is the parsed JSON only.
+It costs output tokens; the default `max_output_tokens` (16,384) leaves room for it.
 
 ## Judge request
 
@@ -92,11 +111,20 @@ value. Under judge policy `always` these entries reach only the extractor, never
 
 ## Answer parsing
 
-The service strips surrounding whitespace and prose and takes the first fenced code block
-when the answer has one; it then takes the first complete JSON value starting at the first
-`{` (or `[` where arrays are allowed). It never repairs JSON: truncated or invalid JSON is
-an answer that was not JSON, which goes back to the extractor as `schema` feedback on the
-pointer `""` and counts as an attempt.
+An answer in blocks is read from its `<json>` block only. When the answer has an
+`<analysis>` block, it must be closed and a `<json>` block must follow it; the `<json>`
+block must be closed, and there must be exactly one after the analysis. Two `<json>`
+blocks are refused rather than choosing one, so a value in the analysis, or a draft, is
+never taken. Each of these failures is an answer that was not JSON (below), with a message
+naming the tag, never the content.
+
+An answer with neither block (a model that ignores the format, the fake provider's
+scenarios) is read as before. Within what is read, the service strips surrounding
+whitespace and prose and takes the first fenced code block when there is one; it then
+takes the first complete JSON value starting at the first `{` (or `[` where arrays are
+allowed). It never repairs JSON: truncated or invalid JSON is an answer that was not JSON,
+which goes back to the extractor as `schema` feedback on the pointer `""` and counts as an
+attempt.
 
 ## Role names
 

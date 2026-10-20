@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"reflect"
 	"strings"
@@ -500,7 +501,7 @@ func TestRun_extractorTruncated(t *testing.T) {
 	if got, want := calls[0].Request.MaxTokens, config.DefaultMaxOutputTokens; got != want {
 		t.Errorf("max tokens = %d, want the configured default %d", got, want)
 	}
-	if !hasText(calls[1], "cut off at the output-token limit") || !hasText(calls[1], "no prose, no repetition") {
+	if !hasText(calls[1], "cut off at the output-token limit") || !hasText(calls[1], "one short analysis line per value") {
 		t.Errorf("retry = %+v, want feedback about the cut-off answer", calls[1].Request.Parts)
 	}
 	// An answer that is not JSON but not cut off keeps the plain parse feedback.
@@ -508,6 +509,53 @@ func TestRun_extractorTruncated(t *testing.T) {
 	Run(t.Context(), in, r.roles)
 	if hasText(r.primary.Calls()[1], "cut off") {
 		t.Error("feedback on an answer that was not truncated mentions a cut-off")
+	}
+}
+
+// analysisMarker stands for the analysis text of an answer in blocks (ADR 0012), which
+// must never leave the parser.
+const analysisMarker = "ANALYSIS-MARKER-5f3a"
+
+// blocks is an answer in blocks whose analysis carries the marker and a JSON-like value.
+func blocks(answer string) string {
+	return "<analysis>\n/name: \"" + analysisMarker + "\" {\"name\": \"" + analysisMarker + "\"}\n</analysis>\n<json>\n" + answer + "\n</json>"
+}
+
+// TestRun_analysisDiscarded: the extractor's analysis is read by no one: it is not the
+// candidate, not the previous candidate of a retry, not in feedback, the outcome or the
+// logs, also when the answer is cut off inside it.
+func TestRun_analysisDiscarded(t *testing.T) {
+	r := newRig(t, fake.Script{
+		cutOff("<analysis>\n/name: \"" + analysisMarker + "\" {\"name\": \"x\"}"),
+		fake.Answer(blocks(valid)),
+		fake.Answer(blocks(valid2)),
+	}, nil, fake.Script{fake.Answer(reject), fake.Answer(accept)})
+	var logs bytes.Buffer
+	in := input(t, personSchema)
+	in.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	out := Run(t.Context(), in, r.roles)
+	checkOutcome(t, in, out, StatusAccepted, 3, "")
+	sameJSON(t, out.Result, valid2)
+	calls := r.primary.Calls()
+	if len(calls) != 3 {
+		t.Fatalf("%d extractor calls, want 3", len(calls))
+	}
+	if !hasText(calls[1], "cut off at the output-token limit") || !hasText(calls[2], sepPrevious+"\n\n"+valid) {
+		t.Errorf("retries = %+v, %+v; want the cut-off feedback, then the previous JSON", calls[1].Request.Parts, calls[2].Request.Parts)
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, s := range map[string]string{"outcome": string(data), "logs": logs.String()} {
+		if strings.Contains(s, analysisMarker) {
+			t.Errorf("the analysis reached the %s", name)
+		}
+	}
+	for i, c := range append(calls, r.judge.Calls()...) {
+		if hasText(c, analysisMarker) {
+			t.Errorf("call %d carries the analysis", i+1)
+		}
 	}
 }
 
