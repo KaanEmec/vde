@@ -1,8 +1,8 @@
 # Job: Prompt order and wording
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: v1.1 (released)
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: done · Depends on: v1.1 (released)
 
-Implementation done; comparison pending (orchestrator).
+Done 2026-10-20: compared and kept, see [quality](../../../quality.md#v12-prompts-and-document-preparation-2026-10-20).
 
 ## Goal
 
@@ -26,7 +26,7 @@ in the document, so the model has to choose between two rules, and runs differ.
 
 ## Tasks
 
-- [ ] Record the baseline report at the `v1.1.0` commit: one run on the four core cases
+- [x] Record the baseline report at the `v1.1.0` commit: one run on the four core cases
       (epic README, "Measuring"), nothing more.
 - [x] `framing.go`: order the extractor parts as document, schema, caller instructions,
       previous candidate, feedback; the judge parts as document, schema, caller
@@ -48,8 +48,8 @@ in the document, so the model has to choose between two rules, and runs differ.
       "deviation, amendment proposed"; `docs/conformance/contract-amendment-v1.2.md` is the
       proposal the owner sends to TravelInbox (the agent does not send it); conformance
       tests that pin the old order are updated to the new one.
-- [ ] Update `docs/api/writing-instructions.md`, "How the prompts are assembled".
-- [ ] Run the comparison, record it in `docs/quality/`, keep or revert.
+- [x] Update `docs/api/writing-instructions.md`, "How the prompts are assembled".
+- [x] Run the comparison, record it in `docs/quality/`, keep or revert.
 
 ## Acceptance criteria
 

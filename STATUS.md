@@ -47,7 +47,7 @@ and the tag `v1.1.0` are pushed; `make live` passed before the release.
 | [v0.4 Judge policy and preprocessing](docs/roadmap/v0.4-history.md) | done 2026-10-18, owner suite run pending | `v0.4.0` | Judge policy per application, `extracted` and `verification`, `internal/ground`, PDF text layer and rendering (`internal/pdf`) |
 | [v1.0 Stable](docs/roadmap/v1.0-history.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
 | [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | done 2026-10-20; 00-01 is the owner's, 07-02 and 09-03 dropped | `v1.1.0` | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
-| [v1.2 Extraction quality](docs/roadmap/v1.2-extraction-quality/README.md) | planned 2026-10-19 (roadmap only) | none | One epic, nine jobs: prompt order and wording, context line and page markers, email section labels, HTML data tables, analysis blocks for extractor and judge, native structured outputs, caller schema guide, multi-pass extraction after ADR 0011; each measured against the previous report |
+| [v1.2 Extraction quality](docs/roadmap/v1.2-extraction-quality/README.md) | done 2026-10-20, not released | none | Evidence-first framings (document first, `<analysis>` before the `<json>` answer and the `<verdict>`), context line and page markers, email section labels, HTML data tables as Markdown, caller guide; deviates from contract §6/§7 by owner decision ([ADR 0012](docs/architecture/decisions/0012-evidence-first-framing.md), amendment proposed); structured outputs measured and dropped, multi-pass dropped. Core set 3 → 4 of 4 correct ([quality](docs/quality.md#v12-prompts-and-document-preparation-2026-10-20)) |
 
 ## What is verified, and how
 
@@ -155,10 +155,11 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
    and re-run `auto` to measure judge calls saved.
 4. Make the GHCR package public if `docker pull ghcr.io/kaanemec/vde:1.0.0` needs a
    login (CONTRIBUTING, "First release only").
-5. v1.2 Extraction quality ([roadmap](docs/roadmap/v1.2-extraction-quality/README.md),
-   planned 2026-10-19 in another session): starts after `v1.1.0`. Record the baseline
-   report first (epic 01 README, "Measuring"); every job then runs one real-model
-   comparison on 3 to 5 documents (a fixed core set of four) with the owner's key.
+5. v1.2 Extraction quality is done on `main`, not released. Owner: send
+   [contract-amendment-v1.2.md](docs/conformance/contract-amendment-v1.2.md) and
+   [travelinbox-schema-suggestions.md](docs/conformance/travelinbox-schema-suggestions.md)
+   to TravelInbox; until they amend §6/§7, vde deviates from the contract on prompt order
+   and answer format (ADR 0012). Release `v1.2.0` on request.
 6. The 2.0 removals measured in [ADR 0011](docs/architecture/decisions/0011-remove-tiers-and-classifier-judge.md)
    (about 590 production and 1,100 test lines, plus the deprecated keys), once the owner
    accepts the ADR and wants a major version.

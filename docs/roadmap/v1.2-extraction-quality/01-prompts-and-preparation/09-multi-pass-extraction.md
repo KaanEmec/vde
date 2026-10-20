@@ -1,6 +1,8 @@
 # Job: Multi-pass extraction (ADR 0013)
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 07, and the owner's go-ahead on ADR 0013
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: dropped · Depends on: 07, and the owner's go-ahead on ADR 0013
+
+Dropped 2026-10-20: after jobs 01 to 06 every core case is fully correct and none is a large-schema or multi-item failure (see [quality](../../../quality.md#v12-prompts-and-document-preparation-2026-10-20)). No ADR 0013 was written.
 
 ## Goal
 
@@ -21,7 +23,7 @@ otherwise mark this job `dropped` with the numbers.
 
 ## Tasks
 
-- [ ] From the reports of jobs 01 to 07, list the cases that still fail and whether they
+- [x] From the reports of jobs 01 to 07, list the cases that still fail and whether they
       are large-schema or multi-item cases. Stop here (job `dropped`) if they are not.
 - [ ] ADR 0013: when to split (schema size, top-level arrays), how (by top-level property
       groups, by array item after a first pass that lists the items), the merge rules,

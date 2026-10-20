@@ -1,8 +1,8 @@
 # Job: HTML data tables as Markdown
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 03
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: done · Depends on: 03
 
-Implementation done; comparison pending (orchestrator).
+Done 2026-10-20: compared and kept, see [quality](../../../quality.md#v12-prompts-and-document-preparation-2026-10-20).
 
 As built (`internal/document/html_table.go`): a table with a nested table, a `rowspan`, more
 than 50 columns, or a `<th>` row that is not the first row is a layout table, also when it
@@ -40,7 +40,7 @@ cells in every row (counting `colspan`). Everything else is a layout table.
       a layout template with nested tables, a data table inside a layout table, a table
       with `colspan`.
 - [x] `docs/operator/configuration.md` (`documents.html`): describe the table output.
-- [ ] Run the comparison, record it, keep or revert.
+- [x] Run the comparison, record it, keep or revert.
 
 ## Acceptance criteria
 

@@ -1,8 +1,8 @@
 # Job: Judge evidence quotes
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 05
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: done · Depends on: 05
 
-Implementation done; comparison pending (orchestrator).
+Done 2026-10-20: compared and kept, see [quality](../../../quality.md#v12-prompts-and-document-preparation-2026-10-20).
 
 ## Goal
 
@@ -32,8 +32,8 @@ without tags; it must keep working.
 - [x] Discard the analysis after parsing, as in job 05.
 - [x] Scenarios: a two-block reject whose feedback the extractor fixes, a two-block
       accept, a reject with an analysis but no verdict block (must not be acceptance).
-- [ ] `docs/api/writing-instructions.md`, "Verdict format".
-- [ ] Run the comparison: judge rejects, attempts per case, cases fixed on retry, tokens
+- [x] `docs/api/writing-instructions.md`, "Verdict format".
+- [x] Run the comparison: judge rejects, attempts per case, cases fixed on retry, tokens
       and cost; record it, keep or revert.
 
 ## Acceptance criteria

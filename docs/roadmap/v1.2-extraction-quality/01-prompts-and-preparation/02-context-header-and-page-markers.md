@@ -1,8 +1,8 @@
 # Job: Context header and page markers
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 01
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: done · Depends on: 01
 
-Implementation done; comparison pending (orchestrator).
+Done 2026-10-20: compared and kept, see [quality](../../../quality.md#v12-prompts-and-document-preparation-2026-10-20).
 
 ## Goal
 
@@ -37,8 +37,8 @@ date and is never used.
       line must not be grounded.
 - [x] The representation's policy string (hashed into `service_version`) names the
       change.
-- [ ] `docs/api/writing-instructions.md`: tell callers the line exists and what it holds.
-- [ ] Run the comparison, record it, keep or revert.
+- [x] `docs/api/writing-instructions.md`: tell callers the line exists and what it holds.
+- [x] Run the comparison, record it, keep or revert.
 
 ## Acceptance criteria
 

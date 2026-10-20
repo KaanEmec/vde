@@ -1,8 +1,8 @@
 # Job: Email section labels
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 02
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: done · Depends on: 02
 
-Implementation done; comparison pending (orchestrator).
+Done 2026-10-20: compared and kept, see [quality](../../../quality.md#v12-prompts-and-document-preparation-2026-10-20).
 
 As built: labels are written for HTML bodies under `visible_text` and for plain-text bodies;
 under `raw_html` the source stays as it is. Forwarded sections found by a marker line or a
@@ -46,9 +46,9 @@ today; a false label never removes text.
 - [x] Synthetic fixtures under `internal/document/testdata` (no real mail): Gmail,
       Outlook and Apple Mail forwards, a reply with a quote, a forward inside a reply, a
       plain-text `>` quote, an email with none.
-- [ ] `docs/api/writing-instructions.md`: callers can refer to the labels in instructions
+- [x] `docs/api/writing-instructions.md`: callers can refer to the labels in instructions
       (for example "use the forwarded message for the booking").
-- [ ] Run the comparison, record it, keep or revert.
+- [x] Run the comparison, record it, keep or revert.
 
 ## Acceptance criteria
 

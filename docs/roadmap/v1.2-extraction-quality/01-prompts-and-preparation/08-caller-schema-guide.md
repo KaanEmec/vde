@@ -1,8 +1,10 @@
 # Job: Schema guide for callers
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: none (uses what 01 and 05 decide)
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: done · Depends on: none (uses what 01 and 05 decide)
 
 Guide and suggestions done; sending and any comparison are the owner's.
+
+Done 2026-10-20. Sending the suggestions to TravelInbox, and any comparison after they adopt some, are the owner's.
 
 ## Goal
 

@@ -1,0 +1,151 @@
+{
+  "service_version": "vde-0.0.0-dev+7bea13af",
+  "extractor": [
+    "nous/anthropic/claude-haiku-5.5",
+    "nous/z-ai/glm-5.3-flash"
+  ],
+  "judge": [
+    "nous/z-ai/glm-5.3-flash"
+  ],
+  "target": "local",
+  "corpus": "testdata/user-docs/eval",
+  "cases": "owner-01-flight,owner-03-lodging,owner-02-flight,owner-10-event",
+  "judge_policy": "always",
+  "concurrency": 1,
+  "started_at": "2026-10-20T02:04:00.935824Z",
+  "finished_at": "2026-10-20T02:06:46.73352Z",
+  "summary": {
+    "cases": 4,
+    "accepted": 4,
+    "rejected": 0,
+    "failed": 0,
+    "extracted": 0,
+    "errors": 0,
+    "correct": 3,
+    "acceptance_rate": 1,
+    "false_accepts": 1,
+    "false_accepts_judge": 1,
+    "false_accepts_grounded": 0,
+    "false_accept_rate": 0.25,
+    "false_rejects": 0,
+    "false_reject_rate": 0,
+    "field_accuracy": 0.9885057471264368,
+    "accepted_field_accuracy": 0.9885057471264368,
+    "extracted_field_accuracy": 0,
+    "verified_judge": 4,
+    "verified_grounded": 0,
+    "grounded_share": 0,
+    "judge_call_cases": 4,
+    "judge_calls": 5,
+    "sampled": 0,
+    "disagreements": 0,
+    "mean_attempts": 1.5,
+    "duration_median_ms": 30377,
+    "duration_p95_ms": 86247,
+    "usage_cases": 4,
+    "calls": 11,
+    "input_tokens": 82577,
+    "output_tokens": 21733
+  },
+  "results": [
+    {
+      "id": "owner-01-flight",
+      "status": "accepted",
+      "attempts": 2,
+      "duration_ms": 37634,
+      "usage": {
+        "calls": 3,
+        "input_tokens": 28012,
+        "output_tokens": 5076
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 36,
+        "matched": 36
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+7bea13af"
+    },
+    {
+      "id": "owner-02-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 23120,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 16592,
+        "output_tokens": 3617
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 19,
+        "matched": 19
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+7bea13af"
+    },
+    {
+      "id": "owner-03-lodging",
+      "status": "accepted",
+      "attempts": 2,
+      "duration_ms": 86247,
+      "usage": {
+        "calls": 4,
+        "input_tokens": 26891,
+        "output_tokens": 11257
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 2,
+      "decision": "judged",
+      "fields": {
+        "total": 17,
+        "matched": 16,
+        "mismatches": [
+          "/reservations/0/start_place/country"
+        ]
+      },
+      "field_accuracy": 0.9411764705882353,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+7bea13af"
+    },
+    {
+      "id": "owner-10-event",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 18792,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 11082,
+        "output_tokens": 1783
+      },
+      "judge_policy": "always",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 15,
+        "matched": 15
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+7bea13af"
+    }
+  ]
+}

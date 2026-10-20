@@ -6,6 +6,27 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+Extraction quality (v1.2). Every change below changes `service_version`; `/v1` and the
+1.x configuration are unchanged. Measured on four owner documents: 3 → 4 of 4 fully
+correct, no false accept, fewer attempts and input tokens
+([docs/quality.md](docs/quality.md#v12-prompts-and-document-preparation-2026-10-20)).
+
+### Changed
+
+- Prompts put the document first, then the schema, then the caller's instructions. The
+  extractor answers `<analysis>` then `<json>`, the judge `<analysis>` then `<verdict>`;
+  only the block is parsed, bare JSON still parses, two blocks are refused, the analysis is
+  never stored or logged. Null where the schema allows it; normalising a document value is
+  expected, inventing one is not. This deviates from TravelInbox contract §6 steps 2 and 5
+  and §7 by owner decision ([ADR 0012](docs/architecture/decisions/0012-evidence-first-framing.md));
+  the amendment is proposed in [docs/conformance/contract-amendment-v1.2.md](docs/conformance/contract-amendment-v1.2.md).
+- Documents start with a context line (`type`, `sent` from an email's Date header, `pages`);
+  page images are preceded by `--- page N ---`; email bodies label forwarded messages and
+  quoted replies (nothing removed); under `documents.html: visible_text` data tables become
+  Markdown tables. None of this is grounding text.
+- [Writing instructions and schemas](docs/api/writing-instructions.md) covers the new
+  order, answer formats and document layout; drop "JSON only" lines from instructions.
+
 ## [1.1.0] - 2026-10-20
 
 A smaller service with the same `/v1` API and the same 1.x configuration (v1.1 Lean):

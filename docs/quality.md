@@ -91,6 +91,38 @@ Mismatched fields, counted once per case (runs 1 → 3): `/trip_hint/ends_on` 23
 3. Lower eval concurrency to 2 for Anthropic models through this endpoint, or add
    `Retry-After` handling on the eval client side, to avoid the failed cases.
 
+## v1.2 prompts and document preparation (2026-10-20)
+
+One real-model run per job of [v1.2 epic 01](roadmap/v1.2-extraction-quality/01-prompts-and-preparation/README.md),
+each built from that job's commit and compared with the run before it. Every run uses the
+same four owner documents (`owner-01-flight` and `owner-03-lodging`, emails;
+`owner-02-flight` and `owner-10-event`, PDFs), `--judge always`, extractor
+`anthropic/claude-haiku-5.5` with `z-ai/glm-5.3-flash` as failover, judge
+`z-ai/glm-5.3-flash`, through the owner's OpenAI-compatible endpoint. Rows are in the
+order the jobs landed on `main`. Four documents give a signal, not a statistic: a single
+field that differs between runs with no visible cause is read as noise.
+
+| Step | service_version | Correct cases | False accepts | Field accuracy | Attempts (mean) | Tokens in / out | Decision | Report |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Baseline (`v1.1.0`) | `vde-0.0.0-dev+d9f9cfb4` | 3 of 4 | 1 | 98.9% | 1.5 | 86778 / 18978 | - | [JSON](quality/vde-0.0.0-dev+d9f9cfb4-2026-10-20.json) |
+| 02 context line, page markers | `vde-0.0.0-dev+1a5e36d9` | 4 of 4 | 0 | 100% | 1.5 | 87085 / 17724 | kept | [JSON](quality/vde-0.0.0-dev+1a5e36d9-2026-10-20.json) |
+| 03 email section labels | `vde-0.0.0-dev+7bea13af` | 3 of 4 | 1 | 98.9% | 1.5 | 82577 / 21733 | kept (miss on one derived field; did not reproduce in the next run) | [JSON](quality/vde-0.0.0-dev+7bea13af-2026-10-20.json) |
+| 04 HTML data tables | `vde-0.0.0-dev+4741893c` | 4 of 4 | 0 | 100% | 1.25 | 68885 / 13968 | kept | [JSON](quality/vde-0.0.0-dev+4741893c-2026-10-20.json) |
+| 01 prompt order and wording | `vde-0.0.0-dev+5779adaf` | 3 of 4 | 1 | 98.9% | 1.25 | 69630 / 14863 | kept (the `travellers` miss flips between runs) | [JSON](quality/vde-0.0.0-dev+5779adaf-2026-10-20.json) |
+| 05 extractor analysis block | `vde-0.0.0-dev+267a1b59` | 4 of 4 | 0 | 100% | 1.5 | 81912 / 26125 | kept | [JSON](quality/vde-0.0.0-dev+267a1b59-2026-10-20.json) |
+| 06 judge evidence quotes | `vde-0.0.0-dev+f4214f03` | 4 of 4 | 0 | 100% | 1.25 | 70696 / 18367 | kept: final state | [JSON](quality/vde-0.0.0-dev+f4214f03-2026-10-20.json) |
+| 07 structured output on (Haiku) | `vde-0.0.0-dev+7963ce7e` | 3 of 4 | 1 | 98.9% | 1.5 | 89296 / 31446 | reverted | [JSON](quality/vde-0.0.0-dev+7963ce7e-2026-10-20.json) |
+
+Reading: the one recurring miss is `/reservations/0/travellers` on the event invoice,
+accepted by the judge at baseline. It came and went across the runs without an analysis
+block, and stayed right once the extractor quoted its evidence first (05, 06). With native
+structured outputs the answer has no room for that analysis and the miss came back, with
+more attempts and tokens, so job 07 was reverted
+([structured-outputs.md](providers/structured-outputs.md)). Final state against baseline:
+4 of 4 instead of 3 of 4, no false accept, 1.25 attempts instead of 1.5, 19% fewer input
+and 3% fewer output tokens. No large-schema or multi-item case is left failing, so job 09
+(multi-pass extraction) was dropped.
+
 ## Judge policy
 
 Not run yet: the owner runs this comparison.
