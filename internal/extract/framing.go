@@ -39,7 +39,7 @@ const (
 )
 
 // reaskReminder is appended to the judge request when its verdict could not be parsed.
-const reaskReminder = `Reminder: your previous answer was not a valid verdict. Answer with exactly one JSON object, {"verdict": "accept" or "reject", "feedback": {"<JSON pointer>": "<message>"}}, optionally with "confidence"; a reject needs at least one feedback entry.`
+const reaskReminder = `Reminder: your previous answer was not a valid verdict. Answer with a short <analysis> block, then exactly one JSON object inside <verdict></verdict>: {"verdict": "accept" or "reject", "feedback": {"<JSON pointer>": "<message>"}}, optionally with "confidence"; a reject needs at least one feedback entry.`
 
 // framings returns the system prompts for the extractor and the judge in the given mode.
 func framings(schemaless bool) (extractor, judge string) {

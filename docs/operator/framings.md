@@ -67,12 +67,34 @@ It costs output tokens; the default `max_output_tokens` (16,384) leaves room for
 The framing tells the judge to compare the candidate with the document only, checking
 accuracy, completeness and invented values. A value formatted, normalised or converted as
 the instructions ask is accurate when it means the same as the document, and null (or a
-field left out) for a value the document does not give is right. With a schema it adds that the candidate has
-already been validated, so the judge checks what the values say rather than their form.
+field left out) for a value the document does not give is right. With a schema it adds
+that the candidate has already been validated, so the judge checks what the values say rather than their form.
 Without a schema it adds that the instructions describe the expected JSON and that fields
 they ask for which the candidate lacks are completeness issues.
 
-The judge answers with exactly this object and nothing else:
+The judge answers in two blocks and nothing else (ADR 0012): a short analysis, one line
+per candidate value with the document's words for it, copied exactly, the page or
+section, and "ok" or "disputed", then a line listing the disputed pointers; then the
+verdict object inside a `<verdict>` block:
+
+```
+<analysis>
+/reference: "Booking reference: HV-48213" (page 1, header) ok
+/total/amount: "Total EUR 412.50" (page 1, totals) disputed
+Disputed: /total/amount
+</analysis>
+<verdict>
+{"verdict": "reject", "feedback": {"/total/amount": "Page 1, totals: \"Total EUR 412.50\"; the candidate has 360.00."}}
+</verdict>
+```
+
+The verdict block is parsed like the extractor's `<json>` block (see "Answer parsing"): an
+answer with an analysis but no closed verdict block, an unclosed block or two blocks is an
+unparseable verdict, never acceptance. An answer with neither block is read as before, so
+a judge that answers with the bare object, and the [classifier judge](../providers/classifier.md),
+which renders the bare object, keep working. The analysis is discarded after parsing, as
+the extractor's is. Caller instructions that ask for a JSON object only, or for no prose,
+are read as describing the content of the `<verdict>` block. The verdict object is:
 
 ```json
 {"verdict": "accept", "feedback": {}, "confidence": 0.9}
@@ -81,7 +103,8 @@ The judge answers with exactly this object and nothing else:
 - `verdict` is `accept` or `reject`, exactly. Anything else is an unparseable verdict.
 - `feedback` maps RFC 6901 JSON pointers into the candidate (`""` for the whole candidate)
   to one message each. A `reject` has at least one entry; an `accept` may carry advisory
-  entries. Messages are for people and may quote the document. The service keeps their
+  entries. Messages are for people and guide the extractor's retry: the framing asks each
+  to say what is wrong, quote the document and name the page or section. The service keeps their
   order and does not edit them except to cap their length (`limits.feedback_message_chars`,
   default 4,000 characters, the last replaced by `…`).
 - `confidence` is optional, a number from 0 to 1 saying how sure the judge is of its
@@ -94,7 +117,8 @@ without `confidence` agrees with it, since the key is optional.
 
 An unparseable verdict, or a judge refusal, is asked for once more in the same attempt
 (`limits.judge_reparse_tries`) with the reminder; if that fails too, the job is `failed`
-with `judge_failed`. A judge failure never counts as acceptance.
+with `judge_failed`. A judge failure never counts as acceptance. The reminder repeats the
+two-block format.
 
 The same judge request, framing included, goes to the second judge
 (`roles.second_judge`) and, after a classifier rejection with
@@ -111,7 +135,8 @@ value. Under judge policy `always` these entries reach only the extractor, never
 
 ## Answer parsing
 
-An answer in blocks is read from its `<json>` block only. When the answer has an
+An answer in blocks is read from its `<json>` block only (the judge's from its
+`<verdict>` block, with the same rules). When the answer has an
 `<analysis>` block, it must be closed and a `<json>` block must follow it; the `<json>`
 block must be closed, and there must be exactly one after the analysis. Two `<json>`
 blocks are refused rather than choosing one, so a value in the analysis, or a draft, is

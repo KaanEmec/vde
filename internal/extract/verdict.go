@@ -22,12 +22,14 @@ type verdict struct {
 }
 
 // parseVerdict parses the judge's answer: one JSON object (with the answer parser's
-// leniency) whose verdict is exactly "accept" or "reject", whose feedback is an object of
-// RFC 6901 pointers to string messages, kept in order, and whose optional confidence is a
-// number from 0 to 1. Unknown keys are ignored. A reject without entries is unparseable.
-// Messages are capped at maxChars characters and otherwise kept as given.
+// leniency, read from the <verdict> block when the answer uses blocks, ADR 0012) whose
+// verdict is exactly "accept" or "reject", whose feedback is an object of RFC 6901
+// pointers to string messages, kept in order, and whose optional confidence is a number
+// from 0 to 1. Unknown keys are ignored. A reject without entries is unparseable, and so
+// is an answer with an analysis but no closed verdict block: never acceptance. Messages
+// are capped at maxChars characters and otherwise kept as given.
 func parseVerdict(text string, maxChars int) (verdict, error) {
-	raw, err := parseJSON(text, false)
+	raw, err := parseBlock(text, tagVerdict, false)
 	if err != nil {
 		return verdict{}, err
 	}

@@ -1,0 +1,20 @@
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
+description: the judge writes an analysis but no verdict block, twice (once with an accept-like object in it); never acceptance
+steps:
+  - role: extractor
+    answer: '{"guest": "Jane Example", "nights": 3}'
+  - role: judge
+    answer: "<analysis>\n/guest: \"Guest: Jane Example\" ok\n/nights: \"3 nights\" disputed\n</analysis>\nI reject this candidate."
+  - role: judge
+    answer: "<analysis>\nEverything checks out: {\"verdict\": \"accept\", \"feedback\": {}}\n</analysis>"
+---
+input:
+  document: examples/samples/booking.txt
+expect:
+  status: failed
+  attempts: 1
+  error: judge_failed
+  judge_calls: 2 # one re-ask (limits.judge_reparse_tries 1)
+  extractor_calls: {primary: 1}
+  judge_confidence: null

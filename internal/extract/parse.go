@@ -7,17 +7,19 @@ import (
 	"strings"
 )
 
-// parserLeniency names what parseJSON tolerates. It is hashed into service_version: change
+// parserLeniency names what parseJSON and parseVerdict tolerate. It is hashed into service_version: change
 // it whenever the leniency changes.
-const parserLeniency = "answer-parser/2: the one closed <json> block, after a closed <analysis> when present; " +
+const parserLeniency = "answer-parser/3: the one closed <json> or <verdict> block, after a closed <analysis> when present; " +
 	"else first code fence, surrounding prose; no repair"
 
 const fence = "```"
 
-// The tags of the answer blocks (ADR 0012): the analysis, then the answer.
+// The tags of the answer blocks (ADR 0012): the analysis, then the extractor's JSON or
+// the judge's verdict.
 const (
 	tagAnalysis = "analysis"
 	tagJSON     = "json"
+	tagVerdict  = "verdict"
 )
 
 // parseJSON returns the JSON value in the extractor's answer. An answer in blocks (ADR

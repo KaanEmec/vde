@@ -1,6 +1,8 @@
 # Job: Judge evidence quotes
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 05
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 05
+
+Implementation done; comparison pending (orchestrator).
 
 ## Goal
 
@@ -21,14 +23,14 @@ without tags; it must keep working.
 
 ## Tasks
 
-- [ ] `framings/judge.md`: the two-block answer; the analysis checks each candidate value
+- [x] `framings/judge.md`: the two-block answer; the analysis checks each candidate value
       against the document, quoting it, and lists disputed pointers; each feedback message
       says what is wrong, quotes the document and names the page or section.
-- [ ] `verdict.go`: parse only the `<verdict>` block when present, else today's parsing.
+- [x] `verdict.go`: parse only the `<verdict>` block when present, else today's parsing.
       An unclosed or invalid `<verdict>` block is a parse failure, which is never
       acceptance.
-- [ ] Discard the analysis after parsing, as in job 05.
-- [ ] Scenarios: a two-block reject whose feedback the extractor fixes, a two-block
+- [x] Discard the analysis after parsing, as in job 05.
+- [x] Scenarios: a two-block reject whose feedback the extractor fixes, a two-block
       accept, a reject with an analysis but no verdict block (must not be acceptance).
 - [ ] `docs/api/writing-instructions.md`, "Verdict format".
 - [ ] Run the comparison: judge rejects, attempts per case, cases fixed on retry, tokens

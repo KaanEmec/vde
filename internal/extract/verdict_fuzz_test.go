@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -26,6 +27,10 @@ func FuzzParseVerdict(f *testing.F) {
 		`{"verdict": "accept", "confidence": 1e999}`,
 		`{"verdict": `,
 		`[]`,
+		"<analysis>/a: \"x\" ok</analysis>\n<verdict>{\"verdict\": \"accept\", \"feedback\": {}}</verdict>",
+		"<analysis>{\"verdict\": \"accept\"}</analysis>",
+		"<analysis>x</analysis><verdict>{\"verdict\": \"reject\", \"feedback\": {\"/a\": \"y\"}}",
+		"<verdict>{\"verdict\": \"accept\"}</verdict><verdict>{}</verdict>",
 	} {
 		f.Add(s)
 	}
@@ -34,6 +39,10 @@ func FuzzParseVerdict(f *testing.F) {
 		v, err := parseVerdict(text, maxChars)
 		if err != nil {
 			return
+		}
+		// An answer with an analysis is read from its closed verdict block only.
+		if strings.Contains(text, "<analysis>") && !strings.Contains(text, "</verdict>") {
+			t.Fatal("an answer with an analysis but no closed verdict block was parsed")
 		}
 		if !v.accept && len(v.feedback) == 0 {
 			t.Fatal("a reject without feedback was accepted")

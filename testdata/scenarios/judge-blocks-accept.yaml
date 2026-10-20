@@ -1,0 +1,19 @@
+# Script format: see the doc comment of package internal/provider/fake. The second YAML
+# document is the scenario (input, expect): see TestScenarios in cmd/vde/extract_test.go.
+description: the judge accepts in blocks (ADR 0012) with a confidence; the analysis is discarded
+steps:
+  - role: extractor
+    answer: '{"guest": "Jane Example", "nights": 3}'
+  - role: judge
+    answer: "<analysis>\n/guest: \"Guest: Jane Example\" (top) ok\n/nights: \"3 nights\" (stay details) ok\nDisputed: none\n</analysis>\n<verdict>{\"verdict\": \"accept\", \"feedback\": {}, \"confidence\": 0.9}</verdict>"
+---
+input:
+  document: examples/samples/booking.txt
+expect:
+  status: accepted
+  attempts: 1
+  judge_calls: 1
+  extractor_calls: {primary: 1}
+  judge_confidence: 0.9
+  feedback: []
+  result: '{"guest": "Jane Example", "nights": 3}'

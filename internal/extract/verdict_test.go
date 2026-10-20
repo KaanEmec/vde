@@ -71,6 +71,31 @@ func TestParseVerdict(t *testing.T) {
 		{name: "not JSON", text: "I accept this candidate.", wantUnparsable: true},
 		{name: "truncated", text: `{"verdict": "accept", "feedback": {`, wantUnparsable: true},
 		{name: "array", text: `[{"verdict": "accept"}]`, wantUnparsable: true},
+		// Answer blocks (ADR 0012).
+		{
+			name:     "blocks accept",
+			text:     "<analysis>\n/a: \"x\" (page 1) ok\nnone\n</analysis>\n<verdict>\n{\"verdict\": \"accept\", \"feedback\": {}}\n</verdict>",
+			accept:   true,
+			feedback: []Feedback{},
+		},
+		{
+			name:     "blocks reject",
+			text:     "<analysis>/a: \"y\" (page 2) disputed</analysis><verdict>{\"verdict\": \"reject\", \"feedback\": {\"/a\": \"Page 2 says \\\"y\\\".\"}}</verdict>",
+			feedback: []Feedback{judge("/a", `Page 2 says "y".`)},
+		},
+		{
+			name:     "accept-like value in the analysis",
+			text:     "<analysis>not {\"verdict\": \"accept\", \"feedback\": {}} but</analysis>\n<verdict>{\"verdict\": \"reject\", \"feedback\": {\"/a\": \"x\"}}</verdict>",
+			feedback: []Feedback{judge("/a", "x")},
+		},
+		{name: "verdict block without analysis", text: `<verdict>{"verdict": "accept"}</verdict>`, accept: true},
+		{name: "analysis without verdict block", text: "<analysis>all ok</analysis>\n{\"verdict\": \"accept\", \"feedback\": {}}", wantUnparsable: true},
+		{name: "analysis with an accept and no verdict", text: "<analysis>{\"verdict\": \"accept\", \"feedback\": {}}</analysis>", wantUnparsable: true},
+		{name: "unclosed analysis", text: "<analysis>{\"verdict\": \"accept\", \"feedback\": {}}", wantUnparsable: true},
+		{name: "unclosed verdict block", text: "<analysis>x</analysis><verdict>{\"verdict\": \"accept\", \"feedback\": {}}", wantUnparsable: true},
+		{name: "two verdict blocks", text: "<verdict>{\"verdict\": \"reject\", \"feedback\": {\"\": \"x\"}}</verdict><verdict>{\"verdict\": \"accept\"}</verdict>", wantUnparsable: true},
+		{name: "invalid verdict block", text: "<analysis>x</analysis><verdict>{\"verdict\": \"accept\",}</verdict>", wantUnparsable: true},
+		{name: "json block instead of verdict", text: "<analysis>x</analysis><json>{\"verdict\": \"accept\"}</json>", wantUnparsable: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
