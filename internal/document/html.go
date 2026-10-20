@@ -65,11 +65,29 @@ func visibleText(src []byte, limit int) string {
 	if err != nil { // only reader errors, impossible with bytes.Reader
 		return ""
 	}
+	return renderVisible(root, limit, nil)
+}
+
+// visibleTextLabelled is visibleText with a label line before and after each forwarded
+// message and quoted earlier reply that the heuristics of sections.go find; with none
+// found it is visibleText. Removing the label lines gives visibleText's output.
+func visibleTextLabelled(src []byte, limit int) string {
+	root, err := html.Parse(bytes.NewReader(src))
+	if err != nil {
+		return ""
+	}
+	return renderVisible(root, limit, htmlSections(root))
+}
+
+// renderVisible walks the parsed document in order; marks (nil for none) are the
+// elements that open a labelled section.
+func renderVisible(root *html.Node, limit int, marks map[*html.Node]sectionMark) string {
 	w := &textWriter{max: limit}
 	type frame struct {
-		n     *html.Node
-		exit  bool
-		start int // output length when an <a> was entered
+		n       *html.Node
+		exit    bool
+		start   int  // output length when an <a> was entered
+		section bool // the element opened a labelled section that it closes
 	}
 	stack := []frame{{n: root}}
 	pre := 0 // depth of <pre> elements
@@ -83,6 +101,9 @@ func visibleText(src []byte, limit int) string {
 				pre--
 			case atom.A:
 				w.link(attr(n, "href"), f.start)
+			}
+			if f.section {
+				w.closeSection(n)
 			}
 			w.block(blockBreak(n.DataAtom))
 			continue
@@ -100,13 +121,17 @@ func visibleText(src []byte, limit int) string {
 				continue
 			}
 			w.block(blockBreak(n.DataAtom))
+			opened := false
+			if m, ok := marks[n]; ok {
+				opened = w.openSection(n, m)
+			}
 			if !enterElement(w, n) {
 				continue
 			}
 			if n.DataAtom == atom.Pre {
 				pre++
 			}
-			stack = append(stack, frame{n: n, exit: true, start: w.b.Len()})
+			stack = append(stack, frame{n: n, exit: true, start: w.b.Len(), section: opened && !marks[n].toEnd})
 		case html.DocumentNode:
 		default: // comments, doctype
 			continue
@@ -119,6 +144,7 @@ func visibleText(src []byte, limit int) string {
 			stack = append(stack, frame{n: children[i]})
 		}
 	}
+	w.finish()
 	return w.b.String()
 }
 
@@ -264,6 +290,11 @@ type textWriter struct {
 	space  bool
 	tab    bool
 	breaks int // 0, 1 or 2 newlines
+
+	// Section labels (sections.go) wait in pending and are written as their own lines
+	// before the next text, so removing the label lines restores the unlabelled output.
+	sections []*openSection
+	pending  []pendingLabel
 }
 
 // invisible are zero-width and formatting characters email templates use as padding.
@@ -342,6 +373,18 @@ func (w *textWriter) write(s string) {
 		}
 	}
 	w.space, w.tab, w.breaks = false, false, 0
+	if len(w.pending) > 0 {
+		closing, opening := w.takeLabels()
+		if w.b.Len() > 0 && !strings.Contains(sep, "\n") {
+			sep = "\n" // a label line stands on its own
+		}
+		if closing != "" {
+			sep = "\n" + closing + sep
+		}
+		if opening != "" {
+			sep += opening + "\n"
+		}
+	}
 	s = sep + s
 	if room := w.max - w.b.Len(); len(s) > room {
 		for room > 0 && !utf8.RuneStart(s[room]) {

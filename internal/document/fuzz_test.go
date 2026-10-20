@@ -10,7 +10,7 @@ import (
 // FuzzNew feeds arbitrary HTML and email bytes through validation and both HTML
 // policies: nothing may panic, and accepted text is valid UTF-8.
 func FuzzNew(f *testing.F) {
-	for _, dir := range []string{"testdata/eml", "testdata/html"} {
+	for _, dir := range []string{"testdata/eml", "testdata/html", "testdata/sections"} {
 		files, _ := filepath.Glob(filepath.Join(dir, "*"))
 		for _, file := range files {
 			if data, err := os.ReadFile(file); err == nil {
@@ -29,8 +29,50 @@ func FuzzNew(f *testing.F) {
 				if err != nil || !utf8.ValidString(text) {
 					t.Fatalf("%s %s: invalid text, err %v", mt, policy, err)
 				}
+				if doc.email != nil {
+					checkLabelled(t, text, doc.email.labelledText(policy))
+				}
 			}
 		}
+	})
+}
+
+// checkLabelled: labels only add lines, so without them the text is what it was, and it
+// stays valid UTF-8. A text that has a label line of its own is not checked.
+func checkLabelled(t *testing.T, plain, labelled string) {
+	t.Helper()
+	if !utf8.ValidString(labelled) {
+		t.Fatal("labelled text is not valid UTF-8")
+	}
+	if len(labelLines(plain)) == 0 && stripLabels(labelled) != plain {
+		t.Fatal("text without labels differs from the unlabelled text")
+	}
+}
+
+// FuzzSectionLabels: labelling plain text and HTML adds label lines and nothing else.
+func FuzzSectionLabels(f *testing.F) {
+	for _, s := range []string{
+		"Hi\n> quoted\n> more\nBye",
+		"On Fri, Ben wrote:\r\n> x\r\n",
+		"-----Original Message-----\nFrom: A\nSent: x\nTo: B\nSubject: s\n\ntext\n",
+		"Begin forwarded message:\n\n> From: A\n> text\n",
+		`<blockquote type="cite">a<div class="gmail_quote">---------- Forwarded message ---------<p>x</p></div></blockquote>`,
+		`<p>-----Original Message-----</p><p>From: A Sent: B To: C Subject: D</p>`,
+	} {
+		f.Add([]byte(s))
+	}
+	files, _ := filepath.Glob("testdata/sections/*")
+	for _, file := range files {
+		if data, err := os.ReadFile(file); err == nil {
+			f.Add(data)
+		}
+	}
+	f.Fuzz(func(t *testing.T, src []byte) {
+		if !utf8.Valid(src) {
+			return
+		}
+		checkLabelled(t, string(src), labelPlain(string(src)))
+		checkLabelled(t, visibleText(src, maxVisibleText), visibleTextLabelled(src, maxVisibleText))
 	})
 }
 

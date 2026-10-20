@@ -276,7 +276,11 @@ func build(doc *Document, c candidate, policy HTMLPolicy) (Representation, error
 		if err != nil {
 			return Representation{}, err
 		}
-		r.Parts = []provider.Part{{Text: withContext(doc.contextLine(0), text)}}
+		model := text
+		if doc.Category == CategoryEmail {
+			model = doc.email.labelledText(policy) // section labels; GroundText stays without them
+		}
+		r.Parts = []provider.Part{{Text: withContext(doc.contextLine(0), model)}}
 		if doc.hasHTML() {
 			r.HTMLPolicy = policy
 		}

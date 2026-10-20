@@ -52,6 +52,23 @@ func (e *email) text(policy HTMLPolicy) string {
 	if e.html {
 		body = htmlText(e.body, policy)
 	}
+	return e.join(body)
+}
+
+// labelledText is text with a label line before and after each forwarded message and
+// quoted earlier reply of the body (sections.go). An HTML body is labelled under
+// visible_text only: raw_html is the source as it is.
+func (e *email) labelledText(policy HTMLPolicy) string {
+	switch {
+	case !e.html:
+		return e.join(labelPlain(string(e.body)))
+	case policy == VisibleText:
+		return e.join(visibleTextLabelled(e.body, maxVisibleText))
+	}
+	return e.text(policy)
+}
+
+func (e *email) join(body string) string {
 	if e.header == "" {
 		return body
 	}

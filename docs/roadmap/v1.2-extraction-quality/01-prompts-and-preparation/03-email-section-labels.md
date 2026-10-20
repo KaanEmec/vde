@@ -1,6 +1,14 @@
 # Job: Email section labels
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 02
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 02
+
+Implementation done; comparison pending (orchestrator).
+
+As built: labels are written for HTML bodies under `visible_text` and for plain-text bodies;
+under `raw_html` the source stays as it is. Forwarded sections found by a marker line or a
+"From: Sent: To: Subject:" header run to the end of the body (or of the enclosing section).
+The grounding text is the text without labels. `service_version` hashes
+`document.PreparationVersion` (`prep/3`).
 
 ## Goal
 
@@ -29,13 +37,13 @@ today; a false label never removes text.
 
 ## Tasks
 
-- [ ] `internal/document`: detect forwarded and quoted sections in an email's HTML body
+- [x] `internal/document`: detect forwarded and quoted sections in an email's HTML body
       (on the parsed tree, before `visibleText`) and in a plain-text body; nested forwards
       get nested labels, bounded in depth.
-- [ ] Insert the label lines; keep every other byte of text as it is now.
-- [ ] Grounding: label lines carry no values; check that grounding still finds every value
+- [x] Insert the label lines; keep every other byte of text as it is now.
+- [x] Grounding: label lines carry no values; check that grounding still finds every value
       it found before on the existing email samples.
-- [ ] Synthetic fixtures under `internal/document/testdata` (no real mail): Gmail,
+- [x] Synthetic fixtures under `internal/document/testdata` (no real mail): Gmail,
       Outlook and Apple Mail forwards, a reply with a quote, a forward inside a reply, a
       plain-text `>` quote, an email with none.
 - [ ] `docs/api/writing-instructions.md`: callers can refer to the labels in instructions
