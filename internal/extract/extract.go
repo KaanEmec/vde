@@ -306,11 +306,7 @@ func (l *loop) resume() {
 // error that ends the job.
 func (l *loop) extractOnce(ctx context.Context) (json.RawMessage, error) {
 	extractor := at(l.roles.Extractor, l.roles.ExtractorEscalation, l.attempts)
-	req := provider.Request{System: l.extractorSystem, Parts: assembleExtractor(l.in, l.prev, l.next)}
-	if l.in.Schema != nil {
-		req.Schema = l.in.Schema.raw // sent natively only by pairs with structured_output native
-	}
-	resp, _, err := l.call(ctx, extractor, req)
+	resp, _, err := l.call(ctx, extractor, l.extractorSystem, assembleExtractor(l.in, l.prev, l.next))
 	switch {
 	case err == nil:
 	case errors.Is(err, router.ErrPermanent):
@@ -490,7 +486,7 @@ func (l *loop) verdict(ctx context.Context, g *router.Group, system string, cand
 // as an unparseable answer. It returns the pair that gave the verdict.
 func (l *loop) judge(ctx context.Context, g *router.Group, system string, candidate json.RawMessage) (verdict, router.Served, error) {
 	for try := 0; try <= l.roles.JudgeReparseTries; try++ {
-		resp, served, err := l.call(ctx, g, provider.Request{System: system, Parts: assembleJudge(l.in, candidate, try > 0)})
+		resp, served, err := l.call(ctx, g, system, assembleJudge(l.in, candidate, try > 0))
 		if errors.Is(err, router.ErrPermanent) {
 			continue
 		}
@@ -513,8 +509,8 @@ func (l *loop) judge(ctx context.Context, g *router.Group, system string, candid
 // call makes one role call. The job's deadline (or cancellation) is checked first,
 // because the router reports an exhausted group even when a per-try timeout was the
 // cause.
-func (l *loop) call(ctx context.Context, g *router.Group, req provider.Request) (provider.Response, router.Served, error) {
-	resp, served, err := g.Complete(ctx, req)
+func (l *loop) call(ctx context.Context, g *router.Group, system string, parts []provider.Part) (provider.Response, router.Served, error) {
+	resp, served, err := g.Complete(ctx, provider.Request{System: system, Parts: parts})
 	switch {
 	case err == nil:
 		l.usage.Calls++

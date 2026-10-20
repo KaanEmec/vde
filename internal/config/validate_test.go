@@ -100,38 +100,6 @@ func TestValidate(t *testing.T) {
 			wantMessage: "must be positive",
 		},
 		{
-			name: "unknown structured_output",
-			edit: func(c *Config) {
-				c.Endpoints["local"].Models["vision"] = Model{Accepts: []string{"image/png"}, StructuredOutput: "json"}
-			},
-			wantKey:     "endpoints.local.models.vision.structured_output",
-			wantMessage: `"json" is not none or native`,
-		},
-		{
-			name: "structured_output native on anthropic",
-			edit: func(c *Config) {
-				m := c.Endpoints["anthropic"].Models["claude"]
-				m.StructuredOutput = StructuredNative
-				c.Endpoints["anthropic"].Models["claude"] = m
-			},
-			wantKey:     "endpoints.anthropic.models.claude.structured_output",
-			wantMessage: "native is supported only by openai_compatible endpoints",
-		},
-		{
-			name: "structured_output native on openai_compatible",
-			edit: func(c *Config) {
-				c.Endpoints["local"].Models["vision"] = Model{Accepts: []string{"image/png"}, StructuredOutput: StructuredNative}
-			},
-		},
-		{
-			name: "structured_output none",
-			edit: func(c *Config) {
-				m := c.Endpoints["anthropic"].Models["claude"]
-				m.StructuredOutput = StructuredNone
-				c.Endpoints["anthropic"].Models["claude"] = m
-			},
-		},
-		{
 			name: "endpoint without models",
 			edit: func(c *Config) {
 				c.Endpoints["local"].Models = nil

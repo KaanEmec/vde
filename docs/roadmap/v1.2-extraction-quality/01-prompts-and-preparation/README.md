@@ -1,6 +1,6 @@
 # Epic 01: Prompts and document preparation
 
-Version: v1.2 · Status: planned · Depends on: v1.1 (released)
+Version: v1.2 · Status: done (2026-10-20; 07 and 09 dropped) · Depends on: v1.1 (released)
 
 Nine experiments, cheapest first: four on the framings and the answer format (01, 05, 06,
 07), three on how a document is laid out before a model reads it (02, 03, 04), a caller
@@ -10,15 +10,15 @@ if it is not worse.
 
 | # | Job | Kind | Status |
 | --- | --- | --- | --- |
-| 01 | [Prompt order and wording](01-prompt-order-and-wording.md) | prompt | in progress |
-| 02 | [Context header and page markers](02-context-header-and-page-markers.md) | preparation | in progress |
-| 03 | [Email section labels](03-email-section-labels.md) | preparation | in progress |
-| 04 | [HTML data tables as Markdown](04-html-data-tables.md) | preparation | in progress |
-| 05 | [Extractor analysis block](05-extractor-analysis-block.md) | prompt | in progress |
-| 06 | [Judge evidence quotes](06-judge-evidence-quotes.md) | prompt | in progress |
-| 07 | [Native structured outputs](07-native-structured-outputs.md) | prompt | in progress |
-| 08 | [Schema guide for callers](08-caller-schema-guide.md) | docs | in progress |
-| 09 | [Multi-pass extraction (ADR 0013)](09-multi-pass-extraction.md) | architecture | planned |
+| 01 | [Prompt order and wording](01-prompt-order-and-wording.md) | prompt | done |
+| 02 | [Context header and page markers](02-context-header-and-page-markers.md) | preparation | done |
+| 03 | [Email section labels](03-email-section-labels.md) | preparation | done |
+| 04 | [HTML data tables as Markdown](04-html-data-tables.md) | preparation | done |
+| 05 | [Extractor analysis block](05-extractor-analysis-block.md) | prompt | done |
+| 06 | [Judge evidence quotes](06-judge-evidence-quotes.md) | prompt | done |
+| 07 | [Native structured outputs](07-native-structured-outputs.md) | prompt | dropped |
+| 08 | [Schema guide for callers](08-caller-schema-guide.md) | docs | done |
+| 09 | [Multi-pass extraction (ADR 0013)](09-multi-pass-extraction.md) | architecture | dropped |
 
 Jobs 01 to 07 are sequential: each one's comparison report is the next one's baseline, so
 one effect is measured at a time. 02, 03 and 04 touch disjoint files and could be built in

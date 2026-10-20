@@ -46,21 +46,6 @@ type chatRequest struct {
 	MaxTokens   int           `json:"max_tokens"`
 	Temperature float64       `json:"temperature"`        // always 0, sent explicitly
 	Provider    *routingPrefs `json:"provider,omitempty"` // OpenRouter only
-	// ResponseFormat is the structured-output constraint, only for a request with a
-	// Schema (structured_output native); absent otherwise, so the body is unchanged.
-	ResponseFormat *responseFormat `json:"response_format,omitempty"`
-}
-
-// responseFormat is the chat completions structured-output constraint.
-type responseFormat struct {
-	Type       string     `json:"type"` // json_schema
-	JSONSchema jsonSchema `json:"json_schema"`
-}
-
-type jsonSchema struct {
-	Name   string          `json:"name"`
-	Strict bool            `json:"strict"`
-	Schema json.RawMessage `json:"schema"`
 }
 
 // routingPrefs is OpenRouter's provider routing object.
@@ -117,32 +102,11 @@ func (c *Client) Complete(ctx context.Context, req provider.Request) (provider.R
 		header.Set("HTTP-Referer", openRouterReferer)
 		header.Set("X-Title", openRouterTitle)
 	}
-	raw, status, err := provider.PostJSON(ctx, c.http, c.url, header, body, "openai", false)
-	if err != nil && status == http.StatusBadRequest && constrains(req.Schema) {
-		// The endpoint may refuse the schema as a constraint: once more, prompt-only.
-		req.Schema = nil
-		if body, err = c.buildBody(req); err != nil {
-			return provider.Response{}, err
-		}
-		raw, _, err = provider.PostJSON(ctx, c.http, c.url, header, body, "openai", false)
-	}
+	raw, _, err := provider.PostJSON(ctx, c.http, c.url, header, body, "openai", false)
 	if err != nil {
 		return provider.Response{}, err
 	}
 	return parseResponse(raw)
-}
-
-// constrains reports whether schema is sent as the structured-output constraint: a JSON
-// object schema whose root type is "object", as strict json_schema requires. Any other
-// schema stays prompt-only.
-func constrains(schema []byte) bool {
-	if len(schema) == 0 {
-		return false
-	}
-	var root struct {
-		Type json.RawMessage `json:"type"`
-	}
-	return json.Unmarshal(schema, &root) == nil && string(root.Type) == `"object"`
 }
 
 // buildBody maps a role request to the chat completions body.
@@ -169,9 +133,6 @@ func (c *Client) buildBody(req provider.Request) ([]byte, error) {
 	if c.preset == presetOpenRouter {
 		// OpenRouter's routing option: only providers that do not log or train on prompts.
 		cr.Provider = &routingPrefs{DataCollection: "deny"}
-	}
-	if constrains(req.Schema) {
-		cr.ResponseFormat = &responseFormat{Type: "json_schema", JSONSchema: jsonSchema{Name: "answer", Strict: true, Schema: req.Schema}}
 	}
 	body, err := json.Marshal(cr)
 	if err != nil {

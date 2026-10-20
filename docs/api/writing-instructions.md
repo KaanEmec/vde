@@ -71,11 +71,6 @@ instructions:
   describing the content of the block, so it still works, but a contradiction costs
   attention; delete it. "No code fences inside the block" is fine and already in the
   framing.
-- An endpoint's model can instead be set to send your schema as the provider's native
-  structured-output constraint (`structured_output: native`, default `none`). That is the
-  operator's choice per model, not yours, and a constrained answer is bare JSON with no
-  analysis; see [configuration](../operator/configuration.md#endpointsname). Your schema
-  must then be one the provider accepts, which is one more reason to keep it plain.
 
 ## What the models see of your document
 

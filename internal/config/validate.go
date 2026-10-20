@@ -179,13 +179,6 @@ func (v *validator) endpoints(c *Config) {
 			if e.Models[model].MaxOutputTokens < 0 {
 				v.errorf(key+".models."+model+".max_output_tokens", "must be positive")
 			}
-			switch so := e.Models[model].StructuredOutput; {
-			case so == "" || so == StructuredNone:
-			case so != StructuredNative:
-				v.errorf(key+".models."+model+".structured_output", "%q is not none or native", so)
-			case e.Provider != "openai_compatible" && e.Provider != "fake":
-				v.errorf(key+".models."+model+".structured_output", "native is supported only by openai_compatible endpoints")
-			}
 			accepts := e.Models[model].Accepts
 			if len(accepts) == 0 {
 				v.errorf(mkey, "must list the media types the model reads")

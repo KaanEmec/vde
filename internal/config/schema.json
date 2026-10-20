@@ -335,10 +335,6 @@
           "items": {"$ref": "#/$defs/mediaType"}
         },
         "max_output_tokens": {"type": "integer", "minimum": 0, "description": "Output-token limit per call."},
-        "structured_output": {
-          "description": "native: the extractor's schema as a decoding constraint.",
-          "enum": ["none", "native"]
-        },
         "questions": {
           "description": "Deprecated (removal in 2.0). The classifier's fixed questions.",
           "type": "array",

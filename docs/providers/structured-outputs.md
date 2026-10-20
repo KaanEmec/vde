@@ -1,34 +1,25 @@
 # Native structured outputs
 
-Status: v1.2 (job 07), opt-in per model with
-[`models.<model>.structured_output: native`](../operator/configuration.md#endpointsname),
-`openai_compatible` endpoints only. Default `none`: the schema reaches the model as prompt
-text only, and requests are byte for byte those of v1.1.
+Status: measured in v1.2 (job 07) and not adopted. vde sends the schema as prompt text
+only; no adapter sends a provider's structured-output constraint. This page keeps what
+was learned, so the question can be reopened with numbers.
 
-## What it does
+## What was tried
 
-On an extractor call with a schema, a model set to `native` gets the caller's schema as
-the chat completions constraint:
+On extractor calls with a schema, an opt-in per-model setting sent the caller's schema as
+the chat completions constraint (`response_format` with `json_schema`, strict) through the
+`openai_compatible` adapter; the answer was still validated against the schema.
 
-```json
-"response_format": {"type": "json_schema", "json_schema": {"name": "answer", "strict": true, "schema": <the caller's schema>}}
-```
+## Result (2026-10-20)
 
-- The judge never gets it, and neither does a schema-less job.
-- Only a schema whose root has `"type": "object"` is sent (strict `json_schema` needs an
-  object root); any other root stays prompt-only. The schema is sent as the caller wrote it,
-  without reduction.
-- When the endpoint answers HTTP 400 to a request carrying the constraint, the adapter sends
-  the same request once more without it, inside the same provider call. A 400 on the
-  prompt-only request is permanent, as before.
-- The answer is still parsed and validated against the schema on every attempt: the
-  constraint fixes the shape, not the content, and is not trusted.
-- A constrained answer is bare JSON, so it has no room for the extractor's
-  [analysis block](../operator/framings.md#extractor-request) (ADR 0012); the answer parser's
-  fallback reads it. Whether the guaranteed shape is worth more than the analysis is what
-  the job's comparison measures.
-- `native` is hashed into `service_version`; `none` leaves the hash unchanged.
-
+On the v1.2 core set (four owner documents, `--judge always`), turning it on for
+`anthropic/claude-haiku-5.5` was worse than the prompt-only state it was measured against
+(job 06): 3 of 4 cases fully correct instead of 4, one false accept, 1.50 attempts instead
+of 1.25, and about twice the tokens on the longest case. A constrained answer is bare JSON,
+so it has no room for the extractor's analysis block
+([ADR 0012](../architecture/decisions/0012-evidence-first-framing.md)), and the field the
+analysis had fixed went wrong again. The code was reverted
+([quality report](../quality.md)).
 ## Spike: the owner's endpoint (2026-10-20)
 
 Four requests to the owner's OpenAI-compatible endpoint (Nous Research), with
@@ -58,6 +49,5 @@ Findings:
 - Hence the setting is per model, not per endpoint: both models are served by the same
   endpoint.
 
-No other adapter maps the setting. Anthropic, Gemini, Bedrock and Vertex have their own
-structured-output forms and schema subsets, untested here; configuration validation refuses
-`native` on them.
+No other adapter was tried. Anthropic, Gemini, Bedrock and Vertex have their own
+structured-output forms and schema subsets, untested here.

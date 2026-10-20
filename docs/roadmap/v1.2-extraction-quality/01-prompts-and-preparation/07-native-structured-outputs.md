@@ -1,8 +1,8 @@
 # Job: Native structured outputs
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 06
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: dropped · Depends on: 06
 
-Implementation done; comparison pending (orchestrator).
+Dropped 2026-10-20: with the setting on, 3 of 4 cases correct instead of 4, one false accept, more attempts and tokens (see [quality](../../../quality.md#v12-prompts-and-document-preparation-2026-10-20)); the code is reverted and the findings are in [structured-outputs.md](../../../providers/structured-outputs.md).
 
 ## Goal
 
@@ -51,7 +51,7 @@ job's first task decides by measurement.
 - [x] Schema validation (`schema.go`) still runs on every answer: the constraint is not
       trusted.
 - [x] Hash the setting into `service_version`.
-- [ ] Run the comparison with the setting on for the owner's endpoint; record it, keep or
+- [x] Run the comparison with the setting on for the owner's endpoint; record it, keep or
       revert (a revert keeps the code only if another endpoint benefits; otherwise remove
       it).
 

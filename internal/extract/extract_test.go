@@ -559,42 +559,6 @@ func TestRun_analysisDiscarded(t *testing.T) {
 	}
 }
 
-// TestRun_nativeSchema: with structured_output native, extractor calls carry the schema
-// for the provider's constraint, the judge's never do, and every answer is still
-// validated against the schema.
-func TestRun_nativeSchema(t *testing.T) {
-	native := strings.Replace(loopConfig, "primary-model: {accepts: [text/plain, application/pdf, image/png]}",
-		"primary-model: {accepts: [text/plain, application/pdf, image/png], structured_output: native}", 1)
-	if native == loopConfig {
-		t.Fatal("loopConfig changed; update the replacement")
-	}
-	for _, schema := range []string{personSchema, ""} {
-		primary := fake.New(fake.Script{fake.Answer(invalid), fake.Answer(valid)})
-		judge := fake.New(fake.Script{fake.Answer(accept)})
-		roles := buildRoles(t, loadConfig(t, native), map[string]provider.Provider{"primary": primary, "fallback": fake.New(nil), "review": judge})
-		in := input(t, schema)
-		out := Run(t.Context(), in, roles)
-		if schema == "" {
-			checkOutcome(t, in, out, StatusAccepted, 1, "")
-			if got := primary.Calls()[0].Request.Schema; got != nil {
-				t.Errorf("schema-less extractor call carries Schema %s", got)
-			}
-			continue
-		}
-		checkOutcome(t, in, out, StatusAccepted, 2, "") // the invalid answer was validated and retried
-		for i, c := range primary.Calls() {
-			if string(c.Request.Schema) != schema {
-				t.Errorf("extractor call %d carries Schema %q, want the caller's", i+1, c.Request.Schema)
-			}
-		}
-		for i, c := range judge.Calls() {
-			if c.Request.Schema != nil {
-				t.Errorf("judge call %d carries a Schema", i+1)
-			}
-		}
-	}
-}
-
 func TestRun_judgeTruncated(t *testing.T) {
 	r := newRig(t, fake.Script{fake.Answer(valid)}, nil,
 		fake.Script{cutOff(`{"verdict": "reject", "feedback": {"/name": "The docu`), fake.Answer(accept)})

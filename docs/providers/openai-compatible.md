@@ -13,14 +13,11 @@ anywhere:
 
 - `model`, `max_tokens` (the model's `max_output_tokens`) and `temperature` (always 0).
 - A `system` message with the role framing.
-- One `user` message whose content parts follow the order of the request: the document
-  representation, schema and instruction text, the candidate answer, reviewer feedback.
+- One `user` message whose content parts follow the order of the request: instruction and
+  schema text, the document representation, the candidate answer, reviewer feedback.
   Images go as `image_url` parts with a base64 data URL. A PDF goes as a `file` part with a
   base64 data URL, and only when you declared `application/pdf` in the model's `accepts`;
   otherwise pages are sent as images.
-- `response_format` (`json_schema`, strict, the caller's schema) on extractor calls with a
-  schema, only for a model set to `structured_output: native`
-  ([structured outputs](structured-outputs.md)); absent otherwise.
 - `Authorization: Bearer <key>` when the endpoint's `api_key_env` resolves to a value. Local
   endpoints may have no key; then no header is sent.
 - `User-Agent: vde/<version>`.
@@ -28,8 +25,7 @@ anywhere:
 Document content, instructions and answers are never written to logs or error messages, and
 redirects are not followed, so an endpoint cannot forward a document elsewhere. The adapter
 does not send `store`, `user` or any telemetry field. Not supported in v0.1: Azure's
-`api-key` header and `api-version` query, the Responses API, streaming; `response_format`
-only as above (v1.2).
+`api-key` header and `api-version` query, `response_format`, the Responses API, streaming.
 
 ## OpenRouter preset
 
