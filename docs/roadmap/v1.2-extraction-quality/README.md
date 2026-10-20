@@ -22,7 +22,8 @@ sources, is summarized in the epic README.
 
 Contract (owner decision 2026-10-20): the document-first order (job 01) and the answer
 blocks before the JSON (jobs 05 and 06) deviate from TravelInbox contract §6 and §7. They
-become the default anyway, recorded in ADR 0011, and the owner proposes the matching
+become the default anyway, recorded in [ADR 0012](../../architecture/decisions/0012-evidence-first-framing.md) (0011 was
+taken), and the owner proposes the matching
 amendment to TravelInbox. Everything else in v1.2 stays within the contract.
 
 ## Exit criterion
@@ -35,7 +36,7 @@ cost small:
 1. At least as many cases fully correct as the v1.1.0 baseline, and no case that was fully
    correct at the baseline is worse.
 2. Fewer field mismatches in total than the baseline (the report's per-pointer counts).
-3. `make conformance` and `make scenarios` pass (conformance changed only where ADR 0011 says); `make eval` (fake provider)
+3. `make conformance` and `make scenarios` pass (conformance changed only where ADR 0012 says); `make eval` (fake provider)
    passes, with its expected reports updated only where a framing or representation change
    is the cause.
 

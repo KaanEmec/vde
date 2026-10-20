@@ -342,6 +342,9 @@ func checkDocumentParts(t *testing.T, sc scenario, c fake.Call, policy document.
 	var types []string
 	var text string
 	for _, p := range c.Request.Parts[start+1:] {
+		if strings.HasPrefix(p.Text, "Schema:\n\n") || strings.HasPrefix(p.Text, "Caller instructions:\n\n") {
+			break // the document parts come first (ADR 0012); the schema or instructions follow
+		}
 		switch {
 		case isPreparationLine(p):
 			continue // the context line or a page marker, not a document part

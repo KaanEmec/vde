@@ -235,6 +235,7 @@ first releases:
 - [0009 Judge policy and a deterministic grounding check](decisions/0009-judge-policy-and-grounding.md)
 - [0010 PDF preprocessing in the service (amends 0006)](decisions/0010-pdf-preprocessing-in-service.md)
 - [0011 Remove escalation, the second judge and the classifier judge in 2.0 (proposed; amends 0004, 0009)](decisions/0011-remove-tiers-and-classifier-judge.md)
+- [0012 Evidence-first framing, deviating from contract §6 and §7 (amends 0005)](decisions/0012-evidence-first-framing.md)
 
 ## Implementation decisions (build start, 2026-10-16)
 

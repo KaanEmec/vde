@@ -1,12 +1,15 @@
 # Role framings
 
-Status: v0.1. The framing texts live in
+Status: v1.2. The framing texts live in
 [`internal/extract/framings/extractor.md`](../../internal/extract/framings/extractor.md) and
 [`internal/extract/framings/judge.md`](../../internal/extract/framings/judge.md); this page
 describes them so callers can write instructions that agree with them (contract §7).
 
 The service gives each role a fixed framing as the system prompt and assembles the user
-content in the contract's order (§6 steps 2 and 5). The framings are in English, name no
+content document first, then the schema, then the caller's instructions. This order
+deviates from the contract's (§6 steps 2 and 5), by the owner's decision of 2026-10-20
+([ADR 0012](../architecture/decisions/0012-evidence-first-framing.md)); an amendment is
+proposed to TravelInbox. The framings are in English, name no
 domain and never change per request. Caller instructions are passed byte for byte: the
 service does not shorten, rewrite or translate them, and adds no domain content.
 
@@ -14,16 +17,20 @@ service does not shorten, rewrite or translate them, and adds no domain content.
 
 | # | Part | When |
 | --- | --- | --- |
-| 1 | `Caller instructions:`, a blank line, the caller's `extractor_instructions` verbatim | always |
+| 1 | `Document:`, then the document parts: one text part, the document file, or the page images in order | always |
 | 2 | `Schema:`, a blank line, the caller's schema as sent | when a schema is given |
-| 3 | `Document:`, then the document parts: one text part, the document file, or the page images in order | always |
+| 3 | `Caller instructions:`, a blank line, the caller's `extractor_instructions` verbatim | always |
 | 4 | `Previous candidate:`, a blank line, the previous answer's JSON | on a retry after an answer that was JSON |
 | 5 | `Feedback:`, a blank line, one line per issue: `- "<JSON pointer>" (<schema, judge or grounding>): <message>` | on a retry |
 
 The framing tells the extractor to answer with exactly one JSON value and nothing else (no
-prose, no code fences, no comments); to take every value from the document and use null or
-omit a field the document does not give, as the schema and instructions allow, never
-guessing; and, on a retry, to correct every listed issue and keep what was right. With a
+prose, no code fences, no comments); that every value comes from the document, where
+formatting, normalising or converting a value the document gives, as the instructions ask
+(a date format, a unit, a code, a value split into parts), is expected and inventing one
+is not; to use null for a value the document does not give where the schema (or, without
+one, the instructions) allows null, and to leave a field out only when it is neither
+required nor allowed to be null; and, on a retry, to correct every listed issue and keep
+what was right. With a
 schema the answer conforms to it, one JSON object unless the schema's top level requires
 another type. Without a schema (schema-less mode) the JSON is shaped as the instructions
 describe: one object, or one array when they ask for a list.
@@ -32,14 +39,16 @@ describe: one object, or one array when they ask for a list.
 
 | # | Part | When |
 | --- | --- | --- |
-| 1 | `Caller instructions:`, a blank line, the caller's `judge_instructions` verbatim | always |
+| 1 | `Document:`, then the same document parts the extractor saw, from the same bytes | always |
 | 2 | `Schema:`, a blank line, the caller's schema as sent | when a schema is given |
-| 3 | `Document:`, then the same document parts the extractor saw, from the same bytes | always |
+| 3 | `Caller instructions:`, a blank line, the caller's `judge_instructions` verbatim | always |
 | 4 | `Candidate:`, a blank line, the candidate JSON as the extractor produced it | always |
 | 5 | A one-line reminder of the verdict format | only when the previous verdict could not be parsed |
 
 The framing tells the judge to compare the candidate with the document only, checking
-accuracy, completeness and invented values. With a schema it adds that the candidate has
+accuracy, completeness and invented values. A value formatted, normalised or converted as
+the instructions ask is accurate when it means the same as the document, and null (or a
+field left out) for a value the document does not give is right. With a schema it adds that the candidate has
 already been validated, so the judge checks what the values say rather than their form.
 Without a schema it adds that the instructions describe the expected JSON and that fields
 they ask for which the candidate lacks are completeness issues.

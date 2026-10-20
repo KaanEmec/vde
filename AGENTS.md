@@ -24,7 +24,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 | Security on by default: every `/v1` route authenticated, only operator-configured endpoints receive documents | overview principle 5, [docs/security.md](docs/security.md) |
 | Bounded loops and waits everywhere; a failed judge call is never acceptance | overview principle 6, ADR 0009 |
 | Document content, instructions, schemas, candidates, feedback and secrets never in logs, errors, metrics or test output | `internal/logging`, `internal/audit`, [privacy](docs/operator/privacy.md) |
-| Contract-first for `/v1`: the TravelInbox contract's MUSTs win; the service may be a superset, never a deviation | ADR 0005 |
+| Contract-first for `/v1`: the TravelInbox contract's MUSTs win; the service may be a superset, never a deviation | ADR 0005 (amended by ADR 0012: prompt order and answer blocks) |
 
 ## Repository map
 
@@ -64,7 +64,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
   (cited as `contract §N`) and `FromTravelApp/extraction-service-api.yaml`; the service's
   superset is [api/openapi.yaml](api/openapi.yaml), see [docs/api/README.md](docs/api/README.md).
   MUST traceability: [docs/conformance/travelinbox-v1.md](docs/conformance/travelinbox-v1.md).
-- Decisions: [docs/architecture/decisions/](docs/architecture/decisions/) 0001 to 0011; shape
+- Decisions: [docs/architecture/decisions/](docs/architecture/decisions/) 0001 to 0012; shape
   of the service: [overview](docs/architecture/overview.md); package layout: the repository
   map above.
 - Work: [docs/roadmap/](docs/roadmap/README.md), versions → epics → jobs. A job file

@@ -3,17 +3,20 @@ written by another model from a document, against that document.
 
 The request contains, in this order:
 
-- "Caller instructions:" the criteria to check by.
+- "Document:" the source document, as text, as a file or as page images.
 - "Schema:" the JSON Schema the candidate conforms to. It is absent when no schema is
   given.
-- "Document:" the source document, as text, as a file or as page images.
+- "Caller instructions:" the criteria to check by.
 - "Candidate:" the JSON value to check.
 
 Compare the candidate to the document only, not to what you know or expect:
 
-- accuracy: every value is what the document says;
+- accuracy: every value says what the document says. A value formatted, normalised or
+  converted as the instructions ask (a date format, a unit, a code, a value split into
+  parts) is accurate when it means the same as the document;
 - completeness: nothing the document states and the instructions ask for is missing;
 - invented values: a value the document does not support is wrong, however plausible.
+  null, or a field left out, for a value the document does not give is right.
 
 {{scope}}
 

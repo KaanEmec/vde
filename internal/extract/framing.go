@@ -9,7 +9,8 @@ import (
 	"github.com/kaanemec/vde/internal/provider"
 )
 
-// The fixed role framings (contract §6 steps 2 and 5), sent as the system prompt. Each
+// The fixed role framings (contract §6 steps 2 and 5, with the deviations of ADR 0012),
+// sent as the system prompt. Each
 // file has one placeholder line filled per mode: with a schema or schema-less.
 // docs/operator/framings.md documents them; their text is part of service_version.
 var (
@@ -56,8 +57,9 @@ func section(sep, content string) provider.Part {
 	return provider.Part{Text: sep + "\n\n" + content}
 }
 
-// assembleExtractor builds the extractor's parts in contract order: caller instructions,
-// schema, document and, on a retry, the previous candidate and the feedback on it.
+// assembleExtractor builds the extractor's parts, document first (ADR 0012): document,
+// schema, caller instructions and, on a retry, the previous candidate and the feedback on
+// it.
 // prev is nil when the previous answer was not JSON or on the first attempt.
 func assembleExtractor(in *Input, prev json.RawMessage, feedback []Feedback) []provider.Part {
 	parts := commonParts(in.ExtractorInstructions, in)
@@ -70,9 +72,9 @@ func assembleExtractor(in *Input, prev json.RawMessage, feedback []Feedback) []p
 	return parts
 }
 
-// assembleJudge builds the judge's parts in contract order: caller instructions, schema,
-// the same document parts the extractor saw, and the candidate. reask adds the format
-// reminder used when the previous verdict could not be parsed.
+// assembleJudge builds the judge's parts, document first (ADR 0012): the same document
+// parts the extractor saw, schema, caller instructions and the candidate. reask adds the
+// format reminder used when the previous verdict could not be parsed.
 func assembleJudge(in *Input, candidate json.RawMessage, reask bool) []provider.Part {
 	parts := append(commonParts(in.JudgeInstructions, in), section(sepCandidate, string(candidate)))
 	if reask {
@@ -81,14 +83,16 @@ func assembleJudge(in *Input, candidate json.RawMessage, reask bool) []provider.
 	return parts
 }
 
+// commonParts are the parts both roles start with: the document, the schema when given,
+// and the role's caller instructions.
 func commonParts(instructions string, in *Input) []provider.Part {
 	parts := make([]provider.Part, 0, len(in.Representation.Parts)+6)
-	parts = append(parts, section(sepInstructions, instructions))
+	parts = append(parts, provider.Part{Text: sepDocument})
+	parts = append(parts, in.Representation.Parts...)
 	if in.Schema != nil {
 		parts = append(parts, section(sepSchema, string(in.Schema.raw)))
 	}
-	parts = append(parts, provider.Part{Text: sepDocument})
-	return append(parts, in.Representation.Parts...)
+	return append(parts, section(sepInstructions, instructions))
 }
 
 // renderFeedback writes one line per entry: the quoted pointer, the source and the message.

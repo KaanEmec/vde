@@ -1,6 +1,8 @@
 # Job: Prompt order and wording
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: v1.1 (released)
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: v1.1 (released)
+
+Implementation done; comparison pending (orchestrator).
 
 ## Goal
 
@@ -26,23 +28,23 @@ in the document, so the model has to choose between two rules, and runs differ.
 
 - [ ] Record the baseline report at the `v1.1.0` commit: one run on the four core cases
       (epic README, "Measuring"), nothing more.
-- [ ] `framing.go`: order the extractor parts as document, schema, caller instructions,
+- [x] `framing.go`: order the extractor parts as document, schema, caller instructions,
       previous candidate, feedback; the judge parts as document, schema, caller
       instructions, candidate. Keep the separators.
-- [ ] `framings/extractor.md` and `judge.md`: describe the new order.
-- [ ] `extractor.md`: one rule for missing values: when the schema allows null, use null
+- [x] `framings/extractor.md` and `judge.md`: describe the new order.
+- [x] `extractor.md`: one rule for missing values: when the schema allows null, use null
       for a value the document does not give; leave a field out only when the schema does
       not list it as required and does not allow null.
-- [ ] `extractor.md`: say that formatting, normalising and converting a value the document
+- [x] `extractor.md`: say that formatting, normalising and converting a value the document
       gives, as the instructions ask (date formats, units, codes, splitting a value), is
       expected; inventing a value the document does not give is not.
-- [ ] `judge.md`: the same distinction, so a correctly normalised value is not rejected as
+- [x] `judge.md`: the same distinction, so a correctly normalised value is not rejected as
       "not what the document says".
-- [ ] Contract deviation (owner decision 2026-10-20: the new order and jobs 05 and 06's
+- [x] Contract deviation (owner decision 2026-10-20: the new order and jobs 05 and 06's
       answer blocks become the default; TravelInbox is asked to amend the contract):
-      ADR 0011 records the deviation from contract §6 steps 2 and 5 (order, "no prose")
+      ADR 0012 (0011 was taken) records the deviation from contract §6 steps 2 and 5 (order, "no prose")
       and §7 (the verdict as the judge's whole answer), amending ADR 0005 for these
-      points; `docs/conformance/travelinbox-v1.md` marks rows 6.3, 6.6 and 7.x as
+      points; `docs/conformance/travelinbox-v1.md` marks rows 6.3, 6.9 (step 5; 6.6 is step 3) and 7.x as
       "deviation, amendment proposed"; `docs/conformance/contract-amendment-v1.2.md` is the
       proposal the owner sends to TravelInbox (the agent does not send it); conformance
       tests that pin the old order are updated to the new one.

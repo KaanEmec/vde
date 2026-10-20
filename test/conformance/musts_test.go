@@ -806,8 +806,10 @@ func promptOrder(t *testing.T, what string, call llmCall, needles ...string) {
 }
 
 // TestS06ExtractorPromptCarriesInputsVerbatim: the extractor prompt has the service's
-// framing first, then the caller's extractor_instructions verbatim and complete, the
-// schema, the document and, on a retry, the previous candidate and the feedback on it.
+// framing first, then the document, the schema, the caller's extractor_instructions
+// verbatim and complete and, on a retry, the previous candidate and the feedback on it.
+// The document comes before the schema and the instructions: a deviation from contract §6
+// step 2, with an amendment proposed (ADR 0012).
 func TestS06ExtractorPromptCarriesInputsVerbatim(t *testing.T) {
 	requireLocal(t, "reads the prompts the provider received")
 	c := mainClient()
@@ -843,16 +845,18 @@ func TestS06ExtractorPromptCarriesInputsVerbatim(t *testing.T) {
 		if strings.TrimSpace(call.System) == "" || strings.Contains(call.System, string(inputs.extractor)) {
 			t.Errorf("call %d: the framing is missing from the system prompt or mixed with the caller's instructions", i+1)
 		}
-		promptOrder(t, "extractor call "+strconv.Itoa(i+1), call, string(inputs.extractor), string(inputs.schema), string(doc.data))
+		promptOrder(t, "extractor call "+strconv.Itoa(i+1), call, string(doc.data), string(inputs.schema), string(inputs.extractor))
 		if call.contains(string(inputs.judge)) {
 			t.Errorf("call %d carries the judge instructions", i+1)
 		}
 	}
-	promptOrder(t, "extractor retry", ex[1], string(doc.data), first, why)
+	promptOrder(t, "extractor retry", ex[1], string(inputs.extractor), first, why)
 }
 
 // TestS06JudgePromptCarriesInputsVerbatim: the judge prompt has the judge framing, the
-// caller's judge_instructions verbatim, the schema, the same document and the candidate.
+// same document, the schema, the caller's judge_instructions verbatim and the candidate.
+// The document comes first: a deviation from contract §6 step 5, with an amendment
+// proposed (ADR 0012).
 func TestS06JudgePromptCarriesInputsVerbatim(t *testing.T) {
 	requireLocal(t, "reads the prompts the provider received")
 	c := mainClient()
@@ -868,7 +872,7 @@ func TestS06JudgePromptCarriesInputsVerbatim(t *testing.T) {
 	if strings.TrimSpace(ju[0].System) == "" {
 		t.Error("no judge framing")
 	}
-	promptOrder(t, "judge call", ju[0], string(inputs.judge), string(inputs.schema), string(doc.data),
+	promptOrder(t, "judge call", ju[0], string(doc.data), string(inputs.schema), string(inputs.judge),
 		candidate("conformance default candidate"))
 	if ju[0].contains(string(inputs.extractor)) {
 		t.Error("the judge prompt carries the extractor instructions")

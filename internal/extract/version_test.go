@@ -199,6 +199,25 @@ func TestServiceVersion_framing(t *testing.T) {
 	}
 }
 
+// TestServiceVersion_framingReleases: every framing or parser change gives a new
+// service_version. previous lists the versions of the scenario configuration before each
+// such change, oldest first, from v1.1.0 on; the current one differs from all of them.
+func TestServiceVersion_framingReleases(t *testing.T) {
+	scenario, err := os.ReadFile("../../testdata/scenarios/config/vde.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := []string{
+		"vde-1.1.0+a1704233", // v1.1.0
+	}
+	got := ServiceVersion(loadConfig(t, string(scenario)), "v1.1.0")
+	for _, p := range previous {
+		if got == p {
+			t.Errorf("service_version %s is that of an earlier framing or parser", got)
+		}
+	}
+}
+
 func TestServiceVersion_missingGroup(t *testing.T) {
 	cfg := parseVersionConfig(t, nil)
 	cfg.Roles.Judge.Group = "nope"
@@ -299,9 +318,10 @@ func TestApplicationServiceVersion_judge(t *testing.T) {
 
 // TestServiceVersion_v04Fields: v0.4 hashes the grounding rules into every
 // service_version and the PDF policy where it can change what is read (ADR 0009, ADR
-// 0010). Without those two fields the hash is the v0.3 one, pinned here from the v0.3
-// code, so the loop's grounding repair under always changes service_version by these
-// fields only.
+// 0010). Without those two fields, the framings and the parser, the hash is the v0.3 one
+// of the same fields, pinned here from the v0.3 code, so the loop's grounding repair
+// under always changed service_version by these fields only. (Until v1.2 the framings and
+// the parser were part of the pinned hash; v1.2 changes them, ADR 0012.)
 func TestServiceVersion_v04Fields(t *testing.T) {
 	scenario, err := os.ReadFile("../../testdata/scenarios/config/vde.yaml")
 	if err != nil {
@@ -315,8 +335,8 @@ func TestServiceVersion_v04Fields(t *testing.T) {
 	}{
 		// Both configurations read PDFs natively (a group reads a type when one of its
 		// pairs does): under always the PDF policy changes nothing.
-		{"version configuration", parseVersionConfig(t, nil), false, "vde-0.3.0+799f9c64"},
-		{"scenario configuration", loadConfig(t, string(scenario)), false, "vde-0.3.0+f7745a77"},
+		{"version configuration", parseVersionConfig(t, nil), false, "vde-0.3.0+1efec537"},
+		{"scenario configuration", loadConfig(t, string(scenario)), false, "vde-0.3.0+a2e02af3"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var v versionedConfig
@@ -330,7 +350,7 @@ func TestServiceVersion_v04Fields(t *testing.T) {
 			if want := document.PreparationFor(document.HTMLPolicy(tt.cfg.Documents.HTML)); v.Preparation != want {
 				t.Errorf("preparation %q, want %q", v.Preparation, want)
 			}
-			v.Grounding, v.PDF, v.Preparation = "", "", ""
+			v.Grounding, v.PDF, v.Preparation, v.Framings, v.Parser = "", "", "", nil, ""
 			stripped, err := json.Marshal(v)
 			if err != nil {
 				t.Fatal(err)

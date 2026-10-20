@@ -28,7 +28,7 @@ type Blob struct {
 type Request struct {
 	Model     string
 	System    string // the role framing
-	Parts     []Part // instructions, schema, document representation, candidate, feedback
+	Parts     []Part // document representation, schema, instructions, candidate, feedback
 	MaxTokens int    // the router sets the pair's output-token limit
 }
 

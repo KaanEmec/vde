@@ -93,6 +93,12 @@ their tests no longer skip; their history and resolution are in the job file at 
 `v0.3.0` (`docs/roadmap/v0.2-service/09-contract-conformance/`, now
 [collapsed](../roadmap/v0.2-history.md#09-01-acceptance-checklist-as-automated-tests)).
 
+Rows marked **deviation, amendment proposed (ADR 0012)** are the owner's decision of
+2026-10-20 ([ADR 0012](../architecture/decisions/0012-evidence-first-framing.md)): v1.2
+deviates from the contract there on purpose, the tests check the service's behaviour, and
+the wording proposed to TravelInbox is in
+[contract-amendment-v1.2.md](contract-amendment-v1.2.md).
+
 | # | MUST (abridged) | Evidence |
 | --- | --- | --- |
 | 2.1 | Timestamps are RFC 3339 in UTC. | `TestS02TimestampsRFC3339UTC`; checkResponse on every job and quota response |
@@ -137,13 +143,13 @@ their tests no longer skip; their history and resolution are in the job file at 
 | 5.13 | Polling MUST NOT count against the quota. | `TestS05PollingNotCharged`, `TestItem07QuotaSpent` |
 | 6.1 | For one job the service MUST run the loop of section 6 and nothing else that changes the result. | `TestS06RejectUntilAttemptLimit`, `TestItem04SchemaViolation`, `TestS06JudgeUnparseableTwice` (observable steps and call counts); the absence of any other step: not testable automatically, verified by: review of `internal/extract/extract.go` |
 | 6.2 | Step 1: refuse before any model call when the request or the quota fails. | `TestS06RefusalsMakeNoModelCall`, `TestS04MalformedRequests400`, `TestS04LimitsExceeded413` |
-| 6.3 | Step 2: the extractor prompt is the fixed framing, the caller's `extractor_instructions` verbatim and complete, the schema, the document, and on a retry the previous candidate and its feedback, in this order. | `TestS06ExtractorPromptCarriesInputsVerbatim`, `TestItem04SchemaViolation`, `TestS06RejectUntilAttemptLimit` |
+| 6.3 | Step 2: the extractor prompt is the fixed framing, the caller's `extractor_instructions` verbatim and complete, the schema, the document, and on a retry the previous candidate and its feedback, in this order. | **Deviation, amendment proposed (ADR 0012):** the document comes before the schema and the instructions. `TestS06ExtractorPromptCarriesInputsVerbatim` (the ADR 0012 order), `TestItem04SchemaViolation`, `TestS06RejectUntilAttemptLimit` |
 | 6.4 | The service MUST NOT shorten, rewrite or translate the caller's instructions. | `TestS06ExtractorPromptCarriesInputsVerbatim`, `TestS06JudgePromptCarriesInputsVerbatim` (byte-exact containment) |
 | 6.5 | The service MUST NOT add domain content. | not testable automatically, verified by: review of the fixed framings `internal/extract/framings/*.md` (documented in `docs/operator/framings.md`) |
 | 6.6 | Step 3: the extractor is called through its group with failover between endpoints. | `TestItem06PrimaryExtractorUnreachable` |
 | 6.7 | The answer MAY lose code fences and surrounding prose; the service MUST NOT repair the JSON beyond that. | `TestS06NoJSONRepair` |
 | 6.8 | Step 4: a candidate that does not validate, or is not JSON, goes back to step 2 with `source: "schema"` feedback, counts as an attempt and does not call the judge. | `TestItem04SchemaViolation`, `TestS06NoJSONRepair` |
-| 6.9 | Step 5: the judge prompt is the judge framing, `judge_instructions` verbatim, the schema, the same document representation, the candidate. | `TestS06JudgePromptCarriesInputsVerbatim` |
+| 6.9 | Step 5: the judge prompt is the judge framing, `judge_instructions` verbatim, the schema, the same document representation, the candidate. | **Deviation, amendment proposed (ADR 0012):** the document comes first, then the schema, the instructions and the candidate. `TestS06JudgePromptCarriesInputsVerbatim` (the ADR 0012 order) |
 | 6.10 | Step 6: an unparseable verdict is asked for once more in the same attempt; failing again, the job is `failed` with `judge_failed`. | `TestS06JudgeUnparseableTwice`, `TestS07VerdictFormat` |
 | 6.11 | A judge call failing on every endpoint of its group: `failed` with `provider_unavailable`. | `TestItem05JudgeGroupUnreachable` |
 | 6.12 | A judge failure never counts as acceptance. | `TestItem05JudgeGroupUnreachable`, `TestS06JudgeUnparseableTwice`, `TestS05AcceptedOnlyOnJudgeAccept` |

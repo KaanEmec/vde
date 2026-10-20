@@ -52,7 +52,7 @@ Each question is phrased so that "yes" means the candidate passes. `threshold` i
 {
   "model": "jev-1",
   "questions": [{"id": "accuracy", "text": "Is every value of the candidate what the document says?"}],
-  "text": "Caller instructions:\n\n...\n\nSchema:\n\n...\n\nDocument:\n\n<document text>\n\nCandidate:\n\n{\"name\": \"Ada\"}"
+  "text": "Document:\n\n<document text>\n\nSchema:\n\n...\n\nCaller instructions:\n\n...\n\nCandidate:\n\n{\"name\": \"Ada\"}"
 }
 ```
 

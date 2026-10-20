@@ -45,6 +45,30 @@ func TestFramings_modes(t *testing.T) {
 	}
 }
 
+// TestFramings_order: each framing lists the request's sections in the order the
+// assemblers send them, document first (ADR 0012).
+func TestFramings_order(t *testing.T) {
+	for _, schemaless := range []bool{false, true} {
+		extractor, judge := framings(schemaless)
+		for name, tc := range map[string]struct {
+			text string
+			seps []string
+		}{
+			"extractor": {extractor, []string{sepDocument, sepSchema, sepInstructions, sepPrevious, sepFeedback}},
+			"judge":     {judge, []string{sepDocument, sepSchema, sepInstructions, sepCandidate}},
+		} {
+			at := -1
+			for _, sep := range tc.seps {
+				i := strings.Index(tc.text, `"`+sep+`"`)
+				if i < at {
+					t.Errorf("%s framing (schemaless=%v): %q is missing or out of order", name, schemaless, sep)
+				}
+				at = i
+			}
+		}
+	}
+}
+
 // testInput has instructions with leading and trailing whitespace and markdown, which
 // must reach the models byte for byte.
 func testInput(t *testing.T, schema *Schema) *Input {
@@ -82,7 +106,7 @@ func TestAssembleExtractor(t *testing.T) {
 		{
 			name: "first attempt",
 			in:   in,
-			want: []string{"Caller instructions:\n\n" + in.ExtractorInstructions, "Schema:\n\n" + ` {"type": "object"} `, "Document:", "<doc>"},
+			want: []string{"Document:", "<doc>", "Schema:\n\n" + ` {"type": "object"} `, "Caller instructions:\n\n" + in.ExtractorInstructions},
 		},
 		{
 			name:     "retry",
@@ -90,7 +114,7 @@ func TestAssembleExtractor(t *testing.T) {
 			prev:     json.RawMessage(`{"a": 1}`),
 			feedback: feedback,
 			want: []string{
-				"Caller instructions:\n\n" + in.ExtractorInstructions, "Schema:\n\n" + ` {"type": "object"} `, "Document:", "<doc>",
+				"Document:", "<doc>", "Schema:\n\n" + ` {"type": "object"} `, "Caller instructions:\n\n" + in.ExtractorInstructions,
 				"Previous candidate:\n\n{\"a\": 1}", "Feedback:\n\n- \"/a\" (judge): wrong\n- \"\" (schema): also",
 			},
 		},
@@ -98,7 +122,7 @@ func TestAssembleExtractor(t *testing.T) {
 			name:     "retry after an answer that was not JSON",
 			in:       testInput(t, nil),
 			feedback: feedback[1:],
-			want:     []string{"Caller instructions:\n\n" + in.ExtractorInstructions, "Document:", "<doc>", "Feedback:\n\n- \"\" (schema): also"},
+			want:     []string{"Document:", "<doc>", "Caller instructions:\n\n" + in.ExtractorInstructions, "Feedback:\n\n- \"\" (schema): also"},
 		},
 	}
 	for _, tt := range tests {
@@ -111,8 +135,16 @@ func TestAssembleExtractor(t *testing.T) {
 func TestAssembleJudge(t *testing.T) {
 	in := testInput(t, nil)
 	candidate := json.RawMessage(`{"a": 1}`)
-	base := []string{"Caller instructions:\n\n" + in.JudgeInstructions, "Document:", "<doc>", "Candidate:\n\n{\"a\": 1}"}
+	base := []string{"Document:", "<doc>", "Caller instructions:\n\n" + in.JudgeInstructions, "Candidate:\n\n{\"a\": 1}"}
 	assertParts(t, assembleJudge(in, candidate, false), base, in.Representation.Parts)
+	schema, err := CompileSchema([]byte(`{"type": "object"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSchema := testInput(t, schema)
+	assertParts(t, assembleJudge(withSchema, candidate, false),
+		[]string{"Document:", "<doc>", "Schema:\n\n" + `{"type": "object"}`, "Caller instructions:\n\n" + in.JudgeInstructions, "Candidate:\n\n{\"a\": 1}"},
+		withSchema.Representation.Parts)
 	assertParts(t, assembleJudge(in, candidate, true), append(base, reaskReminder), in.Representation.Parts)
 }
 
