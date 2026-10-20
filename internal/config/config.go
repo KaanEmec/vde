@@ -111,7 +111,21 @@ type Model struct {
 	// Questions are the fixed typed questions a classifier model answers (provider
 	// classifier only; required there).
 	Questions []Question `yaml:"questions,omitempty"`
+	// StructuredOutput is StructuredNative to send the caller's schema as the provider's
+	// native structured-output constraint on extractor calls (openai_compatible only);
+	// empty or StructuredNone sends it as prompt text only.
+	StructuredOutput string `yaml:"structured_output,omitempty"`
 }
+
+// Values of models.<m>.structured_output.
+const (
+	StructuredNone   = "none"
+	StructuredNative = "native"
+)
+
+// NativeSchema reports whether extractor calls to the model carry the caller's schema as
+// a native structured-output constraint.
+func (m Model) NativeSchema() bool { return m.StructuredOutput == StructuredNative }
 
 // Question is one typed question of a classifier model, phrased so that "yes" means the
 // candidate passes. The verdict is accept when every question's probability of "yes" is

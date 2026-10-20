@@ -16,7 +16,7 @@ if it is not worse.
 | 04 | [HTML data tables as Markdown](04-html-data-tables.md) | preparation | in progress |
 | 05 | [Extractor analysis block](05-extractor-analysis-block.md) | prompt | in progress |
 | 06 | [Judge evidence quotes](06-judge-evidence-quotes.md) | prompt | in progress |
-| 07 | [Native structured outputs](07-native-structured-outputs.md) | prompt | planned |
+| 07 | [Native structured outputs](07-native-structured-outputs.md) | prompt | in progress |
 | 08 | [Schema guide for callers](08-caller-schema-guide.md) | docs | planned |
 | 09 | [Multi-pass extraction (ADR 0012)](09-multi-pass-extraction.md) | architecture | planned |
 

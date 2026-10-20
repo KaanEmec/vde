@@ -104,7 +104,11 @@ func printSummary(w io.Writer, path string, cfg *config.Config) {
 		}
 		fmt.Fprintf(tw, "  %s\t%s\t%s\tkey %s\ttimeout %s\n", name, e.Provider, e.BaseURL, key, e.Timeout)
 		for _, model := range slices.Sorted(maps.Keys(e.Models)) {
-			fmt.Fprintf(tw, "    %s\t%s\n", model, strings.Join(e.Models[model].Accepts, ", "))
+			line := strings.Join(e.Models[model].Accepts, ", ")
+			if e.Models[model].NativeSchema() {
+				line += "\tstructured_output native"
+			}
+			fmt.Fprintf(tw, "    %s\t%s\n", model, line)
 		}
 	}
 	fmt.Fprintln(tw, "\ngroups")

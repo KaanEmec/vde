@@ -167,6 +167,12 @@ func TestServiceVersion_stability(t *testing.T) {
 				Questions: []config.Question{{ID: "accuracy", Text: "Accurate?", Threshold: 0.7}},
 			}
 		}, true},
+		{"structured output native", func(c *config.Config) {
+			c.Endpoints["spare"].Models["model-c"] = config.Model{Accepts: []string{"image/png", "text/plain"}, StructuredOutput: config.StructuredNative}
+		}, true},
+		{"structured output none spelled out", func(c *config.Config) {
+			c.Endpoints["spare"].Models["model-c"] = config.Model{Accepts: []string{"image/png", "text/plain"}, StructuredOutput: config.StructuredNone}
+		}, false},
 		{"judge policy always spelled out", func(c *config.Config) { c.Roles.Judge.Policy = config.JudgeAlways }, false},
 		{"judge policy unset", func(c *config.Config) { c.Roles.Judge.Policy = "" }, false},
 		{"judge policy never", func(c *config.Config) { c.Roles.Judge.Policy = config.JudgeNever }, true},

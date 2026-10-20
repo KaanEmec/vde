@@ -1,6 +1,8 @@
 # Job: Native structured outputs
 
-Version: v1.2 · Epic: 01 Prompts and document preparation · Status: planned · Depends on: 06
+Version: v1.2 · Epic: 01 Prompts and document preparation · Status: in progress · Depends on: 06
+
+Implementation done; comparison pending (orchestrator).
 
 ## Goal
 
@@ -26,21 +28,29 @@ job's first task decides by measurement.
 
 ## Tasks
 
-- [ ] Spike on the owner's endpoint and models: does `response_format` json_schema reach
+- [x] Spike on the owner's endpoint and models: does `response_format` json_schema reach
       the model, and with which schema subset; same for Anthropic directly if a key is
       available. Use synthetic samples from `examples/` and at most five requests per
-      endpoint. Write the findings in `docs/providers/`.
-- [ ] `internal/config`: an optional per-endpoint (or per model pair) key, for example
-      `structured_output: none|native`, default `none`; schema, docs
+      endpoint. Write the findings in `docs/providers/`. Done: four requests,
+      [structured-outputs.md](../../../providers/structured-outputs.md); honoured by
+      `anthropic/claude-haiku-5.5`, not by `z-ai/glm-5.3-flash` on the same endpoint, so
+      the key is per model. No Anthropic key; Anthropic, Gemini, Bedrock and Vertex are
+      not mapped. The wrap-or-reasoning-mode question is left to the comparison: the
+      constraint is the caller's schema itself, so a constrained answer has no analysis.
+- [x] `internal/config`: an optional per-endpoint (or per model pair) key, for example
+      `structured_output: none|native`, default `none` (implemented as
+      `endpoints.<e>.models.<m>.structured_output`); schema, docs
       (`docs/operator/configuration.md`) and `vde config check` output in step.
-- [ ] `internal/provider`: a field on the request carrying the schema; each adapter that
+- [x] `internal/provider`: a field on the request carrying the schema; each adapter that
       supports it maps it, the others ignore it. Unsupported keywords are reduced or the
-      request falls back to prompt-only, deterministically.
-- [ ] Extractor only; the judge's verdict format may follow in the same way if the
+      request falls back to prompt-only, deterministically. (A root that is not an
+      object stays prompt-only; an HTTP 400 to the constrained request is sent once more
+      without the constraint. No keyword reduction.)
+- [x] Extractor only; the judge's verdict format may follow in the same way if the
       extractor result is kept.
-- [ ] Schema validation (`schema.go`) still runs on every answer: the constraint is not
+- [x] Schema validation (`schema.go`) still runs on every answer: the constraint is not
       trusted.
-- [ ] Hash the setting into `service_version`.
+- [x] Hash the setting into `service_version`.
 - [ ] Run the comparison with the setting on for the owner's endpoint; record it, keep or
       revert (a revert keeps the code only if another endpoint benefits; otherwise remove
       it).

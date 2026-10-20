@@ -24,6 +24,10 @@ allows; whether a model can actually read a media type is a property of the mode
 the adapter, and you declare it in each model's `accepts` list
 ([declaring `accepts`](../operator/providers.md#declaring-accepts)).
 
+Native structured outputs (the caller's schema as a decoding constraint on extractor
+calls) are opt-in per model and mapped by `openai_compatible` only:
+[structured-outputs.md](structured-outputs.md), with the spike on the owner's endpoint.
+
 ## Adding an adapter
 
 An adapter is a package under `internal/provider/<name>/`. Its documentation lives in

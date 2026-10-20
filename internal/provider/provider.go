@@ -30,6 +30,10 @@ type Request struct {
 	System    string // the role framing
 	Parts     []Part // document representation, schema, instructions, candidate, feedback
 	MaxTokens int    // the router sets the pair's output-token limit
+	// Schema is the caller's JSON Schema on an extractor call, kept by the router only
+	// for pairs with structured_output native. An adapter that supports it sends it as
+	// the provider's structured-output constraint; the others ignore it.
+	Schema []byte
 }
 
 // Response is the model's text answer and its token usage.

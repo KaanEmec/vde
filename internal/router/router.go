@@ -43,6 +43,7 @@ type pair struct {
 	accepts  []string
 	maxOut   int           // output-token limit for requests that set none
 	timeout  time.Duration // per try; 0 for none
+	native   bool          // structured_output native: requests keep their Schema
 }
 
 // Group serves one role from an ordered list of endpoint-model pairs. It is safe for
@@ -103,6 +104,7 @@ func NewGroup(name string, g *config.Group, cfg *config.Config,
 			accepts:  slices.Clone(m.Accepts),
 			maxOut:   m.OutputTokens(),
 			timeout:  e.Timeout,
+			native:   m.NativeSchema(),
 		})
 	}
 	maxTries := g.Failover.MaxTries
@@ -126,7 +128,8 @@ func (g *Group) Name() string { return g.name }
 
 // Complete sends req to the group's pairs in order, healthy pairs first, skipping pairs
 // that cannot read the media types of req's parts, until one answers. req.Model, and
-// req.MaxTokens when it is 0, are set per pair. The returned errors are described in the package documentation.
+// req.MaxTokens when it is 0, are set per pair; req.Schema is kept only for pairs with
+// structured_output native. The returned errors are described in the package documentation.
 func (g *Group) Complete(ctx context.Context, req provider.Request) (provider.Response, Served, error) {
 	order, err := g.order(req)
 	if err != nil {
@@ -199,6 +202,9 @@ func (g *Group) try(ctx context.Context, p *pair, req provider.Request) (provide
 	req.Model = p.Model
 	if req.MaxTokens == 0 {
 		req.MaxTokens = p.maxOut
+	}
+	if !p.native {
+		req.Schema = nil
 	}
 	start := time.Now()
 	resp, err := p.provider.Complete(ctx, req)

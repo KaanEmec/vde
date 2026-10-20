@@ -288,6 +288,25 @@ func TestGroup_Complete_setsMaxTokens(t *testing.T) {
 	}
 }
 
+// TestGroup_Complete_schemaPerPair: a request's Schema reaches only pairs with
+// structured_output native.
+func TestGroup_Complete_schemaPerPair(t *testing.T) {
+	t.Parallel()
+	g, fakes := newGroup(t, config.Failover{},
+		spec{name: "a", script: fake.AlwaysRetryable(503)}, spec{name: "b", script: fake.Script{fake.Answer("ok")}})
+	g.pairs[1].native = true
+	schema := []byte(`{"type": "object"}`)
+	if _, _, err := g.Complete(context.Background(), provider.Request{Schema: schema}); err != nil {
+		t.Fatal(err)
+	}
+	if got := fakes[0].Calls()[0].Request.Schema; got != nil {
+		t.Errorf("pair a (none) got Schema %s, want none", got)
+	}
+	if got := fakes[1].Calls()[0].Request.Schema; string(got) != string(schema) {
+		t.Errorf("pair b (native) got Schema %q, want the request's", got)
+	}
+}
+
 func TestGroup_Complete_maxTotalTime(t *testing.T) {
 	t.Parallel()
 	slow := fake.Script{{Delay: time.Hour, Answer: "late", Repeat: true}}

@@ -40,7 +40,8 @@ var semverRe = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // policies; the framing texts and separators; the answer parser's leniency and the schema
 // library's version. Configured extras are hashed too and leave the hash unchanged when
 // unset: per-attempt escalation steps, the second judge's group, a classifier judge's
-// feedback fallback (llm, with its group) and a classifier model's questions. The judge
+// feedback fallback (llm, with its group), a classifier model's questions and a model's
+// structured_output native. The judge
 // policy (ADR 0009) is hashed only when it is not always, and the sample rate only under
 // auto. The grounding rules (ground.RulesVersion) are always hashed, since every policy
 // grounds candidates (always for its one repair, ADR 0009). The document preparation
@@ -137,6 +138,9 @@ type versionedPair struct {
 	Accepts  []string `json:"accepts"`
 	// Questions of a classifier model, in order.
 	Questions []versionedQuestion `json:"questions,omitempty"`
+	// StructuredOutput is "native" when set so, absent otherwise (the default keeps the
+	// hash).
+	StructuredOutput string `json:"structured_output,omitempty"`
 }
 
 // canonicalConfig is the JSON hashed by ServiceVersion. Struct fields marshal in a fixed
@@ -241,6 +245,9 @@ func versionGroup(cfg *config.Config, name string) versionedGroup {
 			p.Accepts = slices.Sorted(slices.Values(m.Accepts))
 			for _, q := range m.Questions {
 				p.Questions = append(p.Questions, versionedQuestion{ID: q.ID, Text: q.Text, Threshold: q.Threshold})
+			}
+			if m.NativeSchema() {
+				p.StructuredOutput = config.StructuredNative
 			}
 		}
 		out.Pairs = append(out.Pairs, p)
