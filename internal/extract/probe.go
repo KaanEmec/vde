@@ -115,7 +115,7 @@ func Probe(ctx context.Context, role string, p provider.Provider, model string, 
 		r.Status, r.Err = ProbeUnparseable, err
 	case v.accept:
 		r.Status = ProbeAcceptsWrong
-	case !slices.ContainsFunc(v.feedback, func(f Feedback) bool { return f.Pointer == probeWrongPointer }):
+	case !slices.ContainsFunc(v.feedback, func(f Feedback) bool { return f.Pointer == probeWrongPointer || f.Pointer == "" }):
 		r.Status = ProbeRejectsElsewhere
 	default:
 		r.Status = ProbeOK
