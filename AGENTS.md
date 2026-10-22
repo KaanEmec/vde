@@ -30,7 +30,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 
 | Path | Owns |
 | --- | --- |
-| `cmd/vde/` | `main`: subcommands `serve` (`--role`), `extract`, `eval`, `config check\|schema`, `app`, `token`, `audit`, `migrate`, `healthcheck`, `version`; e2e, scenario and live tests |
+| `cmd/vde/` | `main`: subcommands `serve` (`--role`), `extract`, `eval`, `config check [--probe]\|schema`, `app`, `token`, `audit`, `migrate`, `healthcheck`, `version`; e2e, scenario and live tests |
 | `api/` | `openapi.yaml` (public `/v1`) and `admin-openapi.yaml`, embedded (`embed.go`) |
 | `internal/api/` | HTTP handlers, middleware (auth, request id, limits, quota headers), errors, admin routes, sync endpoint (`doc.go`) |
 | `internal/audit/` | Typed audit events, never content (`doc.go`) |
@@ -39,7 +39,7 @@ Full list: [overview, "Design principles"](docs/architecture/overview.md#design-
 | `internal/config/` | YAML model, env-var secrets, defaults, validation, media types per role (`doc.go`) |
 | `internal/document/` | Document model, media types, representation selection, HTML to text, email parsing, image conversion, PDF policy, grounding text (`doc.go`) |
 | `internal/eval/` | Evaluation harness: corpus, `compare.yaml` rules, reports keyed by `service_version` (`doc.go`) |
-| `internal/extract/` | The bounded extractor-judge loop, framings, parsing, schema feedback, verdicts, judge policy, sampling, `service_version` (`doc.go`, loop in `extract.go`) |
+| `internal/extract/` | The bounded extractor-judge loop, framings, parsing, schema feedback, verdicts, judge policy, sampling, `service_version`, the model probe of `config check --probe` (`doc.go`, loop in `extract.go`, `probe.go`) |
 | `internal/ground/` | Deterministic grounding check, no model, no I/O (`doc.go`, ADR 0009) |
 | `internal/job/` | Job rows and state machine, `Store` with SQLite and Postgres drivers, migrations in `migrations/` and `migrations_postgres/` (`doc.go`) |
 | `internal/logging/` | slog setup with a fixed attribute vocabulary and redaction (`doc.go`) |
@@ -128,6 +128,9 @@ VDE_CONFORMANCE_TOKEN=<jobs token> [VDE_CONFORMANCE_FOREIGN_TOKEN=...] go test .
 - Owner's default (2026-10-17): OpenAI-compatible endpoint (Nous Research); extractor
   `anthropic/claude-haiku-5.5` with `z-ai/glm-5.3-flash` as failover, judge
   `z-ai/glm-5.3-flash`, HTML `visible_text`.
+- Real-model evals cost money: 3 to 5 cases per run, named with `--cases`, one run per
+  change, `--concurrency 1`; never a whole corpus. Before trusting a new model, run
+  `vde config check --probe` (one tiny request per role and pair).
 - Commands: `go run ./cmd/vde eval --corpus testdata/user-docs/eval --config
   testdata/user-docs/vde.nous.yaml --judge always|auto|never [--compare eval-reports/<x>.json]`;
   the TravelInbox corpus with `--corpus testdata/eval --cases 'travelinbox-*'`. The full

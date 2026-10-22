@@ -1,6 +1,6 @@
 # STATUS
 
-Where the project stands, as of **2026-10-20** (v1.1 closeout 10-01, on top of `8f0a0a9`).
+Where the project stands, as of **2026-10-22** (v1.3 done on `main`, not released).
 How to work here is in [AGENTS.md](AGENTS.md). Job files under [docs/roadmap/](docs/roadmap/README.md) stay the
 source of truth; this page summarizes them and must be updated at the end of every session.
 
@@ -48,6 +48,7 @@ and the tag `v1.1.0` are pushed; `make live` passed before the release.
 | [v1.0 Stable](docs/roadmap/v1.0-history.md) | done 2026-10-18 (03-01 and epic 04 deferred by the owner) | `v1.0.0` | Compatibility policy and OpenAPI snapshot test, config JSON Schema (`vde config schema`), hardening pass with fuzzers, independent review with fixes, `limits.max_queued_jobs` and `limits.max_submits_in_flight` |
 | [v1.1 Lean](docs/roadmap/v1.1-lean/README.md) | done 2026-10-20; 00-01 is the owner's, 07-02 and 09-03 dropped | `v1.1.0` | Leaner code, tests, testdata and docs within the 1.x promise; vetted skills and prompts per task in [skills.md](docs/roadmap/v1.1-lean/skills.md); CI and releases move to the owner's machine (`make ci`, `make release`; GitHub only as backup and artifact host); owner decisions L1 to L9 and 18 taken 2026-10-19 ([open questions](docs/roadmap/open-questions.md#decided), item 17) |
 | [v1.2 Extraction quality](docs/roadmap/v1.2-extraction-quality/README.md) | released 2026-10-20 | `v1.2.0` | Evidence-first framings (document first, `<analysis>` before the `<json>` answer and the `<verdict>`), context line and page markers, email section labels, HTML data tables as Markdown, caller guide; deviates from contract §6/§7 by owner decision ([ADR 0012](docs/architecture/decisions/0012-evidence-first-framing.md), amendment proposed); structured outputs measured and dropped, multi-pass dropped. Core set 3 → 4 of 4 correct ([quality](docs/quality.md#v12-prompts-and-document-preparation-2026-10-20)) |
+| [v1.3 Convention-aware verification](docs/roadmap/v1.3-convention-aware-verification/README.md) | done 2026-10-22, not released | none | TravelInbox conventions as schema constraints and instruction examples in the co-owned corpus copy (5 TravelInbox cases: 20 → 7 field mismatches, convention misses 11 → 4), hand-over in [travelinbox-conventions-v1.3.md](docs/conformance/travelinbox-conventions-v1.3.md); `vde config check --probe`; failure codes by job id after `retention: none`; `x-vde-grounding: convention` measured and reverted (judge changed no outcome at 2× tokens) |
 
 ## What is verified, and how
 
@@ -161,10 +162,11 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
    [travelinbox-schema-suggestions.md](docs/conformance/travelinbox-schema-suggestions.md)
    to TravelInbox; until they amend §6/§7, vde deviates from the contract on prompt order
    and answer format (ADR 0012).
-6. v1.3 Convention-aware verification ([roadmap](docs/roadmap/v1.3-convention-aware-verification/README.md),
-   planned 2026-10-22): conventions in the TravelInbox schema and instructions (epic 01,
-   measured on five named cases under `auto`), `x-vde-grounding: convention`,
-   `vde config check --probe`, failure codes by job id after `retention: none` (epic 02).
+6. v1.3 is done on `main`, not released. Owner: send
+   [travelinbox-conventions-v1.3.md](docs/conformance/travelinbox-conventions-v1.3.md) to
+   TravelInbox (schema constraints and prompt_version 5 examples, measured). Still missed on
+   the five cases: `travellers` and a choice between two printed amounts; next candidates are
+   the backlog's devil's advocate judge and schema invariants. Release `v1.3.0` on request.
 7. The 2.0 removals measured in [ADR 0011](docs/architecture/decisions/0011-remove-tiers-and-classifier-judge.md)
    (about 590 production and 1,100 test lines, plus the deprecated keys), once the owner
    accepts the ADR and wants a major version.

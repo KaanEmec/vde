@@ -1,6 +1,6 @@
 # v1.3 Convention-aware verification
 
-Status: planned (roadmap written 2026-10-22; no code changed yet) · Depends on: v1.2 (released)
+Status: done (2026-10-22, not released; 02-01 dropped after measurement) · Depends on: v1.2 (released)
 
 ## Goal
 
@@ -47,6 +47,17 @@ On the measurement set below, with the owner's default models and `--judge auto`
 6. `make check`, `make scenarios`, `make conformance` and `make eval` pass; conformance
    unchanged.
 
+## Exit criterion check (2026-10-22)
+
+| # | Criterion | Result |
+| --- | --- | --- |
+| 1 | At least 3 fewer mismatches, no case worse | 20 → 7 mismatches. Not fully met: `021-hotel` has 2 against 1 at baseline in the final-state run (its `provider` miss fixed, a `travellers` and a `cancellation` miss in its place; 1 in the 02-01 run, so within single-run noise) |
+| 2 | Convention mismatches at most half | 11 → 4 (`details` 5 → 0, `provider` 2 → 1, `travellers` 4 → 3) |
+| 3 | Judge calls and cost reported | Every step in [docs/quality.md](../../quality.md#v13-convention-aware-verification-2026-10-22); 02-01 sent 5 of 5 jobs to the judge for no changed outcome and was reverted |
+| 4 | Probe reports per pair; Mistral explained | Probe met (3 of 3 of the owner's pairs `ok` on real models). Mistral not explained: no key for TravelInbox's endpoint; TravelInbox can run the probe |
+| 5 | Failure code by job id after `retention: none` | Met (e2e test with the fake provider) |
+| 6 | Checks pass, conformance unchanged | Met: `make check`, `make scenarios`, `make conformance`, `make eval` |
+
 ## Measuring
 
 Real-model runs cost money, so every run uses the same five TravelInbox cases, named
@@ -77,8 +88,8 @@ separate jobs, so numbers are comparable between v1.3 runs, not with TravelInbox
 
 | # | Epic | Depends on | Status |
 | --- | --- | --- | --- |
-| 01 | [Conventions in schema and instructions](01-conventions/README.md) | v1.2 | planned |
-| 02 | [Verification and operations](02-verification-and-operations/README.md) | 02-01 on epic 01; 02-02 and 02-03 none | planned |
+| 01 | [Conventions in schema and instructions](01-conventions/README.md) | v1.2 | done |
+| 02 | [Verification and operations](02-verification-and-operations/README.md) | 02-01 on epic 01; 02-02 and 02-03 none | done (01 dropped) |
 
 Epic 02 jobs 02 and 03 touch other files than everything else and can run in parallel with
 epic 01. Job 02-01 needs epic 01's schema copy and instructions, since the judge it sends

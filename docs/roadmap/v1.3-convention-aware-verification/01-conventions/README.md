@@ -1,6 +1,6 @@
 # Epic 01: Conventions in schema and instructions
 
-Version: v1.3 · Status: in progress · Depends on: v1.2 (released)
+Version: v1.3 · Status: done · Depends on: v1.2 (released)
 
 Write TravelInbox's labelling conventions down where they work: as schema constraints a
 validator checks for free (job 02), and as examples the models follow (job 03), measured on
@@ -12,7 +12,7 @@ in line with what TravelInbox runs today, so the baseline is their production pr
 | --- | --- | --- |
 | 01 | [Baseline on TravelInbox prompt_version 4](01-baseline-prompt-version-4.md) | done |
 | 02 | [Conventions in the schema](02-conventions-in-schema.md) | done |
-| 03 | [Conventions by example, and the hand-over](03-conventions-by-example.md) | planned |
+| 03 | [Conventions by example, and the hand-over](03-conventions-by-example.md) | done |
 
 The jobs are sequential: each one's report is the next one's baseline.
 

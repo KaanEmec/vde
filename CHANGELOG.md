@@ -6,7 +6,16 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+Convention-aware verification (v1.3). No change to `/v1`, the configuration or
+`service_version`; measured on five TravelInbox cases in
+[docs/quality.md](docs/quality.md#v13-convention-aware-verification-2026-10-22).
+
 ### Added
+
+- The TravelInbox corpus copy (`testdata/travelinbox/corpus/`) now carries TravelInbox's
+  production schema with convention constraints and its instructions at prompt_version 5
+  with convention examples: field mismatches 20 → 7 on the five measured cases. The
+  proposal for TravelInbox is [travelinbox-conventions-v1.3.md](docs/conformance/travelinbox-conventions-v1.3.md).
 
 - `vde audit list --job <id>` and `GET /admin/v1/audit?job_id=<id>` (additive) list every
   event of one job whatever its age, so the `error_code` of a job that `retention: none`

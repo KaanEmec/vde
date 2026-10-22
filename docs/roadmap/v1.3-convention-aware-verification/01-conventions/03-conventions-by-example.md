@@ -1,6 +1,6 @@
 # Job: Conventions by example, and the hand-over
 
-Version: v1.3 · Epic: 01 Conventions in schema and instructions · Status: planned · Depends on: 02
+Version: v1.3 · Epic: 01 Conventions in schema and instructions · Status: done · Depends on: 02
 
 ## Goal
 
@@ -31,13 +31,13 @@ TravelInbox's proposal, not part of vde's framing.
 - [x] Bump `prompt_version` in both files and note it in `testdata/travelinbox/README.md`.
 - [x] Run the comparison against job 02's report; record it with `provider` and
       `cancellation` mismatches and judge calls; keep or revert per convention.
-- [ ] Write `docs/conformance/travelinbox-conventions-v1.3.md` for the owner to send: the
+- [x] Write `docs/conformance/travelinbox-conventions-v1.3.md` for the owner to send: the
       schema diff and instruction diff as proposals for TravelInbox's job
       `v1.0-launch/04-vde/06-extraction-quality`, the measured effect per change, and
       short answers to the report's questions 2 (failure codes: epic 02 job 03),
       3 (judge models: epic 02 job 02), 4 (timeouts for reasoning models: advice, no code)
       and 6 (whether to adopt vde's amended instructions). The agent does not send it.
-- [ ] Supersede the matching rows of `docs/conformance/travelinbox-schema-suggestions.md`
+- [x] Supersede the matching rows of `docs/conformance/travelinbox-schema-suggestions.md`
       with a pointer to the new document.
 
 ## Notes
@@ -48,6 +48,9 @@ TravelInbox's proposal, not part of vde's framing.
   values are invented and absent from every corpus `source.*`, `truth.json` and `notes.md`.
 - The hand-over task (the conventions document for TravelInbox) moves to after job 02-01, so
   that it carries the epic 02 results; the comparison task is run by the orchestrator.
+
+Hand-over (2026-10-22): [travelinbox-conventions-v1.3.md](../../../conformance/travelinbox-conventions-v1.3.md)
+written for the owner to send (not sent); the matching rows of the suggestions document point to it.
 
 Result (2026-10-22): 14 → 7 mismatches, convention 5 → 4, one case fully right; kept. See
 [quality](../../../quality.md#v13-convention-aware-verification-2026-10-22).
