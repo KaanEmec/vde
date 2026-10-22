@@ -1,6 +1,6 @@
 # v1.3 Convention-aware verification
 
-Status: done (2026-10-22, not released; 02-01 dropped after measurement) · Depends on: v1.2 (released)
+Status: done, released as `v1.3.0` (2026-10-22; 02-01 dropped after measurement) · Depends on: v1.2 (released)
 
 ## Goal
 

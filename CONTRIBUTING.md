@@ -51,9 +51,12 @@ Makefile, `dist/` or the output.
 
 Procedure:
 
-1. `make deps` for available updates; `make live` with at least one provider key set
-   ([AGENTS.md](AGENTS.md#build-test-validate)): the sample documents must extract through
-   the real provider, and token usage must look sane. Do not release if it fails.
+1. `make deps` for available updates; a live smoke test on two or three documents with at
+   least one provider key set ([AGENTS.md](AGENTS.md#build-test-validate)): they must
+   extract through the real provider, and token usage must look sane. Do not release if it
+   fails. Plain `make live` runs every sample and every owner document; to keep the cost
+   small, run a few subtests instead:
+   `VDE_LIVE=1 go test ./cmd/vde -run 'TestLiveProviders/openai/(text-schema|pdf-schema|user-doc-02-eml)$' -count=1 -v`.
 2. In `CHANGELOG.md`, rename `Unreleased` to the version and date, start a fresh
    `Unreleased` section above it, and commit on `main`.
 3. Dry run: `make release VERSION=vX.Y.Z DRY_RUN=1` does everything except pushing the
