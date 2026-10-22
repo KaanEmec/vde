@@ -31,6 +31,12 @@ Convention-aware verification (v1.3). No change to `/v1`, the configuration or
   latency and tokens. No answer text is printed; exits 1 when a pair fails
   ([operations](docs/operator/operations.md#probing-the-models-vde-config-check---probe)).
 
+### Security
+
+- Built with Go 1.26.10 (`toolchain` in `go.mod`, the image's `GO_VERSION`), which fixes
+  GO-2026-6809 in `crypto/x509` (compromised intermediate certificates), reachable through
+  every HTTPS call to a provider.
+
 ## [1.2.0] - 2026-10-20
 
 Extraction quality (v1.2). Every change below changes `service_version`; `/v1` and the

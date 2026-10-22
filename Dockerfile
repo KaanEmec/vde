@@ -5,7 +5,7 @@
 # platform and cross-compiles, so no emulation is needed for arm64.
 
 # The toolchain line of go.mod; the Makefile passes it as a build arg.
-ARG GO_VERSION=1.26.9
+ARG GO_VERSION=1.26.10
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS builder
 ARG TARGETOS

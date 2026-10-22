@@ -66,7 +66,7 @@ and the tag `v1.1.0` are pushed; `make live` passed before the release.
   code or required field), `internal/config/schema_test.go` (every example validates, the
   struct tree and the schema agree both ways), seven fuzzers clean for 20 to 30 s each and
   run by `make fuzz` (part of `make ci`), regression tests for every fixed finding in
-  [docs/security.md](docs/security.md), `govulncheck` clean with `toolchain go1.26.9`.
+  [docs/security.md](docs/security.md), `govulncheck` clean with `toolchain go1.26.10` (1.26.9 was bumped on 2026-10-22 for GO-2026-6809).
 - **Local CI** (v1.1 00-02): `make ci` replaced GitHub Actions; the flaky timing tests
   found on the first GitHub runs (grounding performance bound, worker heartbeat, pdfium
   cold start) were fixed on 2026-10-18. `make release VERSION=v1.1.0-rc.0 DRY_RUN=1` passed
