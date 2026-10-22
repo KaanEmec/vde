@@ -161,12 +161,18 @@ Sources: [CHANGELOG "Known gaps"](CHANGELOG.md), [backlog](docs/roadmap/backlog.
    [travelinbox-schema-suggestions.md](docs/conformance/travelinbox-schema-suggestions.md)
    to TravelInbox; until they amend §6/§7, vde deviates from the contract on prompt order
    and answer format (ADR 0012).
-6. The 2.0 removals measured in [ADR 0011](docs/architecture/decisions/0011-remove-tiers-and-classifier-judge.md)
+6. v1.3 Convention-aware verification ([roadmap](docs/roadmap/v1.3-convention-aware-verification/README.md),
+   planned 2026-10-22): conventions in the TravelInbox schema and instructions (epic 01,
+   measured on five named cases under `auto`), `x-vde-grounding: convention`,
+   `vde config check --probe`, failure codes by job id after `retention: none` (epic 02).
+7. The 2.0 removals measured in [ADR 0011](docs/architecture/decisions/0011-remove-tiers-and-classifier-judge.md)
    (about 590 production and 1,100 test lines, plus the deprecated keys), once the owner
    accepts the ADR and wants a major version.
-7. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
-   SBOMs first, then the docs site, then the load test), each as its own job.
-8. If the comparison justifies it, the `auto` thresholds of the
+8. If wanted later: the deferred v1.0 items from `wip/release-engineering` (signing and
+   SBOMs first, then the docs site, then the load test), each as its own job. The branch
+   was deleted on 2026-10-20; its tip `7321040` stays recoverable for a while
+   (`git branch wip/release-engineering 7321040`).
+9. If the comparison justifies it, the `auto` thresholds of the
    [backlog](docs/roadmap/backlog.md) (needs an ADR 0009 amendment).
 
 ## How to resume
