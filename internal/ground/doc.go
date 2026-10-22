@@ -6,7 +6,7 @@
 //
 //	doc := ground.NewText(rep.GroundText)          // normalized index, built once
 //	rules, annotated, err := ground.RulesFromSchema(rawSchema) // nil Rules for schema-less jobs
-//	res := ground.Check(doc, candidate, rules, maxMisses) // res.Ungrounded: pointers only; res.Copies: a count
+//	res := ground.Check(doc, candidate, rules, maxMisses) // res.Ungrounded: pointers only
 //
 // # Rules (RulesVersion)
 //
@@ -32,10 +32,6 @@
 //     equal to an enum or const of their location are skipped, as are leaves the schema
 //     annotates x-vde-grounding: derived or skip. See Rules and RulesFromSchema.
 //   - When no visited leaf is annotated critical, every checked leaf is critical.
-//   - A leaf annotated x-vde-grounding: convention is expected in a form other than the
-//     printed one. Found by the rules above it is a copy (Result.Copies, pointers
-//     only), never a miss; the auto gate (Result.Accepts) needs zero copies. Not found it
-//     is treated as derived.
 //   - Under the always policy the loop makes the grounding repair only for a schema with
 //     at least one x-vde-grounding annotation (RulesFromSchema's annotated): an
 //     unannotated schema has not said which values are derivations, so its misses go
@@ -54,4 +50,4 @@ package ground
 
 // RulesVersion names the normalization, matching and date-table rules. Bump it whenever
 // a rule or table entry changes; it is hashed into service_version.
-const RulesVersion = "ground-3"
+const RulesVersion = "ground-2"

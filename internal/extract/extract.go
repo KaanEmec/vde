@@ -377,7 +377,13 @@ func (l *loop) decide(ctx context.Context, candidate json.RawMessage) (out Outco
 		l.progress()
 		return Outcome{}, false
 	}
-	gate := l.gate(grounded)
+	// The auto gate: grounded text, at least one critical leaf checked and every one
+	// grounded (a candidate with nothing to check, such as {} or only nulls, goes to the
+	// judge), and a candidate that does not answer schema or judge feedback (a judge's
+	// rejection is not overruled). l.next is still the feedback the candidate was asked
+	// to answer.
+	answersFeedback := slices.ContainsFunc(l.next, func(f Feedback) bool { return f.Source != SourceGrounding })
+	gate := l.policy == config.JudgeAuto && grounded.CriticalOK() && !answersFeedback
 	sampled := gate && Sampled(l.in.SampleKey, l.in.SampleRate)
 	switch {
 	case gate && !sampled:
@@ -407,18 +413,6 @@ func (l *loop) decide(ctx context.Context, candidate json.RawMessage) (out Outco
 	l.next = l.feedback
 	l.progress()
 	return Outcome{}, false
-}
-
-// gate reports whether the auto gate accepts a candidate on grounding alone: grounded
-// text, at least one critical leaf checked and every one grounded (a candidate with
-// nothing to check, such as {} or only nulls, goes to the judge), no convention field
-// copied verbatim from the document (a copy is not evidence: ADR 0009, amendment
-// 2026-10-22), and a candidate that does not answer schema or judge feedback (a judge's
-// rejection is not overruled). l.next is still the feedback the candidate was asked to
-// answer.
-func (l *loop) gate(grounded ground.Result) bool {
-	answersFeedback := slices.ContainsFunc(l.next, func(f Feedback) bool { return f.Source != SourceGrounding })
-	return l.policy == config.JudgeAuto && grounded.Accepts() && !answersFeedback
 }
 
 // judged asks the judge for a verdict on candidate and, when it accepts and a second

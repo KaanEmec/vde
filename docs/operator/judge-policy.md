@@ -21,7 +21,6 @@ Under `auto` the gate passes, and the job ends `accepted` with `verification: gr
   email, or a PDF whose text layer averages `documents.pdf.min_text_chars_per_page`
   characters per page). Images and scanned PDFs are ungroundable and always go to the judge;
 - at least one critical leaf was checked, and every critical leaf is found in the text;
-- no `convention` leaf is a verbatim copy of the document (see the table below);
 - the candidate does not answer schema or judge feedback. A candidate written after a
   judge's rejection goes back to the judge, so grounding never overrules a judge. A
   candidate that answers only the grounding repair may pass;
@@ -108,7 +107,6 @@ treated. A deeper annotation overrides an inherited one.
 | `check` | Checked (a miss is feedback), but not critical once some property is `critical`. Overrides an inherited `derived` or `skip`. |
 | `derived` | An allowed derivation (a city, an IATA code, a currency code, a computed value): not checked. |
 | `skip` | Never checked (notes, titles, confidence). |
-| `convention` | Expected in a form other than the printed one (a brand name for a printed legal name, a number without its printed label). Never a miss and never feedback. Found verbatim it is a copy: under `auto` the gate fails and the judge decides. Found means the usual phrase match, so a correct value that is part of the printed form (a brand inside a legal name, a number after its label) is a copy too: use it where the judge's call is worth it. Not found it is treated as `derived`. `always` and `never` are unaffected. Never critical, also inside a `critical` object. |
 
 Booleans, nulls, empty strings, one-character strings and values equal to an `enum` or
 `const` of their location are never checked. A schema without any annotation skips
@@ -231,7 +229,7 @@ Time forms (`{HH}` and `{H}` 24-hour, `{hh}` and `{h}` 12-hour, `{MM}` minutes, 
 
 Month names: English, Turkish, German, French, Spanish and Dutch, full and short. The
 table is `ground.DateForms`, `ground.TimeForms` and `ground.Months`, versioned by
-`ground.RulesVersion` (`ground-3`), which is hashed into `service_version`; a test keeps
+`ground.RulesVersion` (`ground-2`), which is hashed into `service_version`; a test keeps
 this page and the code in step.
 
 ## Metrics to watch

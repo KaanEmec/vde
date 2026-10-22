@@ -1,8 +1,16 @@
 # Job: Convention fields in grounding
 
-Version: v1.3 · Epic: 02 Verification and operations · Status: in progress · Depends on: epic 01 job 03
+Version: v1.3 · Epic: 02 Verification and operations · Status: dropped · Depends on: epic 01 job 03
 
-Implementation done; comparison pending (orchestrator).
+Dropped 2026-10-22 after measurement. With `provider` annotated `convention`, every job went
+to the judge (5 of 5 instead of 0), input tokens rose 66% and output tokens 125%, and the
+judge (`z-ai/glm-5.3-flash`) accepted all five on the first attempt, three with wrong values:
+no outcome changed, 7 mismatches before and after (see
+[quality](../../../quality.md#v13-convention-aware-verification-2026-10-22)). The value counted
+as a copy whenever it was part of the printed text, so correct values went to the judge too.
+The implementation is commit `6157cec`, reverted in the next commit; worth revisiting only
+with a judge that rejects such values (check it with `vde config check --probe` and a
+measurement).
 
 ## Goal
 
@@ -52,7 +60,7 @@ case differs from a title-cased form, decided here by measurement, not up front.
 - [x] Docs: the value table in [judge-policy.md](../../../operator/judge-policy.md),
       [writing instructions](../../../api/writing-instructions.md) ("Annotating the
       schema for grounding"), CHANGELOG.
-- [ ] Annotate `provider` and the convention `details` fields in
+- [x] Annotate `provider` and the convention `details` fields in
       `testdata/travelinbox/corpus/schema.json` (epic 01's copy; annotated: `provider`,
       `flight` and `flight_leg` `seat`, `cabin`, `terminal`, `rail` `coach` and `seat`) and run the comparison
       against epic 01 job 03's report: fields right, judge calls, tokens and cost per

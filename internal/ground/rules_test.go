@@ -9,12 +9,12 @@ import (
 
 func TestParseRule(t *testing.T) {
 	t.Parallel()
-	for s, want := range map[string]Rule{"check": RuleCheck, "derived": RuleDerived, "skip": RuleSkip, "critical": RuleCritical, "convention": RuleConvention} {
+	for s, want := range map[string]Rule{"check": RuleCheck, "derived": RuleDerived, "skip": RuleSkip, "critical": RuleCritical} {
 		if got, err := ParseRule(s); err != nil || got != want {
 			t.Errorf("ParseRule(%q) = %v, %v, want %v", s, got, err, want)
 		}
 	}
-	for _, s := range []string{"", "maybe", "Critical", "conventional"} {
+	for _, s := range []string{"", "maybe", "Critical"} {
 		if _, err := ParseRule(s); !errors.Is(err, ErrUnknownRule) {
 			t.Errorf("ParseRule(%q) error = %v, want ErrUnknownRule", s, err)
 		}
@@ -47,14 +47,6 @@ const rulesSchema = `{
     "escaped": {"$ref": "#/$defs/a~0b~1c"},
     "self": {"$ref": "#"},
     "remote": {"$ref": "https://example.com/schema.json"},
-    "carrier": {
-      "type": "object", "x-vde-grounding": "critical",
-      "properties": {"name": {"type": "string", "x-vde-grounding": "convention"}, "flight": {"type": "string"}}
-    },
-    "details": {
-      "type": "object", "x-vde-grounding": "convention",
-      "properties": {"coach": {"type": "string"}, "pnr": {"type": "string", "x-vde-grounding": "critical"}}
-    },
     "notes": {"type": "string"}
   }
 }`
@@ -93,11 +85,7 @@ func TestRulesFromSchema(t *testing.T) {
 		{"self/venue/city", RuleDerived, nil},
 		{"remote/x", RuleNone, nil},
 		{"unknown/deep/path", RuleNone, nil},
-		{"carrier/name", RuleConvention, nil}, // convention inside a critical object
-		{"carrier/flight", RuleCritical, nil},
-		{"details/coach", RuleConvention, nil}, // inherited
-		{"details/pnr", RuleCritical, nil},     // overridden by a deeper annotation
-		{"notes", RuleNone, nil},               // the schema is annotated: no default skip
+		{"notes", RuleNone, nil}, // the schema is annotated: no default skip
 	}
 	for _, tt := range tests {
 		t.Run(tt.loc, func(t *testing.T) {

@@ -126,7 +126,7 @@
           "description": "Short English label, the one composed field. Transport: '<from city> to <to city>', plus ' via <city>' for connections. Lodging: the property name. Car rental: 'Car rental in <pickup city>'. Dining: 'Dinner at <restaurant>' (or Breakfast, Lunch) when the document or the booked time makes the meal plain, else 'Table at <restaurant>'. Others: their name as printed.",
           "x-vde-grounding": "skip", "type": "string", "minLength": 1
         },
-        "provider": { "description": "The company booking_ref is quoted to: the operator (airline, hotel, rental company) when its reference is printed, else the booking platform.", "x-vde-grounding": "convention", "$ref": "#/$defs/text" },
+        "provider": { "description": "The company booking_ref is quoted to: the operator (airline, hotel, rental company) when its reference is printed, else the booking platform.", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
         "booking_ref": { "description": "Verbatim as printed. The operator's reference when both an operator and a platform reference are printed; the other goes in notes.", "x-vde-grounding": "critical", "$ref": "#/$defs/text" },
         "status": { "enum": ["confirmed", "cancelled", "pending", null] },
         "starts_at_local": { "description": "Flight: first departure. Lodging: check-in date with the start of the check-in window. Car rental: pickup.", "$ref": "#/$defs/local_datetime" },

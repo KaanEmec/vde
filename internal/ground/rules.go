@@ -21,19 +21,15 @@ const (
 	RuleDerived       // "derived": an allowed derivation (city, IATA code, currency), not checked
 	RuleSkip          // "skip": never checked (notes, titles, confidence)
 	RuleCritical      // "critical": checked, and must be grounded for the auto gate
-	// "convention": expected in a form other than the printed one (a brand name, a
-	// number without its label). Found verbatim it is a copy, which sends an auto job to
-	// the judge; not found it is treated as derived. Never a miss.
-	RuleConvention
 )
 
 // Annotation is the schema keyword that carries a Rule.
 const Annotation = "x-vde-grounding"
 
-var ruleNames = [...]string{RuleNone: "", RuleCheck: "check", RuleDerived: "derived", RuleSkip: "skip", RuleCritical: "critical", RuleConvention: "convention"}
+var ruleNames = [...]string{RuleNone: "", RuleCheck: "check", RuleDerived: "derived", RuleSkip: "skip", RuleCritical: "critical"}
 
 // ErrUnknownRule is returned for an x-vde-grounding value that is not check, derived,
-// skip, critical or convention.
+// skip or critical.
 var ErrUnknownRule = errors.New("ground: unknown " + Annotation + " value")
 
 // ParseRule parses an annotation value.
@@ -67,7 +63,7 @@ var defaultSkip = map[string]bool{"confidence": true, "notes": true}
 // are skipped. annotated reports whether the schema carries any x-vde-grounding
 // annotation: only such a schema states which values may be derived, so the loop makes
 // the grounding repair under the always policy only for it (ADR 0009, amendment). An
-// annotation value other than check, derived, skip, critical or convention is an error wrapping
+// annotation value other than check, derived, skip or critical is an error wrapping
 // ErrUnknownRule.
 func RulesFromSchema(schema []byte) (rules Rules, annotated bool, err error) {
 	dec := json.NewDecoder(bytes.NewReader(schema))

@@ -328,12 +328,6 @@ Tell the check with the keyword `x-vde-grounding` on a property:
 - `derived`: an allowed derivation, not checked.
 - `skip`: never checked (your `notes`, titles you ask the model to write, confidences).
 - `check`: checked but not critical; overrides an inherited `derived` or `skip`.
-- `convention`: a field your instructions ask in a form other than the printed one (a
-  brand name where the document prints the legal name, a number without its printed
-  label). A value not found is accepted like `derived`; a value copied verbatim from the
-  document is likely the wrong form, so under `auto` it sends the job to the judge
-  instead of being accepted on grounding. It is never feedback; state the convention in
-  your judge instructions so the judge can reject the copy.
 
 An annotation applies to everything below the property. Enum and `const` values,
 booleans and nulls are never checked. Without any annotation every checked leaf is
@@ -344,7 +338,6 @@ ignored by schema validation; an unknown value is refused with `422 invalid_sche
 "reference": {"type": ["string", "null"], "x-vde-grounding": "critical"},
 "issue_date": {"type": "string", "format": "date", "x-vde-grounding": "critical"},
 "currency": {"type": "string", "pattern": "^[A-Z]{3}$", "x-vde-grounding": "derived"},
-"carrier": {"type": "string", "x-vde-grounding": "convention"},
 "notes": {"type": ["string", "null"], "x-vde-grounding": "skip"}
 ```
 

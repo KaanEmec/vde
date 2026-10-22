@@ -1,0 +1,186 @@
+{
+  "service_version": "vde-0.0.0-dev+38435808",
+  "extractor": [
+    "nous/anthropic/claude-haiku-5.5",
+    "nous/z-ai/glm-5.3-flash"
+  ],
+  "judge": [
+    "nous/z-ai/glm-5.3-flash"
+  ],
+  "target": "local",
+  "corpus": "testdata/eval",
+  "cases": "travelinbox-001-flight,travelinbox-011-flight,travelinbox-021-hotel,travelinbox-041-rail,travelinbox-046-cancellation",
+  "judge_policy": "auto",
+  "concurrency": 1,
+  "started_at": "2026-10-22T08:48:19.086023Z",
+  "finished_at": "2026-10-22T08:52:30.913202Z",
+  "summary": {
+    "cases": 5,
+    "accepted": 5,
+    "rejected": 0,
+    "failed": 0,
+    "extracted": 0,
+    "errors": 0,
+    "correct": 1,
+    "acceptance_rate": 1,
+    "false_accepts": 4,
+    "false_accepts_judge": 4,
+    "false_accepts_grounded": 0,
+    "false_accept_rate": 0.8,
+    "false_rejects": 0,
+    "false_reject_rate": 0,
+    "field_accuracy": 0.9602649006622517,
+    "accepted_field_accuracy": 0.9602649006622517,
+    "extracted_field_accuracy": 0,
+    "verified_judge": 5,
+    "verified_grounded": 0,
+    "grounded_share": 0,
+    "judge_call_cases": 5,
+    "judge_calls": 5,
+    "sampled": 0,
+    "disagreements": 0,
+    "mean_attempts": 1,
+    "duration_median_ms": 48585,
+    "duration_p95_ms": 80574,
+    "usage_cases": 5,
+    "calls": 11,
+    "input_tokens": 91507,
+    "output_tokens": 34043
+  },
+  "results": [
+    {
+      "id": "travelinbox-001-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 37856,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 18697,
+        "output_tokens": 6171
+      },
+      "judge_policy": "auto",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 34,
+        "matched": 32,
+        "mismatches": [
+          "/reservations/0/start_place/name",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9411764705882353,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+38435808"
+    },
+    {
+      "id": "travelinbox-011-flight",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 48585,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 19210,
+        "output_tokens": 7317
+      },
+      "judge_policy": "auto",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 34,
+        "matched": 32,
+        "mismatches": [
+          "/reservations/0/end_place/name",
+          "/reservations/0/travellers"
+        ]
+      },
+      "field_accuracy": 0.9411764705882353,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+38435808"
+    },
+    {
+      "id": "travelinbox-021-hotel",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 29329,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 18932,
+        "output_tokens": 4774
+      },
+      "judge_policy": "auto",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/cancellation"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+38435808"
+    },
+    {
+      "id": "travelinbox-041-rail",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 80574,
+      "usage": {
+        "calls": 3,
+        "input_tokens": 15971,
+        "output_tokens": 8018
+      },
+      "judge_policy": "auto",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 29,
+        "matched": 29
+      },
+      "field_accuracy": 1,
+      "correct": true,
+      "false_accept": false,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+38435808"
+    },
+    {
+      "id": "travelinbox-046-cancellation",
+      "status": "accepted",
+      "attempts": 1,
+      "duration_ms": 55478,
+      "usage": {
+        "calls": 2,
+        "input_tokens": 18697,
+        "output_tokens": 7763
+      },
+      "judge_policy": "auto",
+      "verification": "judge",
+      "judge_calls": 1,
+      "decision": "judged",
+      "fields": {
+        "total": 27,
+        "matched": 26,
+        "mismatches": [
+          "/reservations/0/cancellation"
+        ]
+      },
+      "field_accuracy": 0.9629629629629629,
+      "correct": false,
+      "false_accept": true,
+      "false_reject": false,
+      "service_version": "vde-0.0.0-dev+38435808"
+    }
+  ]
+}

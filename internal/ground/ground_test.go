@@ -143,57 +143,6 @@ func TestCheck_annotations(t *testing.T) {
 	}
 }
 
-// TestCheck_convention: a convention leaf found verbatim is a copy (counted, pointer
-// only, never a miss) that fails Accepts; not found, it is a derivation.
-func TestCheck_convention(t *testing.T) {
-	t.Parallel()
-	doc := ground.NewText("Booking LX42QZ, operated by WIZZ, coach 7, seat 12A, total 100,00 EUR")
-	rules := mustRules(t, `{"type":"object","properties":{
-		"ref":{"type":"string","x-vde-grounding":"critical"},
-		"total":{"type":"number"},
-		"carrier":{"type":"string","x-vde-grounding":"convention"},
-		"legs":{"type":"array","x-vde-grounding":"critical","items":{"type":"object","properties":{
-			"operator":{"type":"string","x-vde-grounding":"convention"},
-			"details":{"type":"object","x-vde-grounding":"convention","properties":{
-				"coach":{"type":"string"},"seat":{"type":"string","x-vde-grounding":"check"}}}}}}}}`)
-	tests := []struct {
-		name, candidate string
-		maxMisses       int
-		misses          []string
-		count           int
-		criticalOK      bool
-	}{
-		{"verbatim copy is not a miss", `{"ref":"LX42QZ","carrier":"WIZZ"}`, 0, []string{}, 1, true},
-		{"copy found case-insensitively", `{"ref":"LX42QZ","carrier":"wizz"}`, 0, []string{}, 1, true},
-		{"normalized value is derived", `{"ref":"LX42QZ","carrier":"Wizz Air"}`, 0, []string{}, 0, true},
-		{"number copy", `{"ref":"LX42QZ","legs":[{"details":{"coach":7}}]}`, 0, []string{}, 1, true},
-		{"inherited, label added is derived", `{"ref":"LX42QZ","legs":[{"details":{"coach":"Wg. 7"}}]}`, 0, []string{}, 0, true},
-		{"deeper check overrides", `{"ref":"LX42QZ","legs":[{"details":{"seat":"14C"}}]}`, 0, []string{"/legs/0/details/seat"}, 0, true},
-		{"inside a critical object, not critical", `{"ref":"LX42QZ","legs":[{"operator":"WIZZ"},{"operator":"Wizz Air"}]}`, 0, []string{}, 1, true},
-		{"only convention leaves give no evidence", `{"carrier":"WIZZ"}`, 0, []string{}, 1, false},
-		{"copies with a critical miss", `{"ref":"LX42QX","carrier":"WIZZ"}`, 0, []string{"/ref"}, 1, false},
-		{"max misses caps pointers, not counts", `{"ref":"LX42QZ","carrier":"WIZZ","legs":[{"operator":"WIZZ"}]}`, 1, []string{}, 2, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			res := ground.Check(doc, json.RawMessage(tt.candidate), rules, tt.maxMisses)
-			if got := pointers(res.Ungrounded); !slices.Equal(got, tt.misses) {
-				t.Errorf("misses = %q, want %q", got, tt.misses)
-			}
-			if res.Copies != tt.count {
-				t.Errorf("copies = %d, want %d", res.Copies, tt.count)
-			}
-			if res.CriticalOK() != tt.criticalOK {
-				t.Errorf("CriticalOK = %v, want %v", res.CriticalOK(), tt.criticalOK)
-			}
-			if want := tt.criticalOK && tt.count == 0; res.Accepts() != want {
-				t.Errorf("Accepts = %v, want %v", res.Accepts(), want)
-			}
-		})
-	}
-}
-
 func TestCheck_leaves(t *testing.T) {
 	t.Parallel()
 	doc := ground.NewText("Order 12345678901234567890 on 2027-03-21, class economy, a/b and m~n")

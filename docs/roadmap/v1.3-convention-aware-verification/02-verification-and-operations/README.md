@@ -10,7 +10,7 @@ has deleted the job.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [Convention fields in grounding](01-convention-grounding.md) | in progress |
+| 01 | [Convention fields in grounding](01-convention-grounding.md) | dropped |
 | 02 | [`vde config check --probe`](02-config-check-probe.md) | done |
 | 03 | [Failure codes after `retention: none`](03-failure-codes-after-retention.md) | done |
 
