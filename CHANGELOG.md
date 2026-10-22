@@ -6,6 +6,8 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-22
+
 Convention-aware verification (v1.3). No change to `/v1`, the configuration or
 `service_version`; measured on five TravelInbox cases in
 [docs/quality.md](docs/quality.md#v13-convention-aware-verification-2026-10-22).
