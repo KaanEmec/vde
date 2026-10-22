@@ -6,6 +6,14 @@ All notable changes to this project are recorded here, in the format of
 
 ## [Unreleased]
 
+### Added
+
+- `vde audit list --job <id>` and `GET /admin/v1/audit?job_id=<id>` (additive) list every
+  event of one job whatever its age, so the `error_code` of a job that `retention: none`
+  deleted is found by its id; an index on `audit_events (job_id, at)` (migration 0011, both
+  drivers). Contract §10 is unchanged: nothing is kept on the job row. See
+  [operations](docs/operator/operations.md#why-did-a-job-fail-after-retention-none).
+
 ## [1.2.0] - 2026-10-20
 
 Extraction quality (v1.2). Every change below changes `service_version`; `/v1` and the

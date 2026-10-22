@@ -430,6 +430,27 @@ func TestAdminAudit(t *testing.T) {
 	if got := rg.do(t, http.MethodGet, "/admin/v1/audit?kind=app.enabled&since=3d", "", http.StatusOK); len(got["events"].([]any)) == 0 {
 		t.Errorf("since=3d: %v", got)
 	}
+	// job_id lists one job's events whatever their age: the error code of a job that
+	// retention: none deleted (contract §12).
+	finished := job.AuditEvent{At: rg.now.Add(-90 * 24 * time.Hour), Kind: string(audit.JobFinishedKind), ApplicationID: "dyn-a", JobID: "j_old",
+		Details: json.RawMessage(`{"status":"failed","attempts":1,"error_code":"provider_unavailable","service_version":"v"}`)}
+	for _, e := range []job.AuditEvent{finished, {At: finished.At, Kind: string(audit.JobFinishedKind), JobID: "j_other"}} {
+		if _, err := rg.store.AppendAudit(t.Context(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got = rg.do(t, http.MethodGet, "/admin/v1/audit?job_id=j_old", "", http.StatusOK)
+	events, _ = got["events"].([]any)
+	var ev map[string]any
+	if len(events) == 1 {
+		ev = events[0].(map[string]any)
+	}
+	if details, _ := ev["details"].(map[string]any); ev["job_id"] != "j_old" || details["error_code"] != "provider_unavailable" {
+		t.Errorf("job_id=j_old: %v", got)
+	}
+	if got := rg.do(t, http.MethodGet, "/admin/v1/audit?job_id=j_old&since=24h", "", http.StatusOK); len(got["events"].([]any)) != 0 {
+		t.Errorf("job_id with an explicit since: %v", got)
+	}
 	if w := do(rg.admin, http.MethodGet, "/admin/v1/audit?kind=admin.request", "", ""); w.Code != http.StatusUnauthorized {
 		t.Errorf("no token = %d", w.Code)
 	}

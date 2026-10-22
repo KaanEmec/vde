@@ -355,6 +355,16 @@ Every `429` has `Retry-After` (seconds or an HTTP date):
 `DELETE /v1/jobs/{id}` deletes the document, pages, result and feedback at once (`204`);
 later reads are `404`.
 
+### Why did my job fail after `retention: none`?
+
+If you did not store the `error` when you read the terminal state, it is gone with the
+job. Your operator can still read the code by job id: the audit log keeps `job.finished`
+with its `error_code` (`timeout`, `provider_unavailable`, `extractor_failed`,
+`judge_failed` or `internal`, see [Errors](#errors)) for 365 days by default, with
+`vde audit list --job <id>` or `GET /admin/v1/audit?job_id=<id>` (see
+[operations](../operator/operations.md#why-did-a-job-fail-after-retention-none)). Log the
+job ids you submit.
+
 ## Errors
 
 Every error has one shape and `Content-Type: application/json`:

@@ -1007,9 +1007,14 @@ func (s *DB) ListAudit(ctx context.Context, f AuditFilter, limit int) ([]AuditEv
 	if limit <= 0 {
 		limit = noLimit
 	}
+	// A job filter is written as an equality, so the job index serves it.
+	jobMatch := "?3 = ''"
+	if f.JobID != "" {
+		jobMatch = "job_id = ?3"
+	}
 	rows, err := s.query(ctx, `
 		SELECT id, at, kind, application_id, actor, job_id, details FROM audit_events
-		WHERE (?1 = '' OR application_id = ?1) AND (?2 = '' OR kind = ?2) AND (?3 = '' OR job_id = ?3) AND at >= ?4
+		WHERE (?1 = '' OR application_id = ?1) AND (?2 = '' OR kind = ?2) AND `+jobMatch+` AND at >= ?4
 		ORDER BY at, id LIMIT ?5`,
 		f.ApplicationID, f.Kind, f.JobID, f.Since.UnixMilli(), limit)
 	if err != nil {

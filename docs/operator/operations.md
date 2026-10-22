@@ -234,8 +234,23 @@ sqlite3 -readonly /var/lib/vde/vde.db \
    FROM audit_events WHERE application_id = 'bookings' ORDER BY id DESC LIMIT 50"
 ```
 
-`vde audit list [--config path] [--app id] [--since duration|RFC3339] [--kind kind] [--limit n]`
+`vde audit list [--config path] [--app id] [--job id] [--since duration|RFC3339] [--kind kind] [--limit n]`
 prints the same rows without a database client.
+
+### Why did a job fail after `retention: none`?
+
+The job row is gone, and its `error` with it, by contract. The `job.finished` audit event
+is kept for `audit.retention` and carries the code. Find it by job id:
+
+```
+vde audit list --job j_01JA3V9Q6ZK7M4W8X2R5T1N0HB
+curl -H "Authorization: Bearer $ADMIN_TOKEN" "$ADMIN/admin/v1/audit?job_id=j_01JA3V9Q6ZK7M4W8X2R5T1N0HB"
+```
+
+Both list every event of that job, whatever its age (`--since` or `since` narrows them).
+`error_code` of `job.finished` is `timeout`, `provider_unavailable`, `extractor_failed`,
+`judge_failed` or `internal` (what each means: [API guide](../api/guide.md#why-did-my-job-fail-after-retention-none)).
+The event holds the code and counts only, never a message or content.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

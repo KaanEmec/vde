@@ -535,16 +535,22 @@ type auditResponse struct {
 	Details       json.RawMessage `json:"details"`
 }
 
-// adminListAudit is GET /admin/v1/audit?app=&since=&kind=&limit=, oldest first, the
-// last 24 hours unless since is given (vde audit list over HTTP).
+// adminListAudit is GET /admin/v1/audit?app=&job_id=&since=&kind=&limit=, oldest first,
+// the last 24 hours unless since or job_id is given (vde audit list over HTTP): the
+// events of one job are listed whatever their age, so the error code of a job that
+// retention: none deleted can be found by its id.
 func (s *server) adminListAudit(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := job.AuditFilter{ApplicationID: q.Get("app"), Kind: q.Get("kind")}
+	f := job.AuditFilter{ApplicationID: q.Get("app"), Kind: q.Get("kind"), JobID: q.Get("job_id")}
 	if f.Kind != "" && !slices.Contains(audit.Kinds(), audit.Kind(f.Kind)) {
 		writeError(w, newError(codeBadRequest, msgAdminInvalidParam, "kind"))
 		return
 	}
-	since, limit, ok := s.listParams(w, r, s.now().Add(-adminAuditSince))
+	defaultSince := s.now().Add(-adminAuditSince)
+	if f.JobID != "" {
+		defaultSince = time.Time{}
+	}
+	since, limit, ok := s.listParams(w, r, defaultSince)
 	if !ok {
 		return
 	}

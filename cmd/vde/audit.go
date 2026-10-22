@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"slices"
@@ -12,12 +13,13 @@ import (
 	"github.com/kaanemec/vde/internal/job"
 )
 
-const auditUsage = `Usage: vde audit list [--app id] [--since 24h|7d|RFC 3339] [--kind kind] [--limit n] [--config path]
+const auditUsage = `Usage: vde audit list [--app id] [--job id] [--since 24h|7d|RFC 3339] [--kind kind] [--limit n] [--config path]
 
 Prints the audit log (the audit_events table in server.data_dir/vde.db), oldest first:
 time, kind, application, actor, job and the kind's fixed details (never content). --since
-is a duration back from now or a time, the last 24 hours by default; --limit caps the
-rows (default 100, 0 for all). Kinds: token.created, token.revoked, app.enabled,
+is a duration back from now or a time, the last 24 hours by default; --job lists the
+events of one job whatever their age (its job.finished event carries error_code, kept
+after retention: none deleted the job); --limit caps the rows (default 100, 0 for all). Kinds: token.created, token.revoked, app.enabled,
 app.disabled, job.created, job.finished, job.deleted, job.expired, auth.failed,
 config.loaded, webhook.delivered, webhook.failed. The admin API serves the same listing at GET /admin/v1/audit.
 `
@@ -34,17 +36,22 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	set := newFlagSet("vde audit list", auditUsage+flagsHeading, stderr)
 	configPath := operatorFlags(set)
 	app := set.String("app", "", "only this application's events")
+	jobID := set.String("job", "", "only this job's events, whatever their age unless --since is given")
 	since := set.String("since", "24h", "events at or after: a duration back from now (24h, 7d) or an RFC 3339 time")
 	kind := set.String("kind", "", "only events of this kind")
 	limit := set.Int("limit", 100, "at most this many events (0 for all)")
 	if code, done := parseArgs(set, args[1:], stderr); done {
 		return code
 	}
-	now := time.Now()
-	from, err := audit.ParseSince(*since, now)
-	if err != nil {
-		fmt.Fprintf(stderr, "vde audit list: %v\n", err)
-		return exitUsage
+	sinceSet := false
+	set.Visit(func(f *flag.Flag) { sinceSet = sinceSet || f.Name == "since" })
+	var from time.Time // a job's events are listed whatever their age, unless --since says otherwise
+	if *jobID == "" || sinceSet {
+		var err error
+		if from, err = audit.ParseSince(*since, time.Now()); err != nil {
+			fmt.Fprintf(stderr, "vde audit list: %v\n", err)
+			return exitUsage
+		}
 	}
 	if *kind != "" && !slices.Contains(audit.Kinds(), audit.Kind(*kind)) {
 		fmt.Fprintf(stderr, "vde audit list: unknown kind %q\n", *kind)
@@ -59,7 +66,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	defer store.Close()
-	events, err := store.ListAudit(context.Background(), job.AuditFilter{ApplicationID: *app, Kind: *kind, Since: from}, *limit)
+	events, err := store.ListAudit(context.Background(), job.AuditFilter{ApplicationID: *app, Kind: *kind, JobID: *jobID, Since: from}, *limit)
 	if err != nil {
 		fmt.Fprintf(stderr, "vde audit list: %v\n", err)
 		return exitFailure

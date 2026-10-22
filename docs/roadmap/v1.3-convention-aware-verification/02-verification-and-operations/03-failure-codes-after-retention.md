@@ -1,6 +1,8 @@
 # Job: Failure codes after `retention: none`
 
-Version: v1.3 · Epic: 02 Verification and operations · Status: planned · Depends on: none
+Version: v1.3 · Epic: 02 Verification and operations · Status: done · Depends on: none
+
+Done 2026-10-22: tests pass on main (orchestrator).
 
 ## Goal
 
@@ -20,18 +22,18 @@ and `GET /admin/v1/audit` filter by application, time and kind only.
 
 ## Tasks
 
-- [ ] `vde audit list --job <id>` and a `job_id` query parameter on `GET /admin/v1/audit`
+- [x] `vde audit list --job <id>` and a `job_id` query parameter on `GET /admin/v1/audit`
       (additive in `api/admin-openapi.yaml`); both return every event of that job.
-- [ ] Check that every failure path writes `job.finished` with its code: `timeout`,
+- [x] Check that every failure path writes `job.finished` with its code: `timeout`,
       `provider_unavailable`, `extractor_failed`, `judge_failed`, `internal`, and a job
       expired before it ran (`job.expired`); add the missing ones.
-- [ ] Tests: a job that fails with the fake provider under `retention: none`, read once
+- [x] Tests: a job that fails with the fake provider under `retention: none`, read once
       (job gone, `404`), then its code found through `vde audit list --job` and the admin
       endpoint.
-- [ ] Docs: "Why did a job fail after `retention: none`?" in the
+- [x] Docs: "Why did a job fail after `retention: none`?" in the
       [API guide](../../../api/guide.md) and [operations](../../../operator/operations.md),
-      with the two commands; the answer to TravelInbox's question 2 in epic 01 job 03's
-      hand-over.
+      with the two commands. (The answer to TravelInbox's question 2 in epic 01 job 03's
+      hand-over is left to that job.)
 
 ## Acceptance criteria
 

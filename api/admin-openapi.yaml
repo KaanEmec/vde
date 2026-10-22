@@ -299,7 +299,8 @@ paths:
       parameters:
         - { name: app, in: query, schema: { type: string } }
         - { name: kind, in: query, schema: { $ref: "#/components/schemas/AuditKind" } }
-        - { name: since, in: query, schema: { type: string, default: 24h }, description: "An RFC 3339 time, a date, or a duration back from now; the last 24 hours when absent." }
+        - { name: job_id, in: query, schema: { type: string }, description: "Only the events of this job, whatever their age unless `since` is given; the `job.finished` event carries the job's `error_code` after `retention: none` deleted the job." }
+        - { name: since, in: query, schema: { type: string, default: 24h }, description: "An RFC 3339 time, a date, or a duration back from now; the last 24 hours when absent, and no limit back when `job_id` is given." }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 100 } }
       responses:
         "200":

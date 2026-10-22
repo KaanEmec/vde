@@ -358,6 +358,51 @@ func TestJobFinishedIsAudited(t *testing.T) {
 	}
 }
 
+// TestFailureCodesAreAudited: every failure code of a retention: none job reaches its
+// job.finished event, found by job id (contract §12), while the row keeps no error
+// after retention deleted the job's content at its terminal read (contract §10).
+func TestFailureCodesAreAudited(t *testing.T) {
+	garbage := fake.Script{{Answer: "not JSON at all", Repeat: true}}
+	tests := []struct {
+		name       string
+		ext, judge fake.Script
+		edit       func(*job.Job)
+		want       string
+	}{
+		{"extractor group down", fake.Script{{Err: &provider.Error{Kind: provider.Retryable, Status: 503, Message: "down"}, Repeat: true}}, nil, nil, extract.CodeProviderUnavailable},
+		{"extractor never parses", garbage, nil, nil, extract.CodeExtractorFailed},
+		{"judge never parses", fake.Script{{Answer: candidate, Repeat: true}}, garbage, nil, extract.CodeJudgeFailed},
+		{"deadline passed", nil, nil, func(j *job.Job) { j.CreatedAt = time.Now().Add(-6 * time.Minute) }, extract.CodeTimeout},
+		{"cannot prepare the job", nil, nil, func(j *job.Job) { j.Representation = "native" }, extract.CodeInternal},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ext, judge := accepting()
+			if tt.ext != nil {
+				ext = tt.ext
+			}
+			if tt.judge != nil {
+				judge = tt.judge
+			}
+			r := newRig(t, ext, judge, worker.Options{})
+			j := r.submit(t, "app", tt.edit)
+			r.start(t)
+			got := r.waitTerminal(t, j.ID)
+			if got.Status != job.StatusFailed || errorCode(t, got) != tt.want {
+				t.Fatalf("row = status %s, error code %q, want failed, %q", got.Status, errorCode(t, got), tt.want)
+			}
+			events, err := r.store.ListAudit(t.Context(), job.AuditFilter{JobID: j.ID, Kind: string(audit.JobFinishedKind)}, 0)
+			if err != nil || len(events) != 1 {
+				t.Fatalf("job.finished events = %d, %v", len(events), err)
+			}
+			d, err := audit.Decode(events[0])
+			if fin, _ := d.(audit.JobFinished); err != nil || fin.Status != "failed" || fin.ErrorCode != tt.want {
+				t.Errorf("details = %+v (%v), want error_code %q", d, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestPagesRepresentation(t *testing.T) {
 	ext, judge := accepting()
 	r := newRig(t, ext, judge, worker.Options{})
