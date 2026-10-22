@@ -486,8 +486,8 @@ components:
             it the job is schema-less, the extractor returns any JSON object, no schema
             feedback is produced and acceptance is the judge's verdict alone. TravelInbox
             always sends it. A property may carry `x-vde-grounding` (`critical`, `check`,
-            `derived`, `skip`) for the grounding check (ADR 0009); validation ignores it, and
-            any other value is `422 invalid_schema`.
+            `derived`, `skip`, `convention`) for the grounding check (ADR 0009); validation
+            ignores it, and any other value is `422 invalid_schema`.
           type: string
         retention:
           description: "`none`: delete content at the terminal state and on first read. Absent means `default`."

@@ -36,21 +36,34 @@ type Result struct {
 	// evidence.
 	CriticalChecked int
 	CriticalMissed  int // critical leaves not grounded, uncapped
+	// Copies counts the convention leaves (RuleConvention) found in the text. A copy is
+	// not a miss: it carries no feedback, but it fails the auto gate (Accepts). Matching is
+	// the usual phrase match, so a correct value that is part of the printed form (a brand
+	// inside a legal name, a number after its label) counts too: more judge calls, never a
+	// wrong acceptance.
+	Copies int
 	// Ungroundable is set when there is no text to check against (nil *Text) or the
 	// candidate is not valid JSON; nothing was checked.
 	Ungroundable bool
 }
 
 // CriticalOK reports whether the candidate could be checked, at least one critical leaf
-// was checked and every critical leaf is grounded: the grounding condition of the auto
-// judge policy. A candidate with nothing to check never passes it.
+// was checked and every critical leaf is grounded. A candidate with nothing to check
+// never passes it.
 func (r Result) CriticalOK() bool {
 	return !r.Ungroundable && r.CriticalChecked > 0 && r.CriticalMissed == 0
 }
 
+// Accepts reports the grounding condition of the auto judge policy: CriticalOK and no
+// convention copy, since a verbatim copy of a convention field is not evidence.
+func (r Result) Accepts() bool {
+	return r.CriticalOK() && r.Copies == 0
+}
+
 // Check walks every leaf of candidate in document order and reports the checked leaves
-// that doc does not ground. rules may be nil (schema-less: every leaf checked and
-// critical). When no visited leaf is annotated critical, every checked leaf is critical.
+// that doc does not ground, and the convention leaves it does (copies). rules may be nil
+// (schema-less: every leaf checked and critical). When no visited leaf is annotated
+// critical, every checked leaf is critical; convention leaves are never critical.
 // Result.Ungrounded holds at most maxMisses entries (0 means no cap); counts are never
 // capped. A nil doc gives an Ungroundable result with no misses.
 func Check(doc *Text, candidate json.RawMessage, rules Rules, maxMisses int) Result {
@@ -73,6 +86,12 @@ func Check(doc *Text, candidate json.RawMessage, rules Rules, maxMisses int) Res
 	var res Result
 	for i, l := range ls {
 		ok, checked := checkLeaf(doc, l.tok, ruleOf[i], enumOf[i])
+		if ruleOf[i] == RuleConvention {
+			if checked && ok { // a copy; not found, it is a derivation
+				res.Copies++
+			}
+			continue
+		}
 		if !checked {
 			continue
 		}

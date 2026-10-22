@@ -19,6 +19,12 @@ All notable changes to this project are recorded here, in the format of
   failure class, a warning for a judge that accepts a deliberately wrong candidate, the
   latency and tokens. No answer text is printed; exits 1 when a pair fails
   ([operations](docs/operator/operations.md#probing-the-models-vde-config-check---probe)).
+- A fifth `x-vde-grounding` value, `convention`, for fields expected in a form other than
+  the printed one: a value copied verbatim from the document no longer passes the `auto`
+  gate and goes to the judge; a value not found is treated as `derived`. Never a miss or
+  feedback; `always` and `never` are unaffected. The grounding rules are `ground-3`, so
+  every `service_version` changes once ([ADR 0009, amendment 2026-10-22](docs/architecture/decisions/0009-judge-policy-and-grounding.md#amendment-2026-10-22),
+  [judge policy](docs/operator/judge-policy.md#annotating-a-schema)).
 
 ## [1.2.0] - 2026-10-20
 

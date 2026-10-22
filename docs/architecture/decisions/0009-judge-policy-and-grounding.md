@@ -106,3 +106,23 @@ nothing is accepted that was not before. `never` and `auto` are unchanged: under
 unannotated derived value is a critical miss that is repaired once and sends the job to
 the judge. The rule is part of the grounding rules, so `ground.RulesVersion` is `ground-2`
 and every `service_version` changes once; nothing new is hashed.
+
+## Amendment 2026-10-22
+
+A fifth `x-vde-grounding` value, `convention`, marks a field the caller expects in a form
+other than the printed one (a brand name where the document prints a legal name, a number
+without its printed label). For such a field a verbatim match is not evidence: it is the
+likely error, the copy the caller's convention asks the model not to make. `ground.Check`
+therefore reports a convention leaf found by the usual rules as a copy (a count and its
+pointers, never the value) instead of a grounded leaf, and treats one not found as
+`derived`. A copy is never a miss: no grounding repair, no feedback. Per policy:
+
+- `auto`: the gate additionally requires zero copies, so a job with one goes to the judge,
+  whose instructions carry the convention (v1.3 epic 01) and can reject the copy.
+- `always`: unchanged; the judge sees every job anyway.
+- `never`: unchanged; there is no judge, and copies are not advisory feedback.
+
+A convention leaf is never critical, also below a `critical` annotation, and a deeper
+annotation overrides it like any other. The cost is a judge call whenever a convention
+value happens to equal its printed form. The rules change, so `ground.RulesVersion` is
+`ground-3`; a schema without `convention` grounds exactly as before.

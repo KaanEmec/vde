@@ -1,6 +1,8 @@
 # Job: Convention fields in grounding
 
-Version: v1.3 · Epic: 02 Verification and operations · Status: planned · Depends on: epic 01 job 03
+Version: v1.3 · Epic: 02 Verification and operations · Status: in progress · Depends on: epic 01 job 03
+
+Implementation done; comparison pending (orchestrator).
 
 ## Goal
 
@@ -36,22 +38,23 @@ case differs from a title-cased form, decided here by measurement, not up front.
 
 ## Tasks
 
-- [ ] ADR 0009 amendment: the `convention` value, its semantics under each policy, and
+- [x] ADR 0009 amendment: the `convention` value, its semantics under each policy, and
       why a verbatim copy is not evidence for such fields.
-- [ ] `internal/ground`: accept `convention` in `RulesFromSchema` (inherited like the
+- [x] `internal/ground`: accept `convention` in `RulesFromSchema` (inherited like the
       others, overridable by a deeper annotation); report convention copies as a count and
       their pointers in the result, never values; bump `RulesVersion` to `ground-3`.
-- [ ] `internal/extract`: the `auto` gate also requires zero convention copies; no
+- [x] `internal/extract`: the `auto` gate also requires zero convention copies; no
       grounding repair and no grounding feedback for them. Keep `decide` readable (named
       step, as v1.1 split it).
-- [ ] Scenarios under `testdata/scenarios/judge-policy/`: a convention copy under `auto`
+- [x] Scenarios under `testdata/scenarios/judge-policy/`: a convention copy under `auto`
       goes to the judge; a normalized convention value is grounded through; `always` and
       `never` unchanged; a convention leaf inside a `critical` object.
-- [ ] Docs: the value table in [judge-policy.md](../../../operator/judge-policy.md),
+- [x] Docs: the value table in [judge-policy.md](../../../operator/judge-policy.md),
       [writing instructions](../../../api/writing-instructions.md) ("Annotating the
       schema for grounding"), CHANGELOG.
 - [ ] Annotate `provider` and the convention `details` fields in
-      `testdata/travelinbox/corpus/schema.json` (epic 01's copy) and run the comparison
+      `testdata/travelinbox/corpus/schema.json` (epic 01's copy; annotated: `provider`,
+      `flight` and `flight_leg` `seat`, `cabin`, `terminal`, `rail` `coach` and `seat`) and run the comparison
       against epic 01 job 03's report: fields right, judge calls, tokens and cost per
       case. Keep or revert; add the annotations to the hand-over document of epic 01
       job 03 when kept.

@@ -1,6 +1,6 @@
 # Epic 02: Verification and operations
 
-Version: v1.3 · Status: planned · Depends on: job 01 on epic 01; jobs 02 and 03 none
+Version: v1.3 · Status: in progress · Depends on: job 01 on epic 01; jobs 02 and 03 none
 
 Three changes in vde itself. Job 01 stops grounding from vouching for a verbatim copy of a
 field the caller expects in a convention form, so such jobs reach the judge under `auto`.
@@ -10,7 +10,7 @@ has deleted the job.
 
 | # | Job | Status |
 | --- | --- | --- |
-| 01 | [Convention fields in grounding](01-convention-grounding.md) | planned |
+| 01 | [Convention fields in grounding](01-convention-grounding.md) | in progress |
 | 02 | [`vde config check --probe`](02-config-check-probe.md) | done |
 | 03 | [Failure codes after `retention: none`](03-failure-codes-after-retention.md) | done |
 
