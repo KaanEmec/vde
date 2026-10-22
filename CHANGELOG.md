@@ -13,6 +13,12 @@ All notable changes to this project are recorded here, in the format of
   deleted is found by its id; an index on `audit_events (job_id, at)` (migration 0011, both
   drivers). Contract §10 is unchanged: nothing is kept on the job row. See
   [operations](docs/operator/operations.md#why-did-a-job-fail-after-retention-none).
+- `vde config check --probe`: after validation, one request with a small synthetic document
+  to every endpoint-model pair of each role, through the real framing and parser, no
+  failover; one line per pair with `ok`, `unparseable` (the parser's error), the provider
+  failure class, a warning for a judge that accepts a deliberately wrong candidate, the
+  latency and tokens. No answer text is printed; exits 1 when a pair fails
+  ([operations](docs/operator/operations.md#probing-the-models-vde-config-check---probe)).
 
 ## [1.2.0] - 2026-10-20
 

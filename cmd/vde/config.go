@@ -2,10 +2,12 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"io"
 	"maps"
 	"os"
+	"os/signal"
 	"runtime"
 	"slices"
 	"strings"
@@ -20,13 +22,20 @@ import (
 
 const defaultConfigPath = "vde.yaml"
 
-const configUsage = `Usage: vde config check [--config path] [--strict]
+const configUsage = `Usage: vde config check [--config path] [--strict] [--probe]
        vde config schema
 
 check validates the configuration without network calls, as vde serve does, and prints a
 summary of endpoints, groups, roles and the media types each role can read.
 Exits 1 and lists every error when the configuration is invalid.
 Secrets are never printed.
+
+--probe, once the configuration is valid, sends one request with a small synthetic
+document to every endpoint-model pair of each role (escalation, second judge and feedback
+groups included), one try bounded by the endpoint's timeout, and prints per pair: ok,
+unparseable (with the parser's error) or the provider failure class, the latency and the
+tokens. The judge gets a candidate with one wrong value; a judge that accepts it is a
+warning. Answers are never printed. Exits 1 when any pair fails.
 
 schema prints the JSON Schema of the configuration file (draft 2020-12) for editors.
 
@@ -52,6 +61,7 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 	fs := newFlagSet("vde config check", configUsage, stderr)
 	path := fs.String("config", defaultConfigPath, "configuration file")
 	strict := fs.Bool("strict", false, "treat warnings as errors")
+	probeFlag := fs.Bool("probe", false, "send one synthetic request to every endpoint-model pair of each role")
 	if code, done := parseArgs(fs, args[1:], stderr); done {
 		return code
 	}
@@ -65,6 +75,14 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	printSummary(stdout, *path, cfg)
+	if *probeFlag {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		if n := probe(ctx, cfg, newProvider, stdout); n > 0 {
+			fmt.Fprintf(stderr, "vde config check: probe: %d pair(s) failed\n", n)
+			return exitFailure
+		}
+	}
 	return exitOK
 }
 

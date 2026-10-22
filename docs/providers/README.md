@@ -27,6 +27,16 @@ the adapter, and you declare it in each model's `accepts` list
 Native structured outputs (the schema as a decoding constraint) were measured in v1.2 and
 not adopted: [structured-outputs.md](structured-outputs.md).
 
+## Checking a model before production
+
+An adapter carries any model the endpoint serves, but not every model answers in a form
+vde can parse, and a judge that answers may still accept what it should reject. Run
+`vde config check --probe` before sending documents: one small synthetic request per role
+and endpoint-model pair, through the real framing and parser, reporting `ok`,
+`unparseable` with the parser's error, or the provider failure, and warning about a judge
+that accepts a candidate with a deliberately wrong value
+([operations](../operator/operations.md#probing-the-models-vde-config-check---probe)).
+
 ## Adding an adapter
 
 An adapter is a package under `internal/provider/<name>/`. Its documentation lives in

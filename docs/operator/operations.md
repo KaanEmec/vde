@@ -101,6 +101,42 @@ service itself, plus about 500 MB per pdfium instance, plus `worker.size` runnin
 the submissions you let in at once, each at its documents' size; then set `GOMEMLIMIT` to
 80 % of the result.
 
+## Probing the models: `vde config check --probe`
+
+`/healthz` never calls a model, and `vde config check` alone makes no network call. Before
+production, or after changing a model, run
+
+```sh
+vde config check --config vde.yaml --probe
+```
+
+After the usual validation and summary it sends one request to every endpoint-model pair
+of each role: the extractor's group and escalation groups, the judge's group, escalation
+groups, second judge and feedback group. Each pair is called on its own (no failover), one
+try bounded by its endpoint's `timeout`, through the role's real framing, request assembly
+and answer parser. The input is a tiny synthetic text document and schema built into the
+binary, the same for every pair; no caller document is sent. One line per role and pair:
+
+```text
+probe: one request per role and pair, the embedded sample; answers are not printed
+  extractor  hosted/model-a  1.204s  1890 in, 212 out  ok
+  judge      hosted/model-b  2.31s   2140 in, 180 out  warning: accepts a wrong candidate
+  judge      local/model-c   845ms   2140 in, 96 out   unparseable: no <verdict> block follows the <analysis> block
+probe: 1 of 3 pairs failed
+```
+
+| Result | Meaning |
+| --- | --- |
+| `ok` | The answer parses in the role. For the judge, also: it rejected the candidate, which has one deliberately wrong value, with feedback at that value. |
+| `unparseable: ...` | The answer does not parse; the parser's error names a block or an offset, never content. Every job on this pair would fail (`extractor_failed`, `judge_failed`). |
+| `retryable provider failure (status 503)`, `permanent provider failure (status 401)`, `... (timeout)` | The call failed; the class and the HTTP status, as in [troubleshooting](troubleshooting.md#provider-failures). |
+| `no adapter: ...` | The endpoint has no adapter to call (`provider: fake` without a script). |
+| `warning: accepts a wrong candidate`, `warning: rejects, but without feedback at /total` | The verdict parses, but the judge missed the wrong value. Not a failure; weigh it before trusting the model as a judge. |
+
+Answers, the analysis and feedback messages are never printed. The command exits `1` when
+any pair fails (a warning does not), so it can gate a deployment. Each line is a real,
+billed request: the probe costs one small call per pair. `vde serve` never probes.
+
 ## Health: `/healthz`
 
 `GET /healthz` is unauthenticated and not rate limited. It answers `200 {"status":"ok"}`, or

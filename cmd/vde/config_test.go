@@ -212,12 +212,6 @@ func TestRunConfigCheck(t *testing.T) {
 			},
 		},
 		{
-			name:       "probe is not a flag",
-			args:       []string{"config", "check", "--probe", "--config", good},
-			wantCode:   exitUsage,
-			wantStderr: []string{"flag provided but not defined: -probe"},
-		},
-		{
 			name:       "log content has no effect",
 			args:       []string{"config", "check", "--config", writeConfig(t, goodConfig+"debug: {log_content: true}\n")},
 			wantCode:   exitOK,

@@ -13,8 +13,9 @@ at start: restart `vde serve` after editing it or after changing a key variable.
 the operator commands (`vde token`, `vde app`, `vde healthcheck`) read are `server`, `auth`
 and `applications`; they decode the file but do not validate it. Messages of the check are
 explained in [troubleshooting](troubleshooting.md#config-check-messages).
-`vde config check` makes no network call; to test an endpoint, run `vde extract` with a small
-document.
+`vde config check` makes no network call; to test the endpoints, add `--probe`
+([operations](operations.md#probing-the-models-vde-config-check---probe)), or run
+`vde extract` with a small document.
 
 ## Schema
 

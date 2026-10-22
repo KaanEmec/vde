@@ -39,7 +39,7 @@ service), [examples](../../examples/README.md) and the [changelog](../../CHANGEL
 | Command | Purpose |
 | --- | --- |
 | `vde serve [--config path] [--role all\|api\|worker]` | Run the service: API, worker pool, expiry sweeper, `/healthz`, `/metrics`; `--role` splits API and workers into separate processes on PostgreSQL and S3 ([operations](operations.md#process-roles)). |
-| `vde config check [--config path] [--strict]` | Validate a configuration without network calls and print a summary; `vde config schema` prints its JSON Schema for editors ([configuration](configuration.md#schema)). |
+| `vde config check [--config path] [--strict] [--probe]` | Validate a configuration without network calls and print a summary; `--probe` then sends one synthetic request to every endpoint-model pair of each role ([operations](operations.md#probing-the-models-vde-config-check---probe)); `vde config schema` prints its JSON Schema for editors ([configuration](configuration.md#schema)). |
 | `vde token create\|list\|revoke` | Manage access tokens. See [applications and tokens](applications-and-tokens.md). |
 | `vde app list` | List the applications in the database. |
 | `vde audit list` | List the audit log ([operations](operations.md#audit-log)). |
