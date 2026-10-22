@@ -250,6 +250,23 @@ the three-booking email; one run cannot tell the
 party-count sentence from noise, so the next run of these three cases should look at it
 first. Next: fix 3 (TravelInbox's choice), then fix 6, measured once the conventions agree.
 
+## v1.3 convention-aware verification (2026-10-22)
+
+One real-model run per job of [v1.3](roadmap/v1.3-convention-aware-verification/README.md) on
+five TravelInbox cases (`001-flight`, `011-flight`, `021-hotel`, `041-rail`,
+`046-cancellation`), `--judge auto`, extractor `anthropic/claude-haiku-5.5` (failover
+`z-ai/glm-5.3-flash`), judge `z-ai/glm-5.3-flash`, through the owner's OpenAI-compatible
+endpoint; TravelInbox's prompt_version 4 and production schema in the corpus copy.
+"Convention" counts mismatches at `provider`, `travellers` and `details` pointers.
+
+| Step | Mismatches (of 151) | Convention | Cases right | False accepts | Judge calls | Tokens in / out | Decision | Report |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Baseline (01-01) | 20 | 11 | 0 of 5 | 5 | 0 | 49743 / 14884 | - | [JSON](quality/vde-0.0.0-dev+219c7052-2026-10-22-v13-baseline.json) |
+
+Baseline reading: every case was accepted by grounding without a judge call, so every
+miss is a false accept. By pointer: `travellers` 4, `details` 5 (cabin, terminal twice,
+coach, seat), `provider` 2, place `name` 4, `trip_hint/ends_on` 3, cancellation `price` 2.
+
 ## Judge policy
 
 Not run yet: the owner runs this comparison.

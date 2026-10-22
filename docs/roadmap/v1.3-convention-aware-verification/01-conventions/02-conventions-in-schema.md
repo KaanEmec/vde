@@ -26,10 +26,8 @@ still validate, or the constraint contradicts TravelInbox's own expected answers
 
 ## Tasks
 
-- [ ] Replace the symbolic link `testdata/travelinbox/corpus/schema.json` with a copy of
-      `FromTravelApp/extraction-schema.json` and record the change in
-      `testdata/travelinbox/README.md` (the copy is the proposal; `FromTravelApp/` keeps
-      the contract's version, which conformance and `internal/extract` tests read).
+- [x] The corpus `schema.json` is already a copy of TravelInbox's production schema (done
+      in job 01, 2026-10-22); constraints go into that copy.
 - [ ] Add constraints with descriptions that state the convention: `pattern` on
       `$defs/rail` coach and seat, `$defs/flight` and `$defs/flight_leg` terminal, a
       cabin description and `enum` or `pattern` where the corpus's values allow it; the

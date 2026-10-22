@@ -1,6 +1,6 @@
 # Job: Baseline on TravelInbox prompt_version 4
 
-Version: v1.3 · Epic: 01 Conventions in schema and instructions · Status: planned · Depends on: v1.2 (released)
+Version: v1.3 · Epic: 01 Conventions in schema and instructions · Status: done · Depends on: v1.2 (released)
 
 ## Goal
 
@@ -23,19 +23,45 @@ prompt_version 4 still lacks, as examples or rules, measured.
 
 ## Tasks
 
-- [ ] Compare TravelInbox's prompt_version 4 files with vde's copy and list, in the job's
+- [x] Compare TravelInbox's prompt_version 4 files with vde's copy and list, in the job's
       notes below, which of vde's 2026-10-20 amendments prompt_version 4 already covers and
       which it does not (by topic, no document content).
-- [ ] Replace `testdata/travelinbox/corpus/extractor.md` and `judge.md` with the
+- [x] Replace `testdata/travelinbox/corpus/extractor.md` and `judge.md` with the
       prompt_version 4 files, byte for byte; check that `shared/extraction-schema.json` in
       TravelInbox equals `FromTravelApp/extraction-schema.json` and note it.
-- [ ] Update `testdata/travelinbox/README.md` (origin commit, date, that the copy is now
+- [x] Update `testdata/travelinbox/README.md` (origin commit, date, that the copy is now
       prompt_version 4 unamended).
-- [ ] `make eval` (fake provider) still passes; update its expected reports only where the
+- [x] `make eval` (fake provider) still passes; update its expected reports only where the
       instruction text is the cause.
-- [ ] Record the baseline: one run of the "Measuring" command of the version README, saved
+- [x] Record the baseline: one run of the "Measuring" command of the version README, saved
       to `docs/quality/` with a v1.3 section in [docs/quality.md](../../../quality.md)
       listing per case the mismatched pointers, judge calls and tokens.
+
+## Notes
+
+Comparison of prompt_version 4 (TravelInbox `96e1631`) with vde's 2026-10-20 amendments to the
+prompt_version 1 copy (topics only):
+
+- Already covered by prompt_version 4: removal of the "Return only the JSON object" lines
+  (version 4 has none). Nothing else of the amendments is stated in version 4.
+- Lacking in prompt_version 4, both extractor and judge: `trip_hint.ends_on` null for a
+  document holding only one-way journeys (version 4 says only "`trip_hint` comes from this
+  document alone"); place `name` without codes and null when only a city and a code are
+  printed; `provider` as short brand name without legal form, loyalty programme or web
+  address, and the operator-over-platform `booking_ref` pairing; traveller `type` only when
+  the document states it for that person, not from a party count.
+- Also lost from version 1 (not 2026-10-20 amendments): the per-kind `title` forms, the
+  `details` rules for connections, and the `price` rules (null when per-night, per-person or
+  shared); version 4 leaves some of these to the schema's `description` fields.
+
+Schema: TravelInbox `shared/extraction-schema.json` does NOT equal
+`FromTravelApp/extraction-schema.json` (both `schema_version` 1; cmp differs, 194 diff lines).
+The TravelInbox file carries `description` texts (trip_hint, notes, traveller `name`/`type`,
+...), `x-vde-grounding` annotations and per-traveller `booking_ref`/`ticket_number`; the
+FromTravelApp copy has none of them. Deviation (orchestrator, 2026-10-22): the baseline must
+measure what TravelInbox runs, so the corpus `schema.json` link is replaced by a copy of
+TravelInbox's `shared/extraction-schema.json` (commit `d5c36ae`) in this job instead of job
+02; every `truth.json` still validates (`make eval`).
 
 ## Acceptance criteria
 
