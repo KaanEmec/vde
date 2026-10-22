@@ -263,6 +263,7 @@ endpoint; TravelInbox's prompt_version 4 and production schema in the corpus cop
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Baseline (01-01) | 20 | 11 | 0 of 5 | 5 | 0 | 49743 / 14884 | - | [JSON](quality/vde-0.0.0-dev+219c7052-2026-10-22-v13-baseline.json) |
 | Schema conventions (01-02) | 14 | 5 | 0 of 5 | 5 | 0 | 51848 / 14722 | kept: every `details` miss gone in one attempt (the descriptions steered the extractor; no pattern retry was needed); `travellers` 3, `provider` 2 left | [JSON](quality/vde-0.0.0-dev+219c7052-2026-10-22-v13-0102.json) |
+| Examples, prompt_version 5 (01-03) | 7 | 4 | 1 of 5 | 4 | 0 | 55218 / 15153 | kept: `trip_hint/ends_on`, the cancellation price and three place names fixed; `travellers` 3, `provider` 1 left; `021-hotel` has a `cancellation` miss in this run and the previous one | [JSON](quality/vde-0.0.0-dev+219c7052-2026-10-22-v13-0103.json) |
 
 Baseline reading: every case was accepted by grounding without a judge call, so every
 miss is a false accept. By pointer: `travellers` 4, `details` 5 (cabin, terminal twice,

@@ -1,5 +1,5 @@
 ---
-prompt_version: 4
+prompt_version: 5
 schema_version: 1
 ---
 
@@ -24,4 +24,11 @@ The verdict:
 
 Pointers are RFC 6901 paths into the candidate (`/reservations/0/booking_ref`; `/reservations/-` for missing reservations; `""` for the whole result). Each message says what is wrong, what the document shows and the correct value. A reject has at least one entry; an accept with nothing to report has `"feedback": {}`. Never repeat sensitive data in feedback.
 
+Conventions the extractor follows. Reject a candidate that breaks one:
+
+- `provider` is the short brand name customers know. Reject the operating or legal company, a sub-brand or service line, a legal form (GmbH, Ltd, S.A.) and logo capitals copied verbatim, even when printed so in the document: `Aerovia Regional Services Ltd` or `AEROVIA` should be `"Aerovia"`; `Kestrel Rail Express` should be `"Kestrel Rail"`; `Harbourlight Suites by Harbourlight Hospitality Group` should be `"Harbourlight"`. A booking made through an agency or platform names the platform.
+- `travellers[].type` is set only when the document states it for that person. Reject a type taken from a party count: "2 adults" printed with `Lina Varga` and no label for her → `null`, not `"adult"`. A type labelled on the person (`Oleg Varga (Child)`) must be present.
+- Place `name` has no codes and is `null` when only a city and a code are printed. Reject `"Sevrin Airport (SVR)"` (should be `"Sevrin Airport"`) and `"Torrun TQR"` or `"Torrun"` as a name where only `Torrun TQR` is printed (should be `null`, with `iata: "TQR"`).
+- `trip_hint.ends_on` is `null` when the document holds only one-way journeys. Reject a date there taken from the last arrival: one flight Torrun → Sevrin on 3 March 2027 → `ends_on` must be `null`.
+- A cancellation's `price` is the amount charged, the cancellation fee. Reject the original total or a refunded amount in its place: `Original total € 240`, `Cancellation fee € 80` → `80`.
 Target schema: `"schema_version": 1`.

@@ -23,13 +23,13 @@ TravelInbox's proposal, not part of vde's framing.
 
 ## Tasks
 
-- [ ] Add a "Conventions" section with three to five "as printed → as expected" examples
+- [x] Add a "Conventions" section with three to five "as printed → as expected" examples
       per convention to `testdata/travelinbox/corpus/extractor.md`: provider brand form,
       coach, seat and terminal without labels (mirroring job 02's constraints), cabin
       class, traveller type from party counts, the price of a cancellation.
-- [ ] Add the same examples to `judge.md`, phrased as what to reject.
-- [ ] Bump `prompt_version` in both files and note it in `testdata/travelinbox/README.md`.
-- [ ] Run the comparison against job 02's report; record it with `provider` and
+- [x] Add the same examples to `judge.md`, phrased as what to reject.
+- [x] Bump `prompt_version` in both files and note it in `testdata/travelinbox/README.md`.
+- [x] Run the comparison against job 02's report; record it with `provider` and
       `cancellation` mismatches and judge calls; keep or revert per convention.
 - [ ] Write `docs/conformance/travelinbox-conventions-v1.3.md` for the owner to send: the
       schema diff and instruction diff as proposals for TravelInbox's job
@@ -39,6 +39,18 @@ TravelInbox's proposal, not part of vde's framing.
       and 6 (whether to adopt vde's amended instructions). The agent does not send it.
 - [ ] Supersede the matching rows of `docs/conformance/travelinbox-schema-suggestions.md`
       with a pointer to the new document.
+
+## Notes
+
+- 2026-10-22: tasks 1 to 3 done for the five conventions still missed after job 02 (provider
+  brand, traveller `type`, place `name`, `trip_hint.ends_on`, cancellation `price`; coach, seat,
+  terminal and cabin stay with job 02's schema descriptions). `prompt_version` is 5. The example
+  values are invented and absent from every corpus `source.*`, `truth.json` and `notes.md`.
+- The hand-over task (the conventions document for TravelInbox) moves to after job 02-01, so
+  that it carries the epic 02 results; the comparison task is run by the orchestrator.
+
+Result (2026-10-22): 14 → 7 mismatches, convention 5 → 4, one case fully right; kept. See
+[quality](../../../quality.md#v13-convention-aware-verification-2026-10-22).
 
 ## Acceptance criteria
 
