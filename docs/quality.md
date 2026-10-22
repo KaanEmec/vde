@@ -262,6 +262,7 @@ endpoint; TravelInbox's prompt_version 4 and production schema in the corpus cop
 | Step | Mismatches (of 151) | Convention | Cases right | False accepts | Judge calls | Tokens in / out | Decision | Report |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Baseline (01-01) | 20 | 11 | 0 of 5 | 5 | 0 | 49743 / 14884 | - | [JSON](quality/vde-0.0.0-dev+219c7052-2026-10-22-v13-baseline.json) |
+| Schema conventions (01-02) | 14 | 5 | 0 of 5 | 5 | 0 | 51848 / 14722 | kept: every `details` miss gone in one attempt (the descriptions steered the extractor; no pattern retry was needed); `travellers` 3, `provider` 2 left | [JSON](quality/vde-0.0.0-dev+219c7052-2026-10-22-v13-0102.json) |
 
 Baseline reading: every case was accepted by grounding without a judge call, so every
 miss is a false accept. By pointer: `travellers` 4, `details` 5 (cabin, terminal twice,

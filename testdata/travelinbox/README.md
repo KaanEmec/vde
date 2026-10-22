@@ -12,5 +12,7 @@ checkout.
 | `corpus/schema.json` | `shared/extraction-schema.json` (TravelInbox commit `d5c36ae`) | The JSON Schema TravelInbox sends as `schema` in production, with its `x-vde-grounding` annotations; `truth.json` files validate against it. Copied 2026-10-22 in place of a link to `FromTravelApp/extraction-schema.json`, which is older and stays the contract's input |
 | `corpus/compare.yaml` | written for this repository | How `vde eval` compares a result with `truth.json` |
 
+The corpus `schema.json` carries a vde proposal for TravelInbox on top of the production copy (v1.3 job 01/02): `pattern` and `description` on rail coach and seat, flight and leg seat and terminal, `description` on cabin and `travellers[].type`; `schema_version` stays `1`, the data version of the contract.
+
 Every corpus document is synthetic (see `corpus/README.md`). The go tool skips
 directories named `testdata` when expanding `./...`, so nothing here is built.

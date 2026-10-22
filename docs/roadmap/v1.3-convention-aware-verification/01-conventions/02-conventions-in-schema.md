@@ -1,6 +1,6 @@
 # Job: Conventions in the schema
 
-Version: v1.3 · Epic: 01 Conventions in schema and instructions · Status: planned · Depends on: 01
+Version: v1.3 · Epic: 01 Conventions in schema and instructions · Status: done · Depends on: 01
 
 ## Goal
 
@@ -28,19 +28,43 @@ still validate, or the constraint contradicts TravelInbox's own expected answers
 
 - [x] The corpus `schema.json` is already a copy of TravelInbox's production schema (done
       in job 01, 2026-10-22); constraints go into that copy.
-- [ ] Add constraints with descriptions that state the convention: `pattern` on
+- [x] Add constraints with descriptions that state the convention: `pattern` on
       `$defs/rail` coach and seat, `$defs/flight` and `$defs/flight_leg` terminal, a
       cabin description and `enum` or `pattern` where the corpus's values allow it; the
       `travellers[].type` rule. Each constraint carries a `description` the schema
       feedback can quote.
-- [ ] Check that every corpus `truth.json` validates against the new copy (a small test
+- [x] Check that every corpus `truth.json` validates against the new copy (a small test
       in `internal/eval` or a `go test` over the corpus directory, whichever already
       exists for truth validation).
-- [ ] Bump the copy's `schema_version` marker if the schema has one, or note the version
+- [x] Bump the copy's `schema_version` marker if the schema has one, or note the version
       in the README.
-- [ ] Run the comparison against job 01's report; record it with schema retries per case
+
+### Constraints added (`testdata/travelinbox/corpus/schema.json`)
+
+Each is on the property, not on `$defs/text`; the pattern is the narrowest form every
+`truth.json` satisfies.
+
+| Pointer | Constraint | Miss targeted |
+| --- | --- | --- |
+| `/$defs/rail/properties/coach` | `pattern` (alphanumeric, 1 to 4 characters) and description | coach with its label |
+| `/$defs/rail/properties/seat` | `pattern` (designators, `, `-separated) and description | seat with its label |
+| `/$defs/flight/properties/seat`, `/$defs/flight_leg/properties/seat` | same `pattern`; description | seat with its label |
+| `/$defs/flight/properties/terminal`, `/$defs/flight_leg/properties/terminal` | `pattern` (alphanumeric, 1 to 5 characters) and description | terminal with its label |
+| `/$defs/flight/properties/cabin`, `/$defs/flight_leg/properties/cabin` | description only (the corpus's cabin values are free text, no pattern fits) | cabin with the tariff name |
+| `/$defs/traveller/properties/type` | description only (the `enum` already exists) | `type` set from a party count |
+
+Validation: a throwaway check over the schema with the repository's JSON Schema library
+(not added to the repository) validates all 50 corpus `truth.json` files; a label added to a
+coach is rejected. The `schema_version` marker is the contract's data version (`const 1`)
+and is not bumped; the proposal is noted in `testdata/travelinbox/README.md`. `make eval`
+(fake provider) passes.
+
+- [x] Run the comparison against job 01's report; record it with schema retries per case
       (attempts) and the `details` and `travellers` mismatches; keep or revert each
       constraint by its pointer.
+
+Result (2026-10-22): 20 → 14 mismatches, convention 11 → 5, all five `details` misses gone;
+every constraint kept. See [quality](../../../quality.md#v13-convention-aware-verification-2026-10-22).
 
 ## Acceptance criteria
 

@@ -11,7 +11,7 @@ in line with what TravelInbox runs today, so the baseline is their production pr
 | # | Job | Status |
 | --- | --- | --- |
 | 01 | [Baseline on TravelInbox prompt_version 4](01-baseline-prompt-version-4.md) | done |
-| 02 | [Conventions in the schema](02-conventions-in-schema.md) | planned |
+| 02 | [Conventions in the schema](02-conventions-in-schema.md) | done |
 | 03 | [Conventions by example, and the hand-over](03-conventions-by-example.md) | planned |
 
 The jobs are sequential: each one's report is the next one's baseline.

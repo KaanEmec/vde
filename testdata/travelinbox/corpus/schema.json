@@ -74,7 +74,7 @@
       "required": ["name"],
       "properties": {
         "name": { "description": "Given name then family name, titles dropped, all-caps words capitalised.", "x-vde-grounding": "check", "type": "string", "minLength": 1 },
-        "type": { "description": "Only when the document states it.", "enum": ["adult", "child", "infant", null] },
+        "type": { "description": "Only when the document states it for this person; a party count such as 2 adults does not type a named traveller. Otherwise null.", "enum": ["adult", "child", "infant", null] },
         "booking_ref": {
           "description": "This traveller's own reference when the booking prints one per passenger; the reservation's booking_ref is the shared one. Verbatim as printed.",
           "x-vde-grounding": "critical",
@@ -180,9 +180,9 @@
         "to_iata": { "$ref": "#/$defs/iata" },
         "departs_at_local": { "$ref": "#/$defs/local_datetime" },
         "arrives_at_local": { "$ref": "#/$defs/local_datetime" },
-        "seat": { "x-vde-grounding": "check", "$ref": "#/$defs/text" },
-        "cabin": { "x-vde-grounding": "check", "$ref": "#/$defs/text" },
-        "terminal": { "description": "Departure terminal.", "x-vde-grounding": "check", "$ref": "#/$defs/text" }
+        "seat": { "description": "Seat designators only, without \"Seat\" or \"Sitz\"; several separated by ', '.", "pattern": "^[0-9]+[A-Z]?(, [0-9]+[A-Z]?)*$", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
+        "cabin": { "description": "Cabin class only, without the fare or tariff name when the document prints both.", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
+        "terminal": { "description": "Departure terminal: the designator only, without the word Terminal.", "pattern": "^[A-Za-z0-9]{1,5}$", "x-vde-grounding": "check", "$ref": "#/$defs/text" }
       }
     },
     "flight": {
@@ -194,9 +194,9 @@
         "carrier": { "description": "The airline printed with the flight number.", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
         "from_iata": { "$ref": "#/$defs/iata" },
         "to_iata": { "$ref": "#/$defs/iata" },
-        "seat": { "description": "Every traveller's seat as printed, in traveller order, separated by ', '.", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
-        "cabin": { "x-vde-grounding": "check", "$ref": "#/$defs/text" },
-        "terminal": { "description": "Departure terminal.", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
+        "seat": { "description": "Every traveller's seat as printed, in traveller order, separated by ', '. Seat designators only, without the word Seat.", "pattern": "^[0-9]+[A-Z]?(, [0-9]+[A-Z]?)*$", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
+        "cabin": { "description": "Cabin class only, without the fare or tariff name when the document prints both.", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
+        "terminal": { "description": "Departure terminal: the designator only, without the word Terminal.", "pattern": "^[A-Za-z0-9]{1,5}$", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
         "gate": { "x-vde-grounding": "check", "$ref": "#/$defs/text" },
         "legs": { "type": ["array", "null"], "items": { "$ref": "#/$defs/flight_leg" } }
       }
@@ -236,8 +236,8 @@
       "additionalProperties": false,
       "properties": {
         "train": { "x-vde-grounding": "critical", "$ref": "#/$defs/text" },
-        "coach": { "x-vde-grounding": "check", "$ref": "#/$defs/text" },
-        "seat": { "x-vde-grounding": "check", "$ref": "#/$defs/text" },
+        "coach": { "description": "Coach number or letter only, without Coach, Wagen or Wg.", "pattern": "^[A-Za-z0-9]{1,4}$", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
+        "seat": { "description": "Seat designators only, without \"Seat\" or \"Sitz\"; several separated by ', '.", "pattern": "^[0-9]+[A-Z]?(, [0-9]+[A-Z]?)*$", "x-vde-grounding": "check", "$ref": "#/$defs/text" },
         "platform": { "x-vde-grounding": "check", "$ref": "#/$defs/text" }
       }
     },
