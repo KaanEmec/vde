@@ -1,8 +1,9 @@
 # Job: `vde config check --probe`
 
-Version: v1.3 · Epic: 02 Verification and operations · Status: in progress · Depends on: none
+Version: v1.3 · Epic: 02 Verification and operations · Status: done · Depends on: none
 
-Implementation done; review pending (orchestrator).
+Done 2026-10-22. Real check against the owner's configuration: all three pairs (two
+extractors, one judge) `ok`, 4.6 to 8.9 s, under 900 input tokens each.
 
 ## Goal
 
